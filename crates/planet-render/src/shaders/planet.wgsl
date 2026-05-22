@@ -466,6 +466,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow) * (1.0 + lining * 0.35);
     lit = mix(lit, cloud_lit, cloud_density * 0.85);
 
+    // High-altitude cirrus — thin, wispy, drifts faster than the main deck.
+    // Only meaningful on worlds with enough atmosphere; uses tighter band
+    // compression to read as stretched streaks at higher altitude.
+    if (atm_d > 0.20 && coverage > 0.05) {
+        let cirrus_warp = vec3<f32>(band_x * 0.6, 1.0, band_x * 0.6);
+        let cirrus_p = dir * cirrus_warp * cloud_freq * 1.7 + cloud_off
+                     + vec3<f32>(u.misc.y * 0.030, 0.0, u.misc.y * 0.018);
+        let cirrus_raw = fbm(cirrus_p, 4) * 0.5 + 0.5;
+        let cirrus_low = mix(0.78, 0.45, coverage);
+        let cirrus_high = mix(0.95, 0.68, coverage);
+        let cirrus_density = smoothstep(cirrus_low, cirrus_high, cirrus_raw) * 0.55;
+        let cirrus_color = mix(vec3<f32>(1.0), u.atmosphere_color.rgb * 1.2, cloud_tint_amt * 0.4);
+        let cirrus_lit = cirrus_color * (ambient + n_dot_l * 0.95);
+        lit = mix(lit, cirrus_lit, cirrus_density);
+    }
+
     // ---------- City lights ----------
     // High-population worlds glow on the night side. Sampled procedurally so
     // populated regions cluster along coasts and along habitable mid-latitudes
