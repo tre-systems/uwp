@@ -9,7 +9,8 @@
     "dev": "npm run build:wasm:dev && vite",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@preact/signals": "^2",
