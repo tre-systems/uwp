@@ -278,7 +278,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ht = terrain_field(normalize(dir + tangent * eps));
     let hb = terrain_field(normalize(dir + bitangent * eps));
 
-    // Slope only contributes above water — the ocean surface is smooth.
     var local_normal: vec3<f32>;
     var slope: f32 = 0.0;
     if (above_water) {
@@ -286,8 +285,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let dy = (max(hb - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
         local_normal = normalize(dir - tangent * dx - bitangent * dy);
         slope = 1.0 - clamp(dot(local_normal, dir), 0.0, 1.0);
+        // Fine-scale land detail — perturbs the lit normal so flat plateaus pick
+        // up texture and mountain flanks scatter light instead of reading flat.
+        let detail_a = fbm(dir * 55.0 + u.seed_block.xyz, 2);
+        let detail_b = fbm(dir * 55.0 + u.seed_block.xyz + vec3<f32>(13.7, 0.0, 0.0), 2);
+        local_normal = normalize(local_normal + tangent * detail_a * 0.025 + bitangent * detail_b * 0.025);
     } else {
-        local_normal = dir;
+        // Wave shimmer — subtle moving normal perturbation gives the ocean
+        // surface life and lets the sun specular scatter into a wider, more
+        // believable highlight rather than a single dot.
+        let wave_a = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(u.misc.y * 0.40, 0.0, 0.0), 2);
+        let wave_b = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, u.misc.y * 0.40), 2);
+        local_normal = normalize(dir + tangent * wave_a * 0.030 + bitangent * wave_b * 0.030);
     }
 
     let world_normal = normalize((u.model * vec4<f32>(local_normal, 0.0)).xyz);
@@ -473,6 +482,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // dark hemisphere doesn't read as pure black inside the atmospheric perspective.
     let atmo_density = u.misc.x;
     lit = lit + u.atmosphere_color.rgb * (1.0 - n_dot_l) * 0.020 * atmo_density;
+
+    // Warm terminator tone — Earth-from-space photos show a band of orange /
+    // pink along the day-night boundary where sunlight grazes a long path of
+    // atmosphere. Approximated by ramping a warm tint up at low (but positive)
+    // n_dot_l and fading it out as we get fully lit.
+    let term_band = smoothstep(0.0, 0.18, n_dot_l) * (1.0 - smoothstep(0.18, 0.42, n_dot_l));
+    lit = lit + vec3<f32>(1.0, 0.52, 0.22) * term_band * atmo_density * 0.18;
 
     return vec4<f32>(lit, 1.0);
 }
