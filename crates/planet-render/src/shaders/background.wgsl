@@ -241,16 +241,10 @@ fn fs_main(in: VsOut) -> BgOut {
 
     // ---------- Satellites ----------
     // Count scales with population_intensity, which already encodes pop * tech.
-    // Each satellite renders as a bright glint: small gaussian core, soft
-    // exponential halo, and a four-point diffraction-spike cross — reads as
-    // "specular reflection from a small bright object" rather than "single
-    // pixel". Sample positions are projected to screen space so the shape is
-    // size-stable regardless of orbit distance.
+    // Rendered as tiny bright-grey pinpoints — just a ~1 px soft gaussian per
+    // satellite. No glint, no halo, no diffraction spikes.
     let pop = u.world_features.y;
     let n_sats = i32(floor(pop * 14.0));
-    var sat_glow = vec3<f32>(0.0);
-    var sat_nearest_t = 1e9;
-    var sat_hit = false;
     let inv_pix = vec2<f32>(u.resolution.x, u.resolution.y) * 0.5;
     for (var i: i32 = 0; i < 14; i = i + 1) {
         if (i >= n_sats) { break; }
@@ -264,41 +258,20 @@ fn fs_main(in: VsOut) -> BgOut {
         let cl = cos(lat); let sl = sin(lat);
         let sat_pos = vec3<f32>(cl * cos(lon), sl, cl * sin(lon)) * sat_r;
 
-        // Project to screen so the glint shape is in stable pixel-space.
         let sat_clip = u.view_proj * vec4<f32>(sat_pos, 1.0);
         if (sat_clip.w <= 0.0) { continue; }
         let sat_ndc = sat_clip.xy / sat_clip.w;
         let diff = (in.ndc - sat_ndc) * inv_pix;
-        let dx = diff.x;
-        let dy = diff.y;
-        let r2 = dx * dx + dy * dy;
-        if (r2 > 400.0) { continue; }  // ~20 px radius bounding box
+        let r2 = diff.x * diff.x + diff.y * diff.y;
+        if (r2 > 4.0) { continue; }  // ≤ ~2 px
 
         let sat_dist = length(sat_pos - ray_origin);
         if (sat_dist > best_t) { continue; }
 
-        // Gaussian core (~3 px) + soft halo (~10 px) + long diffraction
-        // cross spikes (~15 px) — sized to be visible at typical render
-        // resolutions rather than degrading to a single pixel.
-        let core    = exp(-r2 * 0.18) * 1.5;
-        let halo    = exp(-sqrt(r2) * 0.22) * 0.30;
-        let spike_h = exp(-dy * dy * 0.55) * exp(-abs(dx) * 0.07) * 0.55;
-        let spike_v = exp(-dx * dx * 0.55) * exp(-abs(dy) * 0.07) * 0.55;
-        let intensity = core + halo + spike_h + spike_v;
-        if (intensity < 0.020) { continue; }
-
-        // Slight per-satellite tint — most warm, occasional cool blue glint.
-        let hue = hash11(idx * 23.7);
-        let warm = vec3<f32>(1.00, 0.92, 0.78);
-        let cool = vec3<f32>(0.78, 0.88, 1.00);
-        let sat_color = mix(warm, cool, hue * 0.6) * intensity * 1.6;
-        sat_glow = sat_glow + sat_color;
-        sat_nearest_t = min(sat_nearest_t, sat_dist);
-        sat_hit = true;
-    }
-    if (sat_hit && sat_nearest_t < best_t) {
-        best_color = sat_glow;
-        best_t = sat_nearest_t;
+        let intensity = exp(-r2 * 1.5);
+        if (intensity < 0.08) { continue; }
+        best_color = vec3<f32>(0.92) * intensity;
+        best_t = sat_dist;
         has_hit = true;
     }
 
