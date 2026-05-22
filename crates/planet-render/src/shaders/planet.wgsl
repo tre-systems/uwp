@@ -309,33 +309,37 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let base_land = mix(u.sand_color.rgb, u.land_color.rgb, coast);
         var land = mix(base_land, u.mountain_color.rgb, alpine);
 
-        // Vegetation richness: multi-scale noise picks between dark forest /
-        // bright grassland / dry savanna. Driven by the world_features.z dial,
-        // which the UWP wires up from atm + hydro. At richness 0 (Mars-like)
-        // the noise contributes nothing and the land stays its base palette.
+        // Vegetation richness: multi-scale noise picks between deep forest /
+        // bright grassland / dry savanna / outright desert. Driven by
+        // world_features.z (wired from UWP atm + hydro). At richness 0
+        // (Mars-like) the noise contributes nothing and the land stays its
+        // base palette.
         let veg_richness = u.world_features.z;
         if (veg_richness > 0.02) {
             // Two noise scales — large continental zones + medium patches.
-            let zone_n = fbm(dir * 1.6 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 3);
-            let patch_n = fbm(dir * 4.5 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 3);
+            let zone_n = fbm(dir * 1.4 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 4);
+            let patch_n = fbm(dir * 3.8 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 3);
             let combined = zone_n * 0.7 + patch_n * 0.3;  // ~[-1, 1]
-            // Dark conifer green for low values, brighter grassland for mid,
-            // dry/yellowed savanna for high. Anchor around the user's land_color
-            // so palette choices still propagate.
-            let forest   = u.land_color.rgb * 0.72;
-            let grass    = u.land_color.rgb * 1.18;
-            let savanna  = mix(u.land_color.rgb, u.sand_color.rgb, 0.55);
-            var vegetated = mix(forest, grass, smoothstep(-0.5, 0.2, combined));
-            vegetated = mix(vegetated, savanna, smoothstep(0.25, 0.75, combined));
-            // Coast still reads as sand; alpine still reads as rock — mix vegetation
-            // back in only over the grassy mid-band.
-            let vegetated_band = (1.0 - alpine) * (1.0 - smoothstep(-0.02, 0.02, sea_h - h)) * coast;
+            // Dark conifer for low values, brighter grassland for mid, sand
+            // for high. Pushes more saturation than the user's land_color
+            // alone so continents read with clear regional differences.
+            let forest   = u.land_color.rgb * vec3<f32>(0.45, 0.62, 0.40);  // deep dark green
+            let grass    = u.land_color.rgb * vec3<f32>(1.25, 1.20, 0.95);  // brighter, slightly yellower
+            let savanna  = mix(u.land_color.rgb, u.sand_color.rgb, 0.75);
+            var vegetated = mix(forest, grass, smoothstep(-0.55, 0.15, combined));
+            vegetated = mix(vegetated, savanna, smoothstep(0.20, 0.65, combined));
+            let vegetated_band = (1.0 - alpine) * coast;
             land = mix(land, vegetated, veg_richness * vegetated_band);
         }
 
-        // Aridity bands: subtropical bands tend toward sand. Kept subtle so green dominates.
-        let arid = smoothstep(0.08, 0.30, lat) * (1.0 - smoothstep(0.42, 0.68, lat));
-        land = mix(land, u.sand_color.rgb, arid * 0.22);
+        // Big desert zones — large low-freq noise carves out unambiguous arid
+        // continents (Sahara, Australian outback). Combined with the
+        // latitudinal aridity for that "subtropical dry belt" look.
+        let desert_zone = fbm(dir * 0.9 + u.seed_block.xyz + vec3<f32>(-19.4, 78.1, 31.6), 3) * 0.5 + 0.5;
+        let lat_arid = smoothstep(0.08, 0.30, lat) * (1.0 - smoothstep(0.42, 0.68, lat));
+        let big_desert = smoothstep(0.62, 0.82, desert_zone);
+        let desert_mask = clamp(lat_arid * 0.5 + big_desert * 0.8, 0.0, 1.0);
+        land = mix(land, u.sand_color.rgb, desert_mask * (1.0 - alpine) * coast * (0.5 + veg_richness * 0.3));
 
         // Steep slopes read as exposed rock regardless of elevation — gives cliffs,
         // valleys, river banks a believable rocky texture.
@@ -356,20 +360,28 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         surface = mix(land, u.snow_color.rgb, snow);
     } else {
         let depth = sea_h - h;
-        let shallow = u.ocean_color.rgb * 1.75;
-        let deep    = u.ocean_color.rgb * 0.38;
-        surface = mix(shallow, deep, smoothstep(0.0, 0.5, depth));
+        // Three-tone water: turquoise shallows (continental shelves), bright
+        // ocean blue mid-depth, and deep navy abyss. Coast-side fragments
+        // pick up an extra cyan boost so reefs / shallow seas read clearly.
+        let turquoise = mix(u.ocean_color.rgb * 1.8, vec3<f32>(0.35, 0.78, 0.78), 0.55);
+        let shallow = u.ocean_color.rgb * 1.55;
+        let deep    = u.ocean_color.rgb * 0.34;
+        var water = mix(turquoise, shallow, smoothstep(0.0, 0.06, depth));
+        water = mix(water, deep, smoothstep(0.10, 0.55, depth));
+        surface = water;
         // Polar ice on water — slightly sharper than the land snow line.
         let polar = smoothstep(ice_lat - 0.015, ice_lat + 0.04, lat);
         surface = mix(surface, u.snow_color.rgb * 0.94, polar);
     }
 
     // ---------- Cloud noise ----------
-    // Sample a second noise field at a different frequency for cloud cover.
-    // The smoothstep window is centred so coverage acts intuitively (0 = clear, 1 = overcast).
+    // Latitudinal banding: stretch sampling along the equator so clouds form
+    // east-west streaks (jet streams, ITCZ, Hadley cells) rather than isotropic
+    // blobs. Compress longitude by 0.35 to elongate features in the x/z plane.
     let cloud_freq = u.planet_params.z * 2.4;
     let cloud_off  = u.seed_block.xyz + vec3<f32>(213.7, 71.0, -109.4);
-    let cloud_p    = dir * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
+    let band_warp  = vec3<f32>(0.35, 1.0, 0.35);
+    let cloud_p    = dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
     let cloud_raw  = fbm(cloud_p, 5) * 0.5 + 0.5;
     let coverage   = u.misc.z;
     let cloud_low  = mix(0.85, 0.20, coverage);
@@ -385,7 +397,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // is its transpose.
     let sun_dir_local    = (transpose(u.model) * vec4<f32>(sun_dir, 0.0)).xyz;
     let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035);
-    let cloud_p_shadow   = cloud_shadow_dir * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
+    let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
     let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
     let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
     let shadow_factor    = 1.0 - cloud_shadow * 0.55;
