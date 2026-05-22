@@ -195,6 +195,48 @@ input[type="range"]::-moz-range-thumb {
   background: var(--accent);
 }
 
+.uwp-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.uwp-input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 1px;
+  outline: none;
+  transition: border-color 140ms, background 140ms;
+}
+.uwp-input:focus {
+  border-color: rgba(110, 164, 255, 0.5);
+  background: rgba(110, 164, 255, 0.06);
+}
+.uwp-input.invalid {
+  border-color: rgba(255, 110, 110, 0.45);
+}
+.uwp-row button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background 140ms;
+}
+.uwp-row button:hover { background: rgba(110, 164, 255, 0.32); }
+.uwp-legend {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+}
+
 label.color {
   display: flex;
   align-items: center;

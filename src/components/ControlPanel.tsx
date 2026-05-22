@@ -1,4 +1,4 @@
-import { panelOpen, params, randomize, reset, updateParams } from '../state'
+import { applyUwp, panelOpen, params, parseUwp, randomize, reset, updateParams, uwpInput } from '../state'
 import { Slider } from './Slider'
 import { ColorInput } from './ColorInput'
 
@@ -27,6 +27,26 @@ export function ControlPanel() {
             <button class="ghost" onClick={reset}>Reset</button>
           </div>
         </header>
+
+        <section>
+          <h2>UWP</h2>
+          <div class="uwp-row">
+            <input
+              type="text"
+              class={`uwp-input ${parseUwp(uwpInput.value) ? '' : 'invalid'}`}
+              value={uwpInput.value}
+              spellcheck={false}
+              autocapitalize="characters"
+              placeholder="A867974-D"
+              onInput={(e) => (uwpInput.value = (e.currentTarget as HTMLInputElement).value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyUwp(uwpInput.value)
+              }}
+            />
+            <button onClick={() => applyUwp(uwpInput.value)}>Apply</button>
+          </div>
+          <div class="uwp-legend">size · atm · hydro from positions 2–4</div>
+        </section>
 
         <section>
           <h2>Geology</h2>

@@ -158,10 +158,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let phase_r = (3.0 / (16.0 * PI)) * (1.0 + mu * mu);
     let g2 = G_MIE * G_MIE;
     let phase_m_num = (1.0 - g2) * (1.0 + mu * mu);
-    let phase_m_den = (2.0 + g2) * pow(max(1.0 + g2 - 2.0 * G_MIE * mu, 0.0001), 1.5);
-    let phase_m = (3.0 / (8.0 * PI)) * phase_m_num / phase_m_den;
+    let phase_m_den = (2.0 + g2) * pow(max(1.0 + g2 - 2.0 * G_MIE * mu, 0.001), 1.5);
+    // Mie's forward-scatter peak is sharp; clamp it so looking through the
+    // atmosphere directly at the sun doesn't punch a white-hot circle through
+    // the planet's centre via bloom.
+    let phase_m = min((3.0 / (8.0 * PI)) * phase_m_num / phase_m_den, 1.8);
 
-    let sun_intensity = 11.0;
+    let sun_intensity = 8.0;
     let scatter = sun_intensity *
         (in_scatter_r * beta_r * phase_r + in_scatter_m * beta_m * phase_m);
 
@@ -169,27 +172,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let final_trans = exp(-(beta_r * od_view.x + beta_m * od_view.y));
     var final_color = planet_color * final_trans + scatter;
 
-    // Cheap lens bloom: 12 taps in two rings, extract values above an HDR
-    // threshold, average, and add back. Threshold pushed past sRGB-1.0 so only
-    // genuine HDR highlights (sun glint on water, atmospheric forward-scatter
-    // near the sun limb) contribute — keeps the limb halo from haloing all the
-    // continents near the edge.
+    // Cheap lens bloom: 12 taps in two rings around the pixel, soft HDR threshold,
+    // average, add back. Threshold pushed well past sRGB-1.0 so only genuinely
+    // burning highlights (sun glint, sun-disk forward scatter) bloom — keeps the
+    // ocean's sun glint a tight bright dot rather than a wide blob.
     let texel = 1.0 / u.resolution.xy;
     var bloom = vec3<f32>(0.0);
-    let r_outer = 9.0;
-    let r_inner = 4.0;
+    let r_outer = 11.0;
+    let r_inner = 5.0;
     for (var i: i32 = 0; i < 12; i = i + 1) {
         let a = f32(i) * 0.5235988;  // 2π / 12
         let off = vec2<f32>(cos(a), sin(a));
         let s1 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_inner * texel, 0.0).rgb;
         let s2 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_outer * texel, 0.0).rgb;
         bloom = bloom
-            + max(s1 - vec3<f32>(1.05), vec3<f32>(0.0)) * 0.65
-            + max(s2 - vec3<f32>(1.05), vec3<f32>(0.0)) * 0.35;
+            + max(s1 - vec3<f32>(1.25), vec3<f32>(0.0)) * 0.65
+            + max(s2 - vec3<f32>(1.25), vec3<f32>(0.0)) * 0.35;
     }
     bloom = bloom / 12.0;
-    bloom = bloom + max(scatter - vec3<f32>(1.4), vec3<f32>(0.0)) * 0.30;
-    final_color = final_color + bloom * 0.45;
+    bloom = bloom + max(scatter - vec3<f32>(1.7), vec3<f32>(0.0)) * 0.22;
+    final_color = final_color + bloom * 0.30;
 
     return vec4<f32>(aces(final_color), 1.0);
 }

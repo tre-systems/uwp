@@ -195,7 +195,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sea_h = u.planet_params.x * 2.0 - 1.0;
     let mountain_amp = u.planet_params.y;
     let above_water = h > sea_h;
-    let above_amt = max(h - sea_h, 0.0);
+    // Normalised height above sea level in roughly [0, 1] regardless of sea_h,
+    // so biome thresholds (alpine, snow_alt) keep working at desert worlds
+    // (very low sea_h) and water worlds (very high sea_h).
+    let above_range = max(1.0 - sea_h, 0.0001);
+    let above_amt = max(h - sea_h, 0.0) / above_range;
 
     // Build a tangent frame from the sphere direction so we can do finite-difference
     // gradients on the terrain field. We pick an arbitrary helper vector and project.
@@ -212,8 +216,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var local_normal: vec3<f32>;
     var slope: f32 = 0.0;
     if (above_water) {
-        let dx = (max(ht - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / eps;
-        let dy = (max(hb - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / eps;
+        let dx = (max(ht - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
+        let dy = (max(hb - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
         local_normal = normalize(dir - tangent * dx - bitangent * dy);
         slope = 1.0 - clamp(dot(local_normal, dir), 0.0, 1.0);
     } else {
@@ -308,17 +312,30 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let sky_tint = u.atmosphere_color.rgb * (0.45 + n_dot_l * 0.5);
         lit = mix(lit, sky_tint, fresnel * 0.45);
 
+        // Tight sun glint — high exponent keeps it a small bright dot rather than
+        // a wide blob that bloom would smear into a halo.
         let halfway = normalize(sun_dir + view_dir);
-        let spec = pow(max(dot(world_normal, halfway), 0.0), 110.0);
-        lit = lit + vec3<f32>(spec) * 1.4 * n_dot_l_s;
+        let spec = pow(max(dot(world_normal, halfway), 0.0), 280.0);
+        lit = lit + vec3<f32>(spec) * 0.9 * n_dot_l_s;
     }
 
     // ---------- Cloud composite ----------
     // Cloud "silver lining": mid-density edges read brighter than the dense centre.
+    // Cloud peak brightness kept under sRGB-1.0 so the bloom pass can't latch onto
+    // the lit cloud tops and smear them into a giant white blob over the sun glint.
+    //
+    // Tint the cloud body toward the atmosphere colour as density rises — at
+    // Earth-ish density (≤ 0.6) clouds are white-ish, but for thick exotic
+    // atmospheres (Venus's sulfuric, dense tainted, etc.) the clouds pick up
+    // the atmosphere's hue so the planet reads as yellow / orange / purple
+    // instead of generic-white.
     let lining = smoothstep(0.18, 0.45, cloud_density)
                 * (1.0 - smoothstep(0.5, 0.85, cloud_density));
-    let cloud_lit = vec3<f32>(1.0) * (ambient + n_dot_l * 1.05) * (1.0 + lining * 0.45);
-    lit = mix(lit, cloud_lit, cloud_density * 0.88);
+    let atm_d = u.misc.x;
+    let cloud_tint_amt = smoothstep(0.55, 1.10, atm_d);
+    let cloud_tint = mix(vec3<f32>(0.93), u.atmosphere_color.rgb * 1.25, cloud_tint_amt * 0.7);
+    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92) * (1.0 + lining * 0.35);
+    lit = mix(lit, cloud_lit, cloud_density * 0.85);
 
     // The atmosphere pass adds Rayleigh + Mie in-scattering + tonemap, so this
     // shader stays in linear HDR. We only emit a faint night-side ambient so the
