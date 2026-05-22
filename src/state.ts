@@ -21,6 +21,10 @@ export interface Params {
   sun_angle: number
   auto_rotate: number
   cloud_coverage: number
+  crater_density: number
+  population_intensity: number
+  vegetation_richness: number
+  surface_age: number
 }
 
 export const defaultParams: Params = {
@@ -40,6 +44,10 @@ export const defaultParams: Params = {
   sun_angle: 0.55,
   auto_rotate: 0.05,
   cloud_coverage: 0.22,
+  crater_density: 0.0,
+  population_intensity: 0.0,
+  vegetation_richness: 0.65,
+  surface_age: 0.5,
 }
 
 export const params = signal<Params>({ ...defaultParams })
@@ -68,7 +76,14 @@ function hex(c: string): number {
   return Number.isFinite(n) ? n : -1
 }
 
-export function parseUwp(code: string): UwpVisual | null {
+export interface UwpVisualExt {
+  size: number
+  atm: number
+  hydro: number
+  pop: number     // 0..15 (cap A in Cepheus, but allow higher)
+}
+
+export function parseUwp(code: string): UwpVisualExt | null {
   const cleaned = code.toUpperCase().replace(/\s+/g, '')
   const main = cleaned.split('-')[0]
   // Accept either "A867974" (with starport) or "867974" (without)
@@ -78,8 +93,15 @@ export function parseUwp(code: string): UwpVisual | null {
   const size = hex(body[0])
   const atm = hex(body[1])
   const hydro = hex(body[2])
+  // Population is position 4 (0-indexed: 3). May not be present in short codes.
+  const pop = body.length > 3 ? hex(body[3]) : 0
   if (size < 0 || atm < 0 || hydro < 0) return null
-  return { size, atm, hydro: Math.min(hydro, 10) }
+  return {
+    size,
+    atm,
+    hydro: Math.min(hydro, 10),
+    pop: Math.max(0, pop),
+  }
 }
 
 interface AtmoConfig {
@@ -201,23 +223,52 @@ function atmoConfig(atm: number): AtmoConfig {
 }
 
 // Apply a UWP code to the renderer params. Returns true if the code parsed.
-// Drives sea_level (hydro), atmosphere density/colour + cloud cover (atm), and
-// a sensible surface palette (atm+hydro). User can still override any slider or
+// Drives sea_level (hydro), atmosphere density/colour + cloud cover (atm), a
+// sensible surface palette (atm+hydro), and the "world features" knobs
+// (cratering, vegetation, city lights). User can still override any slider or
 // colour afterwards.
 export function applyUwp(code: string): boolean {
   const parsed = parseUwp(code)
   if (!parsed) return false
-  const { atm, hydro } = parsed
+  const { atm, hydro, pop } = parsed
   const atmo = atmoConfig(atm)
   const palette = paletteForUwp(atm, hydro)
   // Hydrographics digit (0-A) -> sea_level. 0=desert, A=almost all water.
   const sea_level = 0.05 + (Math.min(hydro, 10) / 10) * 0.90
+
+  // Cratering: heavy on airless/trace bodies (no weather to erode), tapers off
+  // as atmospheres get thicker. Wet worlds also wash away craters.
+  const atmCrater = atm <= 1 ? 1.0 : atm <= 3 ? 0.6 : atm <= 5 ? 0.25 : 0.0
+  const hydroCrater = hydro <= 1 ? 1.0 : hydro <= 3 ? 0.6 : 0.2
+  const crater_density = Math.min(1, atmCrater * hydroCrater)
+
+  // Vegetation: needs breathable atm + water. Tainted atmospheres support life
+  // but with reduced biomass; corrosive/exotic kill it.
+  const atmVeg = atm >= 4 && atm <= 9 ? 1.0 : atm === 3 || atm === 13 ? 0.4 : 0
+  const hydroVeg = hydro >= 3 && hydro <= 8 ? 1.0 : hydro >= 2 ? 0.6 : 0.0
+  const vegetation_richness = atmVeg * hydroVeg
+
+  // Population intensity (city lights). Pop digit 0=none through C=billions.
+  // Need a vaguely habitable atmosphere — corrosive/insidious worlds don't get
+  // bright surface lights even if technically populated.
+  const popDigit = pop
+  const habitableAtm = atm >= 2 && atm <= 9 && atm !== 11 && atm !== 12
+  const population_intensity = habitableAtm ? Math.max(0, popDigit - 5) / 7 : 0
+
+  // Older surfaces (long since cooled) have more craters and more weathering.
+  // We approximate with the atm/water inputs we already have.
+  const surface_age = (1 - atmVeg) * 0.5 + (atm <= 1 ? 0.5 : 0)
+
   params.value = {
     ...params.value,
     sea_level,
     atmosphere_density: atmo.density,
     atmosphere_color: atmo.color,
     cloud_coverage: atmo.cloud_coverage,
+    crater_density,
+    vegetation_richness,
+    population_intensity,
+    surface_age,
     ...palette,
   }
   return true

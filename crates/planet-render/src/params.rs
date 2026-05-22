@@ -18,6 +18,10 @@ pub struct PlanetParams {
     pub sun_angle: f32,
     pub auto_rotate: f32,
     pub cloud_coverage: f32,
+    pub crater_density: f32,
+    pub population_intensity: f32,
+    pub vegetation_richness: f32,
+    pub surface_age: f32,
 }
 
 impl Default for PlanetParams {
@@ -39,6 +43,10 @@ impl Default for PlanetParams {
             sun_angle: 0.55,
             auto_rotate: 0.05,
             cloud_coverage: 0.22,
+            crater_density: 0.0,
+            population_intensity: 0.0,
+            vegetation_richness: 0.65,
+            surface_age: 0.5,
         }
     }
 }

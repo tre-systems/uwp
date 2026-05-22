@@ -25,6 +25,8 @@ struct Uniforms {
     misc:            vec4<f32>,
     // x = width, y = height, z = aspect, w = planet radius
     resolution:      vec4<f32>,
+    // x = crater_density, y = population_intensity, z = vegetation_richness, w = surface_age
+    world_features:  vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -94,6 +96,68 @@ fn ridged_fbm(p_in: vec3<f32>, octaves: i32) -> f32 {
     return v / norm;
 }
 
+// Scalar hash from a 3D integer-ish cell coordinate.
+fn hash3_s(p: vec3<f32>) -> f32 {
+    return fract(sin(dot(p, vec3<f32>(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+// Worley-style cratering. For each of the 27 cells near `p` (in cell space),
+// pick a random crater position + radius, find the closest one to `p`, and
+// return a vertical displacement: bowl-shaped depression inside, raised rim
+// just outside the bowl edge. Returns 0 outside any crater's reach.
+fn crater_layer(p: vec3<f32>, scale: f32, depth: f32) -> f32 {
+    let sp = p * scale;
+    let ip = floor(sp);
+    let fp = fract(sp);
+    var best_r = 1e9;
+    var best_norm = 0.0;
+    for (var z = -1; z <= 1; z = z + 1) {
+        for (var y = -1; y <= 1; y = y + 1) {
+            for (var x = -1; x <= 1; x = x + 1) {
+                let offs = vec3<f32>(f32(x), f32(y), f32(z));
+                let cell = ip + offs;
+                let jitter = vec3<f32>(
+                    hash3_s(cell),
+                    hash3_s(cell + vec3<f32>(31.7, 17.3, 9.1)),
+                    hash3_s(cell + vec3<f32>(71.1, 43.1, 19.7)),
+                );
+                let centre = offs + jitter;
+                let radius = hash3_s(cell + vec3<f32>(113.3, 7.1, 51.9)) * 0.45 + 0.10;
+                let d = length(centre - fp);
+                let normalised = d / radius;
+                if (normalised < 1.0 && d < best_r) {
+                    best_r = d;
+                    best_norm = normalised;
+                }
+            }
+        }
+    }
+    if (best_r >= 1e9) { return 0.0; }
+    let r = best_norm;
+    // Bowl up to r=0.85, then a raised rim that smoothly tapers back to 0 by r=1.
+    if (r < 0.85) {
+        let t = r / 0.85;
+        // Smooth cosine bowl — flat-bottomed at r=0, lifts back to 0 at the rim base.
+        let bowl = -0.5 * (1.0 + cos(t * 3.14159265));
+        return bowl * depth;
+    }
+    let t = (r - 0.85) / 0.15;
+    let ring = sin(t * 3.14159265);  // 0 -> 1 -> 0
+    return ring * depth * 0.55;
+}
+
+fn craters(dir: vec3<f32>) -> f32 {
+    let density = u.world_features.x;
+    if (density <= 0.01) { return 0.0; }
+    let seed_off = u.seed_block.xyz * 0.31;
+    let p = dir + seed_off;
+    // Three scales: a few huge basins, many medium craters, lots of small pits.
+    let big = crater_layer(p, 1.8, 0.10);
+    let mid = crater_layer(p, 5.5, 0.05);
+    let pit = crater_layer(p, 14.0, 0.025);
+    return (big + mid + pit) * density;
+}
+
 fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
     let b = dot(orig, dir);
     let c = dot(orig, orig) - radius * radius;
@@ -125,7 +189,9 @@ fn terrain_field(dir: vec3<f32>) -> f32 {
     let continents = fbm(pw, oct);
     let ridges     = ridged_fbm(pw * 2.7 + vec3<f32>(13.7, 91.3, 47.1), max(oct - 1, 2));
     let shaped = sign(continents) * pow(abs(continents), 0.85);
-    return clamp(shaped * 0.85 + (ridges - 0.55) * 0.30, -1.0, 1.0);
+    let base = shaped * 0.85 + (ridges - 0.55) * 0.30;
+    let crater = craters(dir);
+    return clamp(base + crater, -1.0, 1.0);
 }
 
 // ---------- Vertex ----------
@@ -240,8 +306,32 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let coast  = smoothstep(0.0, 0.025, above_amt);
         // Alpine threshold pushed high so the bulk of land reads as land/grass.
         let alpine = smoothstep(0.35, 0.70, above_amt);
-        var land   = mix(u.sand_color.rgb, u.land_color.rgb, coast);
-        land = mix(land, u.mountain_color.rgb, alpine);
+        let base_land = mix(u.sand_color.rgb, u.land_color.rgb, coast);
+        var land = mix(base_land, u.mountain_color.rgb, alpine);
+
+        // Vegetation richness: multi-scale noise picks between dark forest /
+        // bright grassland / dry savanna. Driven by the world_features.z dial,
+        // which the UWP wires up from atm + hydro. At richness 0 (Mars-like)
+        // the noise contributes nothing and the land stays its base palette.
+        let veg_richness = u.world_features.z;
+        if (veg_richness > 0.02) {
+            // Two noise scales — large continental zones + medium patches.
+            let zone_n = fbm(dir * 1.6 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 3);
+            let patch_n = fbm(dir * 4.5 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 3);
+            let combined = zone_n * 0.7 + patch_n * 0.3;  // ~[-1, 1]
+            // Dark conifer green for low values, brighter grassland for mid,
+            // dry/yellowed savanna for high. Anchor around the user's land_color
+            // so palette choices still propagate.
+            let forest   = u.land_color.rgb * 0.72;
+            let grass    = u.land_color.rgb * 1.18;
+            let savanna  = mix(u.land_color.rgb, u.sand_color.rgb, 0.55);
+            var vegetated = mix(forest, grass, smoothstep(-0.5, 0.2, combined));
+            vegetated = mix(vegetated, savanna, smoothstep(0.25, 0.75, combined));
+            // Coast still reads as sand; alpine still reads as rock — mix vegetation
+            // back in only over the grassy mid-band.
+            let vegetated_band = (1.0 - alpine) * (1.0 - smoothstep(-0.02, 0.02, sea_h - h)) * coast;
+            land = mix(land, vegetated, veg_richness * vegetated_band);
+        }
 
         // Aridity bands: subtropical bands tend toward sand. Kept subtle so green dominates.
         let arid = smoothstep(0.08, 0.30, lat) * (1.0 - smoothstep(0.42, 0.68, lat));
@@ -252,15 +342,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let rocky = smoothstep(0.06, 0.28, slope);
         land = mix(land, u.mountain_color.rgb, rocky * 0.65);
 
-        // A subtle color noise breaks up the uniform palette so continents read as
+        // Fine-scale tint noise breaks up the palette so continents read as
         // patchy terrain rather than flat-fill polygons.
         let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
         land = land * (0.88 + tint_n * 0.24);
 
-        // Snow only on real peaks or polar regions.
+        // Snow on real peaks or polar regions. Suppress polar ice when there's
+        // no water on the planet — frost belongs to wet worlds.
         let snow_alt   = smoothstep(0.68, 0.92, above_amt);
         let snow_polar = smoothstep(ice_lat - 0.04, ice_lat + 0.03, lat);
-        let snow = clamp(snow_alt + snow_polar, 0.0, 1.0);
+        let dry_world  = step(u.planet_params.x, 0.15);
+        let snow = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
         surface = mix(land, u.snow_color.rgb, snow);
     } else {
         let depth = sea_h - h;
@@ -336,6 +428,33 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_tint = mix(vec3<f32>(0.93), u.atmosphere_color.rgb * 1.25, cloud_tint_amt * 0.7);
     let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92) * (1.0 + lining * 0.35);
     lit = mix(lit, cloud_lit, cloud_density * 0.85);
+
+    // ---------- City lights ----------
+    // High-population worlds glow on the night side. Sampled procedurally so
+    // populated regions cluster along coasts and along habitable mid-latitudes
+    // rather than uniformly. Visible only on land, on the dark hemisphere,
+    // not buried under cloud cover.
+    let population = u.world_features.y;
+    if (population > 0.02 && above_water) {
+        // Slight coast bias: brighter near shoreline (real cities cluster there),
+        // but inland cities should still glow at high pop.
+        let coast_bias = 0.45 + 0.55 * (1.0 - smoothstep(0.04, 0.35, above_amt));
+        // Latitudinal habitability — fewer cities at the poles.
+        let habit_lat = 1.0 - smoothstep(0.55, 0.95, lat);
+        // Two noise scales — large clusters then individual lights inside them.
+        let cluster_n = fbm(dir * 6.0  + u.seed_block.xyz + vec3<f32>(307.1, 53.7, 11.3), 4) * 0.5 + 0.5;
+        let pixel_n   = fbm(dir * 24.0 + u.seed_block.xyz + vec3<f32>(13.2, 91.7, 217.3), 3) * 0.5 + 0.5;
+        let clustered = smoothstep(0.48, 0.70, cluster_n);
+        let dotted    = smoothstep(0.45, 0.82, pixel_n);
+        let urban     = clustered * dotted * coast_bias * habit_lat;
+        // Only on the unlit side — pow(1 - n_dot_l, 3) so the terminator gets a
+        // gentle warm glow that grows into full sodium-orange lights at midnight.
+        let night_factor = pow(1.0 - n_dot_l, 3.0);
+        // Warm streetlight colour, scaled into HDR so the bloom pass picks up
+        // the densest cores as a soft halo.
+        let city_emit = vec3<f32>(1.0, 0.72, 0.34) * urban * population * night_factor * (1.0 - cloud_density) * 4.5;
+        lit = lit + city_emit;
+    }
 
     // The atmosphere pass adds Rayleigh + Mie in-scattering + tonemap, so this
     // shader stays in linear HDR. We only emit a faint night-side ambient so the

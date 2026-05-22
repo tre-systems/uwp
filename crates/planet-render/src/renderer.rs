@@ -32,6 +32,8 @@ struct Uniforms {
     misc: [f32; 4],
     /// x = width, y = height, z = aspect, w = planet_radius
     resolution: [f32; 4],
+    /// x = crater_density, y = population_intensity, z = vegetation_richness, w = surface_age
+    world_features: [f32; 4],
 }
 
 const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -554,6 +556,12 @@ impl Renderer {
                 self.config.height as f32,
                 self.camera.aspect,
                 1.0,
+            ],
+            world_features: [
+                self.params.crater_density,
+                self.params.population_intensity,
+                self.params.vegetation_richness,
+                self.params.surface_age,
             ],
         }
     }
