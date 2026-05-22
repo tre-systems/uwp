@@ -270,7 +270,7 @@ fn fs_main(in: VsOut) -> BgOut {
                             abs(n_axis.z) > 0.95);
         let e1 = normalize(cross(n_axis, helper));
         let e2 = cross(n_axis, e1);
-        let omega = 0.5 / pow(sat_r, 1.5);
+        let omega = 0.04 / pow(sat_r, 1.5);
         let theta = ph_h * TAU + time * omega;
         let sat_pos = (e1 * cos(theta) + e2 * sin(theta)) * sat_r;
 
