@@ -440,6 +440,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
         land = land * (0.88 + tint_n * 0.24);
 
+        // Beach: thin bright sand strip right at the waterline, applied AFTER
+        // vegetation/desert tint so it stays visible against forested coasts.
+        // Only on humid worlds — dry/barren coasts don't get the bright strip.
+        // This is the single biggest "satellite photo" cue a continent gets.
+        if (veg_richness > 0.05) {
+            let beach = 1.0 - smoothstep(0.0, 0.010, above_amt);
+            let beach_color = mix(u.sand_color.rgb, vec3<f32>(0.98, 0.92, 0.74), 0.45);
+            land = mix(land, beach_color, beach * 0.75);
+        }
+
         // ---------- Rivers ----------
         // Thin ridged-noise lines, confined to flat low-elevation valleys in
         // vegetated (= moisture-bearing) regions, suppressed in deserts. Not a
@@ -464,7 +474,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let dry_world  = step(u.planet_params.x, 0.15);
         snow = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
         let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
-        let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25);
+        // Thin dark leads/cracks through the ice cap — ridged-noise lines so
+        // the cap reads as a fractured ice sheet rather than a flat white blob.
+        let crack_n = ridged_fbm(dir * 22.0 + u.seed_block.xyz + vec3<f32>(41.0, 113.0, -57.0), 2);
+        let ice_cracks = smoothstep(0.86, 0.96, crack_n);
+        let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25) * (1.0 - ice_cracks * 0.50);
         surface = mix(land, ice_tone, snow);
     } else {
         let depth = sea_h - h;
