@@ -94,6 +94,15 @@ fn ridged_fbm(p_in: vec3<f32>, octaves: i32) -> f32 {
     return v / norm;
 }
 
+fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
+    let b = dot(orig, dir);
+    let c = dot(orig, orig) - radius * radius;
+    let h = b * b - c;
+    if (h < 0.0) { return vec2<f32>(-1.0, -1.0); }
+    let s = sqrt(h);
+    return vec2<f32>(-b - s, -b + s);
+}
+
 // Combined continental + ridged terrain field. Result is roughly in [-1, 1] so
 // downstream biome thresholds are predictable.
 //
@@ -126,9 +135,10 @@ struct VsIn {
 };
 
 struct VsOut {
-    @builtin(position) clip: vec4<f32>,
+    @builtin(position) position: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
     @location(1) sphere_dir: vec3<f32>,
+    @location(2) @interpolate(linear) ndc: vec2<f32>,
 };
 
 @vertex
@@ -145,20 +155,42 @@ fn vs_main(in: VsIn) -> VsOut {
     let world = (u.model * vec4<f32>(local_pos, 1.0)).xyz;
 
     var o: VsOut;
-    o.clip = u.view_proj * vec4<f32>(world, 1.0);
+    let clip = u.view_proj * vec4<f32>(world, 1.0);
+    o.position = clip;
     o.world_pos = world;
     o.sphere_dir = dir;
+    o.ndc = clip.xy / clip.w;
     return o;
 }
 
 // ---------- Fragment ----------
 // Output is HDR linear — the atmosphere pass tonemaps everything for display.
 
+fn surface_dir_from_screen(ndc: vec2<f32>, fallback: vec3<f32>) -> vec3<f32> {
+    let ndc_near = vec4<f32>(ndc, 0.0, 1.0);
+    let ndc_far  = vec4<f32>(ndc, 1.0, 1.0);
+    let w_near = u.inv_view_proj * ndc_near;
+    let w_far  = u.inv_view_proj * ndc_far;
+    let p_near = w_near.xyz / w_near.w;
+    let p_far  = w_far.xyz / w_far.w;
+    let ray_origin = u.camera_pos.xyz;
+    let ray_dir = normalize(p_far - p_near);
+
+    let hit = ray_sphere(ray_origin, ray_dir, u.resolution.w);
+    if (hit.x > 0.0) {
+        let world_hit = ray_origin + ray_dir * hit.x;
+        return normalize((transpose(u.model) * vec4<f32>(world_hit, 0.0)).xyz);
+    }
+
+    return normalize(fallback);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // Sample the procedural surface per pixel. Interpolating vertex elevation
-    // makes coastlines breathe as projected triangles rotate across the view.
-    let dir = normalize(in.sphere_dir);
+    // Sample the procedural surface from the actual view ray instead of from
+    // interpolated mesh attributes. That keeps continent scale stable across
+    // the globe while the mesh continues to provide depth and terrain relief.
+    let dir = surface_dir_from_screen(in.ndc, in.sphere_dir);
     let h = terrain_field(dir);
     let sea_h = u.planet_params.x * 2.0 - 1.0;
     let mountain_amp = u.planet_params.y;

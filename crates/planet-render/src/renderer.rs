@@ -519,7 +519,8 @@ impl Renderer {
         let cam_pos = self.camera.position();
 
         let sun_yaw = self.params.sun_angle * std::f32::consts::TAU;
-        let sun_dir = Vec3::new(sun_yaw.cos() * 0.85, 0.32, sun_yaw.sin() * 0.85).normalize();
+        // The UI's default/randomized angle range is authored around the viewer-facing side.
+        let sun_dir = Vec3::new(-sun_yaw.cos() * 0.85, 0.32, -sun_yaw.sin() * 0.85).normalize();
 
         let seed = seed_offsets(self.params.seed);
 
