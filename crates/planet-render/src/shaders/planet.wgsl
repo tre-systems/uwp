@@ -249,8 +249,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
 
     // Cast a soft shadow from clouds onto the surface by sampling the cloud field
-    // at a position offset toward the sun. Approximates clouds at altitude.
-    let cloud_shadow_dir = normalize(dir + sun_dir * 0.035);
+    // at a position offset toward the sun. Cloud noise is sampled in LOCAL planet
+    // space (so clouds rotate with the surface), but `sun_dir` is in WORLD space.
+    // Rotate the sun into the planet's local frame before mixing — otherwise the
+    // shadow offset is in the wrong reference frame and visibly slides over the
+    // surface as the planet rotates. `u.model` is a pure rotation, so its inverse
+    // is its transpose.
+    let sun_dir_local    = (transpose(u.model) * vec4<f32>(sun_dir, 0.0)).xyz;
+    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035);
     let cloud_p_shadow   = cloud_shadow_dir * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
     let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
     let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
