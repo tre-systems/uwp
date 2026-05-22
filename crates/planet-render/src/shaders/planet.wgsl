@@ -236,18 +236,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         surface = mix(surface, u.snow_color.rgb * 0.94, polar);
     }
 
-    // ---------- Lighting ----------
-    let ambient = u.atmosphere_color.rgb * 0.06 + vec3<f32>(0.015);
-    var lit = surface * (ambient + n_dot_l);
-
-    // Specular highlights on water
-    if (!above_water) {
-        let halfway = normalize(sun_dir + view_dir);
-        let spec = pow(max(dot(world_normal, halfway), 0.0), 80.0);
-        lit = lit + vec3<f32>(spec) * 0.65 * n_dot_l;
-    }
-
-    // ---------- Cloud layer ----------
+    // ---------- Cloud noise ----------
     // Sample a second noise field at a different frequency for cloud cover.
     // The smoothstep window is centred so coverage acts intuitively (0 = clear, 1 = overcast).
     let cloud_freq = u.planet_params.z * 2.4;
@@ -258,8 +247,39 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_low  = mix(0.85, 0.20, coverage);
     let cloud_high = mix(1.05, 0.55, coverage);
     let cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
-    let cloud_lit = vec3<f32>(1.0) * (ambient + n_dot_l * 1.05);
-    lit = mix(lit, cloud_lit, cloud_density * 0.85);
+
+    // Cast a soft shadow from clouds onto the surface by sampling the cloud field
+    // at a position offset toward the sun. Approximates clouds at altitude.
+    let cloud_shadow_dir = normalize(dir + sun_dir * 0.035);
+    let cloud_p_shadow   = cloud_shadow_dir * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
+    let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
+    let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
+    let shadow_factor    = 1.0 - cloud_shadow * 0.55;
+
+    // ---------- Lighting ----------
+    let ambient   = u.atmosphere_color.rgb * 0.06 + vec3<f32>(0.015);
+    let n_dot_l_s = n_dot_l * shadow_factor;
+    var lit = surface * (ambient + n_dot_l_s);
+
+    // Ocean: Fresnel sky reflection + tight specular sun spot.
+    if (!above_water) {
+        let cos_v = max(dot(world_normal, view_dir), 0.0);
+        let f0 = 0.02;
+        let fresnel = f0 + (1.0 - f0) * pow(1.0 - cos_v, 5.0);
+        let sky_tint = u.atmosphere_color.rgb * (0.55 + n_dot_l * 0.6);
+        lit = mix(lit, sky_tint, fresnel * 0.70);
+
+        let halfway = normalize(sun_dir + view_dir);
+        let spec = pow(max(dot(world_normal, halfway), 0.0), 110.0);
+        lit = lit + vec3<f32>(spec) * 1.4 * n_dot_l_s;
+    }
+
+    // ---------- Cloud composite ----------
+    // Cloud "silver lining": mid-density edges read brighter than the dense centre.
+    let lining = smoothstep(0.18, 0.45, cloud_density)
+                * (1.0 - smoothstep(0.5, 0.85, cloud_density));
+    let cloud_lit = vec3<f32>(1.0) * (ambient + n_dot_l * 1.05) * (1.0 + lining * 0.45);
+    lit = mix(lit, cloud_lit, cloud_density * 0.88);
 
     // The atmosphere pass adds Rayleigh + Mie in-scattering + tonemap, so this
     // shader stays in linear HDR. We only emit a faint night-side ambient so the
