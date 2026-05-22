@@ -161,7 +161,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let phase_m_den = (2.0 + g2) * pow(max(1.0 + g2 - 2.0 * G_MIE * mu, 0.0001), 1.5);
     let phase_m = (3.0 / (8.0 * PI)) * phase_m_num / phase_m_den;
 
-    let sun_intensity = 17.0;
+    let sun_intensity = 11.0;
     let scatter = sun_intensity *
         (in_scatter_r * beta_r * phase_r + in_scatter_m * beta_m * phase_m);
 
@@ -169,13 +169,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let final_trans = exp(-(beta_r * od_view.x + beta_m * od_view.y));
     var final_color = planet_color * final_trans + scatter;
 
-    // Cheap lens bloom: 12 taps in two rings around this pixel, extract values
-    // above a soft threshold, average, and add back. Smears the brightest HDR
-    // pixels (specular sun spot on water, lit cloud tops, atmospheric forward-
-    // scatter near the sun limb) into a soft halo before tonemapping.
-    //
-    // textureSampleLevel is used (rather than textureSample) because loop iterations
-    // count as non-uniform control flow for the implicit-derivative version.
+    // Cheap lens bloom: 12 taps in two rings, extract values above an HDR
+    // threshold, average, and add back. Threshold pushed past sRGB-1.0 so only
+    // genuine HDR highlights (sun glint on water, atmospheric forward-scatter
+    // near the sun limb) contribute — keeps the limb halo from haloing all the
+    // continents near the edge.
     let texel = 1.0 / u.resolution.xy;
     var bloom = vec3<f32>(0.0);
     let r_outer = 9.0;
@@ -186,13 +184,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let s1 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_inner * texel, 0.0).rgb;
         let s2 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_outer * texel, 0.0).rgb;
         bloom = bloom
-            + max(s1 - vec3<f32>(0.85), vec3<f32>(0.0)) * 0.65
-            + max(s2 - vec3<f32>(0.85), vec3<f32>(0.0)) * 0.35;
+            + max(s1 - vec3<f32>(1.05), vec3<f32>(0.0)) * 0.65
+            + max(s2 - vec3<f32>(1.05), vec3<f32>(0.0)) * 0.35;
     }
     bloom = bloom / 12.0;
-    // Also bloom the in-scatter — atmospheric forward-peak is HDR-bright at the limb.
-    bloom = bloom + max(scatter - vec3<f32>(0.8), vec3<f32>(0.0)) * 0.35;
-    final_color = final_color + bloom * 0.85;
+    bloom = bloom + max(scatter - vec3<f32>(1.4), vec3<f32>(0.0)) * 0.30;
+    final_color = final_color + bloom * 0.45;
 
     return vec4<f32>(aces(final_color), 1.0);
 }

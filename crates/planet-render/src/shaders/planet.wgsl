@@ -129,7 +129,6 @@ struct VsOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
     @location(1) sphere_dir: vec3<f32>,
-    @location(2) elevation: f32,
 };
 
 @vertex
@@ -149,7 +148,6 @@ fn vs_main(in: VsIn) -> VsOut {
     o.clip = u.view_proj * vec4<f32>(world, 1.0);
     o.world_pos = world;
     o.sphere_dir = dir;
-    o.elevation = h;
     return o;
 }
 
@@ -158,8 +156,10 @@ fn vs_main(in: VsIn) -> VsOut {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    // Sample the procedural surface per pixel. Interpolating vertex elevation
+    // makes coastlines breathe as projected triangles rotate across the view.
     let dir = normalize(in.sphere_dir);
-    let h = in.elevation;
+    let h = terrain_field(dir);
     let sea_h = u.planet_params.x * 2.0 - 1.0;
     let mountain_amp = u.planet_params.y;
     let above_water = h > sea_h;
@@ -268,12 +268,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var lit = surface * (ambient + n_dot_l_s);
 
     // Ocean: Fresnel sky reflection + tight specular sun spot.
+    // Fresnel mix kept modest so the limb doesn't read as a bright ring of sky.
     if (!above_water) {
         let cos_v = max(dot(world_normal, view_dir), 0.0);
         let f0 = 0.02;
         let fresnel = f0 + (1.0 - f0) * pow(1.0 - cos_v, 5.0);
-        let sky_tint = u.atmosphere_color.rgb * (0.55 + n_dot_l * 0.6);
-        lit = mix(lit, sky_tint, fresnel * 0.70);
+        let sky_tint = u.atmosphere_color.rgb * (0.45 + n_dot_l * 0.5);
+        lit = mix(lit, sky_tint, fresnel * 0.45);
 
         let halfway = normalize(sun_dir + view_dir);
         let spec = pow(max(dot(world_normal, halfway), 0.0), 110.0);
