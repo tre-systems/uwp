@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest'
+import { parseUwp, parseUwpDigits, uwpToCode } from './uwp'
+
+describe('parseUwpDigits', () => {
+  it('parses a complete UWP code into editable digit state', () => {
+    expect(parseUwpDigits('A867974-D')).toEqual({
+      starport: 'A',
+      size: 8,
+      atm: 6,
+      hydro: 7,
+      pop: 9,
+      gov: 7,
+      law: 4,
+      tech: 13,
+    })
+  })
+
+  it('supports live starport-only editing', () => {
+    expect(parseUwpDigits('B')).toEqual({
+      starport: 'B',
+      size: 0,
+      atm: 0,
+      hydro: 0,
+      pop: 0,
+      gov: 0,
+      law: 0,
+      tech: 0,
+    })
+  })
+
+  it('accepts body-only codes with the default starport', () => {
+    expect(uwpToCode(parseUwpDigits('867974-D')!)).toBe('A867974-D')
+  })
+
+  it('rejects invalid body and tech digits', () => {
+    expect(parseUwpDigits('??')).toBeNull()
+    expect(parseUwpDigits('A867974-?')).toBeNull()
+    expect(parseUwpDigits('A867974-DD')).toBeNull()
+  })
+
+  it('clamps fields that have UWP table maxima below F', () => {
+    expect(parseUwpDigits('AFACF0-F')).toMatchObject({
+      size: 10,
+      atm: 10,
+      hydro: 10,
+      pop: 12,
+      tech: 15,
+    })
+  })
+})
+
+describe('parseUwp', () => {
+  it('extracts the visual fields used by the renderer mapping', () => {
+    expect(parseUwp('A867974-D')).toEqual({
+      size: 8,
+      atm: 6,
+      hydro: 7,
+      pop: 9,
+    })
+  })
+
+  it('rejects invalid visual fields', () => {
+    expect(parseUwp('AX67974-D')).toBeNull()
+  })
+})

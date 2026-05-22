@@ -1,3 +1,5 @@
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
@@ -22,7 +24,7 @@ impl Planet {
     pub async fn create(canvas: HtmlCanvasElement) -> Result<Planet, JsValue> {
         let inner = renderer::Renderer::new(canvas)
             .await
-            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(Planet { inner })
     }
 
@@ -51,6 +53,6 @@ impl Planet {
         // multipliers like 0.015 read as per-second, not per-millisecond).
         self.inner
             .render((time_ms * 0.001) as f32)
-            .map_err(|e| JsValue::from_str(&format!("{e}")))
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

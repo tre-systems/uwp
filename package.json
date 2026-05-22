@@ -9,7 +9,9 @@
     "dev": "npm run build:wasm:dev && vite",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run build:wasm:dev && tsc --noEmit",
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
@@ -22,6 +24,10 @@
     "vite": "^6",
     "vite-plugin-pwa": "^0.21",
     "vite-plugin-top-level-await": "^1",
-    "vite-plugin-wasm": "^3"
+    "vite-plugin-wasm": "^3",
+    "vitest": "^4.1.7"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

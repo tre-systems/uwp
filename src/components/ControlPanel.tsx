@@ -17,6 +17,7 @@ import {
   uwpHex,
   uwpToCode,
 } from '../state'
+import { useEffect, useState } from 'preact/hooks'
 import { Slider } from './Slider'
 
 interface UwpSliderProps {
@@ -55,6 +56,12 @@ export function ControlPanel() {
   const open = panelOpen.value
   const toggle = () => (panelOpen.value = !panelOpen.value)
   const codeText = uwpToCode(u)
+  const [draftCode, setDraftCode] = useState(codeText)
+  const codeValid = parseUwpDigits(draftCode) !== null
+
+  useEffect(() => {
+    setDraftCode(codeText)
+  }, [codeText])
 
   return (
     <>
@@ -81,15 +88,17 @@ export function ControlPanel() {
           <div class="uwp-row">
             <input
               type="text"
-              class={`uwp-input ${parseUwpDigits(codeText) ? '' : 'invalid'}`}
-              value={codeText}
+              class={`uwp-input ${codeValid ? '' : 'invalid'}`}
+              value={draftCode}
               spellcheck={false}
               autocapitalize="characters"
               placeholder="A867974-D"
               onInput={(e) => {
                 const v = (e.currentTarget as HTMLInputElement).value
+                setDraftCode(v)
                 setUwpFromCode(v)
               }}
+              onBlur={() => setDraftCode(codeText)}
             />
           </div>
           <div class="uwp-legend">

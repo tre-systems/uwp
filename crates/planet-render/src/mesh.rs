@@ -22,12 +22,12 @@ pub fn cubesphere(resolution: u32) -> MeshData {
 
     // Six (right, up) basis pairs — `forward` is right × up so the face points outward.
     let faces: [(Vec3, Vec3); 6] = [
-        (Vec3::Z, Vec3::Y),                 // +X
-        (Vec3::NEG_Z, Vec3::Y),             // -X
-        (Vec3::X, Vec3::NEG_Z),             // +Y (top)
-        (Vec3::X, Vec3::Z),                 // -Y (bottom)
-        (Vec3::NEG_X, Vec3::Y),             // +Z
-        (Vec3::X, Vec3::Y),                 // -Z
+        (Vec3::Z, Vec3::Y),     // +X
+        (Vec3::NEG_Z, Vec3::Y), // -X
+        (Vec3::X, Vec3::NEG_Z), // +Y (top)
+        (Vec3::X, Vec3::Z),     // -Y (bottom)
+        (Vec3::NEG_X, Vec3::Y), // +Z
+        (Vec3::X, Vec3::Y),     // -Z
     ];
 
     let mut vertices = Vec::with_capacity(6 * n * n);

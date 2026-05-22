@@ -5,32 +5,6 @@
 // colors, lights with a directional sun, layers procedural clouds, and adds a
 // Fresnel atmosphere rim. Output is linear; framebuffer is sRGB so gamma is automatic.
 
-struct Uniforms {
-    view_proj:       mat4x4<f32>,
-    inv_view_proj:   mat4x4<f32>,
-    model:           mat4x4<f32>,
-    camera_pos:      vec4<f32>,
-    sun_dir:         vec4<f32>,
-    ocean_color:     vec4<f32>,
-    land_color:      vec4<f32>,
-    mountain_color:  vec4<f32>,
-    sand_color:      vec4<f32>,
-    snow_color:      vec4<f32>,
-    atmosphere_color:vec4<f32>,
-    // xyz = seed offsets, w = ice latitude (0..1)
-    seed_block:      vec4<f32>,
-    // x = sea_level, y = mountain_amp, z = noise_freq, w = noise_octaves
-    planet_params:   vec4<f32>,
-    // x = atmosphere_density, y = time, z = cloud_coverage, w = -
-    misc:            vec4<f32>,
-    // x = width, y = height, z = aspect, w = planet radius
-    resolution:      vec4<f32>,
-    // x = crater_density, y = population_intensity, z = vegetation_richness, w = surface_age
-    world_features:  vec4<f32>,
-};
-
-@group(0) @binding(0) var<uniform> u: Uniforms;
-
 // ---------- Noise ----------
 
 fn hash3(p: vec3<f32>) -> vec3<f32> {
@@ -509,32 +483,59 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let luma = dot(surface, vec3<f32>(0.299, 0.587, 0.114));
     surface = mix(surface, vec3<f32>(luma), 0.07);
 
-    // ---------- Cloud noise ----------
-    // Latitudinal banding: compress longitude sampling so clouds form east-west
-    // streaks rather than isotropic blobs. Strength varies from "barely there"
-    // for thin atmospheres up to "pure Jupiter stripes" for atm F (unusual).
+    // ---------- Cloud noise (3-layer system) ----------
+    // Three distinct layers at different altitudes, each with its own scale,
+    // structure and drift direction. Sampled with view-based parallax so the
+    // upper layers sit visibly above the lower deck near the limb (where the
+    // 3D depth becomes obvious).
+    //
+    // Latitudinal banding compresses longitude sampling for east-west streaks
+    // rather than isotropic blobs. Strength varies from "barely there" on
+    // thin atmospheres up to "pure Jupiter stripes" for atm F.
     let cloud_freq = u.planet_params.z * 2.4;
     let cloud_off  = u.seed_block.xyz + vec3<f32>(213.7, 71.0, -109.4);
     let banding    = u.world_features.w;
-    let band_x     = 1.0 - sqrt(banding) * 0.95;       // 1.0 at banding=0, ~0.05 at banding=1
+    let band_x     = 1.0 - sqrt(banding) * 0.95;
     let band_warp  = vec3<f32>(band_x, 1.0, band_x);
-    let cloud_p    = dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
-    let cloud_raw  = fbm(cloud_p, 5) * 0.5 + 0.5;
     let coverage   = u.misc.z;
+    let time       = u.misc.y;
+
+    // Sun direction in local (planet-spinning) frame — used by both the
+    // shadow trace and the volumetric self-shadow.
+    let sun_dir_local = (transpose(u.model) * vec4<f32>(sun_dir, 0.0)).xyz;
+
+    // View ray in local frame — drives parallax offsets between cloud layers.
+    let view_dir_local = (transpose(u.model) * vec4<f32>(view_dir, 0.0)).xyz;
+
+    // Domain-warp field — shared across the main + mid cloud layers so the
+    // two read as a coherent system (the mid layer breaks where the main
+    // deck breaks) instead of two unrelated noise patterns laid on top of
+    // each other. This is the single biggest "real clouds" cue: turns
+    // round fbm blobs into fluid swirly fronts and cells.
+    let warp_seed = u.seed_block.xyz;
+    let cloud_warp = vec3<f32>(
+        fbm(dir * 1.7 + warp_seed + vec3<f32>(31.0,   0.0,   0.0), 3),
+        fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,  91.0,   0.0), 3),
+        fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,   0.0,  47.0), 3),
+    ) * 0.14;
+
+    // -- Main cumulus deck (lowest visible layer) --
+    // Domain-warped fbm + ridged_fbm gives the deck billowy cumulus tops
+    // rather than uniform fuzz.
+    let main_dir = dir + cloud_warp;
+    let cloud_p = main_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+    let cloud_smooth = fbm(cloud_p, 5) * 0.5 + 0.5;
+    let cloud_billow = ridged_fbm(cloud_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 3);
+    let cloud_raw = cloud_smooth * 0.62 + cloud_billow * 0.38;
     let cloud_low  = mix(0.85, 0.20, coverage);
     let cloud_high = mix(1.05, 0.55, coverage);
     let cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
 
-    // Cast a soft shadow from clouds onto the surface by sampling the cloud field
-    // at a position offset toward the sun. Cloud noise is sampled in LOCAL planet
-    // space (so clouds rotate with the surface), but `sun_dir` is in WORLD space.
-    // Rotate the sun into the planet's local frame before mixing — otherwise the
-    // shadow offset is in the wrong reference frame and visibly slides over the
-    // surface as the planet rotates. `u.model` is a pure rotation, so its inverse
-    // is its transpose.
-    let sun_dir_local    = (transpose(u.model) * vec4<f32>(sun_dir, 0.0)).xyz;
-    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035);
-    let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
+    // Cast a soft shadow from clouds onto the surface by sampling the cloud
+    // field offset toward the sun in local frame. Reuse the same warp so the
+    // shadow tracks the actual cloud shape rather than the unwarped field.
+    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp;
+    let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
     let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
     let shadow_factor    = 1.0 - cloud_shadow * 0.55;
@@ -560,44 +561,65 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         lit = lit + vec3<f32>(spec) * 0.9 * n_dot_l_s;
     }
 
-    // ---------- Cloud composite ----------
-    // Sample the cloud field a second time at a slightly higher "altitude"
-    // (offset toward the sun in local space). If that upper layer is dense,
-    // this pixel is sitting under a cloud and should read darker — gives
-    // clouds a 3D volume feel rather than a flat painted layer.
-    let upper_dir = normalize(dir + sun_dir_local * 0.020);
-    let upper_p = upper_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
-    let upper_raw = fbm(upper_p, 4) * 0.5 + 0.5;
-    let upper_density = smoothstep(cloud_low, cloud_high, upper_raw);
-    let cloud_self_shadow = 1.0 - upper_density * 0.55;
-
-    // Silver lining: mid-density edges read brighter than the dense centre.
-    // Cloud peak brightness kept under sRGB-1.0 so the bloom pass can't latch
-    // onto the lit cloud tops and smear them into a giant white blob.
-    //
-    // Tint the cloud body toward the atmosphere colour as density rises — at
-    // Earth-ish density (≤ 0.6) clouds are white-ish, but for thick exotic
-    // atmospheres (Venus's sulfuric, dense tainted) the clouds pick up the
-    // atmosphere's hue instead of reading generic-white.
-    let lining = smoothstep(0.18, 0.45, cloud_density)
-                * (1.0 - smoothstep(0.5, 0.85, cloud_density));
+    // ---------- Cloud composite (3 layers, bottom-up) ----------
     let atm_d = u.misc.x;
     let cloud_tint_amt = smoothstep(0.55, 1.10, atm_d);
     let cloud_tint = mix(vec3<f32>(0.93), u.atmosphere_color.rgb * 1.25, cloud_tint_amt * 0.7);
-    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow) * (1.0 + lining * 0.35);
-    lit = mix(lit, cloud_lit, cloud_density * 0.85);
 
-    // High-altitude cirrus — thin, wispy, drifts faster than the main deck.
-    // Only meaningful on worlds with enough atmosphere; uses tighter band
-    // compression to read as stretched streaks at higher altitude.
+    // -- Main cumulus deck (volumetric self-shadow) --
+    // Sample the cloud field offset toward the sun in local space — if the
+    // upper layer is dense, this pixel is sitting under a cloud and reads
+    // darker. Gives the deck volume rather than a flat painted layer.
+    let upper_dir = normalize(dir + sun_dir_local * 0.020) + cloud_warp;
+    let upper_p = upper_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+    let upper_smooth = fbm(upper_p, 4) * 0.5 + 0.5;
+    let upper_billow = ridged_fbm(upper_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 2);
+    let upper_density = smoothstep(cloud_low, cloud_high, upper_smooth * 0.62 + upper_billow * 0.38);
+    let cloud_self_shadow = 1.0 - upper_density * 0.55;
+
+    // Silver lining: mid-density edges read brighter than the dense centre.
+    let lining = smoothstep(0.18, 0.45, cloud_density)
+                * (1.0 - smoothstep(0.5, 0.85, cloud_density));
+    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow) * (1.0 + lining * 0.35);
+    lit = mix(lit, cloud_lit, cloud_density * 0.88);
+
+    // -- Mid-altitude broken cumulus (NEW layer) --
+    // Smaller-cell cumulus mass between the main deck and the cirrus, with a
+    // different drift direction so the layers visibly slide past each other.
+    // View-based parallax offset puts it 2-3% of planet radius "above" the
+    // main deck — at oblique view angles (near the limb) the layers visibly
+    // separate, which sells the 3D depth.
+    if (atm_d > 0.15 && coverage > 0.04) {
+        let mid_band = vec3<f32>(band_x * 0.85, 1.0, band_x * 0.85);
+        let mid_parallax = view_dir_local * 0.025;
+        let mid_dir = normalize(dir + mid_parallax) + cloud_warp * 0.7;
+        let mid_p = mid_dir * mid_band * cloud_freq * 1.55
+                  + cloud_off + vec3<f32>(time * 0.022, 0.0, time * 0.006);
+        let mid_smooth = fbm(mid_p, 4) * 0.5 + 0.5;
+        let mid_ridge  = ridged_fbm(mid_p * 1.5, 2);
+        let mid_raw = mid_smooth * 0.55 + mid_ridge * 0.45;
+        let mid_low  = mix(0.88, 0.45, coverage);
+        let mid_high = mix(1.00, 0.62, coverage);
+        let mid_density = smoothstep(mid_low, mid_high, mid_raw) * 0.7;
+        let mid_color = mix(vec3<f32>(0.96), cloud_tint, 0.55);
+        let mid_lit = mid_color * (ambient + n_dot_l * 0.95);
+        lit = mix(lit, mid_lit, mid_density);
+    }
+
+    // -- High-altitude cirrus --
+    // Thin streaky high layer with stronger east-west compression and a more
+    // aggressive parallax offset (further from the surface than the mid layer).
+    // Only meaningful on worlds with enough atmosphere.
     if (atm_d > 0.20 && coverage > 0.05) {
-        let cirrus_warp = vec3<f32>(band_x * 0.6, 1.0, band_x * 0.6);
-        let cirrus_p = dir * cirrus_warp * cloud_freq * 1.7 + cloud_off
-                     + vec3<f32>(u.misc.y * 0.030, 0.0, u.misc.y * 0.018);
+        let cirrus_band = vec3<f32>(band_x * 0.55, 1.0, band_x * 0.55);
+        let cirrus_parallax = view_dir_local * 0.055;
+        let cirrus_dir = normalize(dir + cirrus_parallax);
+        let cirrus_p = cirrus_dir * cirrus_band * cloud_freq * 1.75
+                     + cloud_off + vec3<f32>(time * 0.030, 0.0, time * 0.018);
         let cirrus_raw = fbm(cirrus_p, 4) * 0.5 + 0.5;
-        let cirrus_low = mix(0.78, 0.45, coverage);
-        let cirrus_high = mix(0.95, 0.68, coverage);
-        let cirrus_density = smoothstep(cirrus_low, cirrus_high, cirrus_raw) * 0.55;
+        let cirrus_low = mix(0.74, 0.42, coverage);
+        let cirrus_high = mix(0.94, 0.66, coverage);
+        let cirrus_density = smoothstep(cirrus_low, cirrus_high, cirrus_raw) * 0.65;
         let cirrus_color = mix(vec3<f32>(1.0), u.atmosphere_color.rgb * 1.2, cloud_tint_amt * 0.4);
         let cirrus_lit = cirrus_color * (ambient + n_dot_l * 0.95);
         lit = mix(lit, cirrus_lit, cirrus_density);

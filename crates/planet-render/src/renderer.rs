@@ -1,8 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
 use std::borrow::Cow;
-use wgpu::util::DeviceExt;
 use web_sys::HtmlCanvasElement;
+use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
 use crate::mesh::{cubesphere, Vertex};
@@ -69,6 +69,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, String> {
+        let _ = canvas;
+        Err("planet-render only supports browser WebGPU canvas surfaces on wasm32".to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
     pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, String> {
         let width = canvas.width().max(1);
         let height = canvas.height().max(1);
@@ -89,7 +96,9 @@ impl Renderer {
                 compatible_surface: Some(&surface),
             })
             .await
-            .ok_or_else(|| "No suitable GPU adapter found. This browser may not support WebGPU.".to_string())?;
+            .ok_or_else(|| {
+                "No suitable GPU adapter found. This browser may not support WebGPU.".to_string()
+            })?;
 
         let (device, queue) = adapter
             .request_device(
@@ -219,19 +228,15 @@ impl Renderer {
         // Shaders
         let planet_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("planet.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/planet.wgsl"))),
+            source: shader_with_common(include_str!("shaders/planet.wgsl")),
         });
         let background_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("background.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/background.wgsl"
-            ))),
+            source: shader_with_common(include_str!("shaders/background.wgsl")),
         });
         let atmosphere_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("atmosphere.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/atmosphere.wgsl"
-            ))),
+            source: shader_with_common(include_str!("shaders/atmosphere.wgsl")),
         });
 
         let vertex_layout = wgpu::VertexBufferLayout {
@@ -444,7 +449,7 @@ impl Renderer {
         let dt = if self.last_time == 0.0 {
             0.0
         } else {
-            (time - self.last_time).max(0.0).min(0.1)
+            (time - self.last_time).clamp(0.0, 0.1)
         };
         self.last_time = time;
         self.rotation_t += dt * self.params.auto_rotate;
@@ -657,6 +662,14 @@ fn create_atmosphere_bind_group(
 
 fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {
     [c[0], c[1], c[2], 1.0]
+}
+
+fn shader_with_common(source: &'static str) -> wgpu::ShaderSource<'static> {
+    wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
+        "{}\n{}",
+        include_str!("shaders/common.wgsl"),
+        source
+    )))
 }
 
 /// Derive a per-seed axial tilt (axis in the XZ plane + angle 0..~35°) so

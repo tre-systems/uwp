@@ -5,26 +5,6 @@
 //     final = planet * transmittance + in_scatter
 // Finally tonemaps to display.
 
-struct Uniforms {
-    view_proj:       mat4x4<f32>,
-    inv_view_proj:   mat4x4<f32>,
-    model:           mat4x4<f32>,
-    camera_pos:      vec4<f32>,
-    sun_dir:         vec4<f32>,
-    ocean_color:     vec4<f32>,
-    land_color:      vec4<f32>,
-    mountain_color:  vec4<f32>,
-    sand_color:      vec4<f32>,
-    snow_color:      vec4<f32>,
-    atmosphere_color:vec4<f32>,
-    seed_block:      vec4<f32>,
-    planet_params:   vec4<f32>,
-    misc:            vec4<f32>,
-    resolution:      vec4<f32>,
-    world_features:  vec4<f32>,
-};
-
-@group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var scene_color: texture_2d<f32>;
 @group(1) @binding(1) var scene_sampler: sampler;
 @group(1) @binding(2) var scene_depth: texture_depth_2d;
