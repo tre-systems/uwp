@@ -96,14 +96,25 @@ fn ridged_fbm(p_in: vec3<f32>, octaves: i32) -> f32 {
 
 // Combined continental + ridged terrain field. Result is roughly in [-1, 1] so
 // downstream biome thresholds are predictable.
+//
+// Continents are domain-warped so coastlines flow organically instead of reading
+// as round noise-blobs. The shaping curve (pow(|x|, 0.85)) pushes the histogram
+// slightly bi-modal for clearer ocean/land separation.
 fn terrain_field(dir: vec3<f32>) -> f32 {
     let freq = u.planet_params.z;
     let oct  = i32(u.planet_params.w);
     let off  = u.seed_block.xyz;
     let p = dir * freq + off;
-    let continents = fbm(p, oct);                                  // ~[-1, 1]
-    let ridges     = ridged_fbm(p * 2.7 + vec3<f32>(13.7, 91.3, 47.1), max(oct - 1, 2)); // ~[0, 1]
-    // Push continents toward bi-modal (clearer ocean / land split) and add ridge detail.
+
+    let warp = vec3<f32>(
+        fbm(p * 0.55 + vec3<f32>( 0.0,  17.3, 0.0), 3),
+        fbm(p * 0.55 + vec3<f32>(43.1,   0.0, 0.0), 3),
+        fbm(p * 0.55 + vec3<f32>( 0.0,   0.0, 71.9), 3),
+    ) * 0.45;
+    let pw = p + warp;
+
+    let continents = fbm(pw, oct);
+    let ridges     = ridged_fbm(pw * 2.7 + vec3<f32>(13.7, 91.3, 47.1), max(oct - 1, 2));
     let shaped = sign(continents) * pow(abs(continents), 0.85);
     return clamp(shaped * 0.85 + (ridges - 0.55) * 0.30, -1.0, 1.0);
 }
@@ -167,10 +178,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     // Slope only contributes above water — the ocean surface is smooth.
     var local_normal: vec3<f32>;
+    var slope: f32 = 0.0;
     if (above_water) {
         let dx = (max(ht - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / eps;
         let dy = (max(hb - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / eps;
         local_normal = normalize(dir - tangent * dx - bitangent * dy);
+        slope = 1.0 - clamp(dot(local_normal, dir), 0.0, 1.0);
     } else {
         local_normal = dir;
     }
@@ -197,6 +210,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Aridity bands: subtropical bands tend toward sand. Kept subtle so green dominates.
         let arid = smoothstep(0.08, 0.30, lat) * (1.0 - smoothstep(0.42, 0.68, lat));
         land = mix(land, u.sand_color.rgb, arid * 0.22);
+
+        // Steep slopes read as exposed rock regardless of elevation — gives cliffs,
+        // valleys, river banks a believable rocky texture.
+        let rocky = smoothstep(0.06, 0.28, slope);
+        land = mix(land, u.mountain_color.rgb, rocky * 0.65);
+
+        // A subtle color noise breaks up the uniform palette so continents read as
+        // patchy terrain rather than flat-fill polygons.
+        let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
+        land = land * (0.88 + tint_n * 0.24);
 
         // Snow only on real peaks or polar regions.
         let snow_alt   = smoothstep(0.68, 0.92, above_amt);
