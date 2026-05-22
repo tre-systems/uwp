@@ -197,6 +197,16 @@ impl Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -369,6 +379,7 @@ impl Renderer {
             &atmosphere_bind_group_layout,
             &scene_view,
             &scene_sampler,
+            &depth_view,
         );
 
         let camera = Camera::new(width as f32 / height as f32);
@@ -416,6 +427,7 @@ impl Renderer {
             &self.atmosphere_bind_group_layout,
             &self.scene_view,
             &self.scene_sampler,
+            &self.depth_view,
         );
         self.camera.aspect = width as f32 / height as f32;
     }
@@ -589,7 +601,10 @@ fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Te
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        // TEXTURE_BINDING so the atmosphere pass can sample depth and cap
+        // its scattering integration at the nearest opaque scene object
+        // (otherwise scattering bleeds onto moons in front of the atmosphere).
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
@@ -618,6 +633,7 @@ fn create_atmosphere_bind_group(
     layout: &wgpu::BindGroupLayout,
     view: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
+    depth_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("atmosphere_bind_group"),
@@ -630,6 +646,10 @@ fn create_atmosphere_bind_group(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(depth_view),
             },
         ],
     })

@@ -27,6 +27,7 @@ struct Uniforms {
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var scene_color: texture_2d<f32>;
 @group(1) @binding(1) var scene_sampler: sampler;
+@group(1) @binding(2) var scene_depth: texture_depth_2d;
 
 const PI: f32 = 3.141592653589793;
 const ATMO_REL_THICKNESS: f32 = 0.075;
@@ -123,9 +124,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let t_planet = ray_sphere(ray_origin, ray_dir, r_planet);
     let hit_planet = t_planet.x > 0.0;
+
+    // Cap integration at whatever opaque scene object is at this pixel
+    // (the depth buffer holds the closest hit from the background+planet
+    // passes). Without this, scattering bleeds through moons/rings/satellites
+    // that sit between the camera and the planet's atmosphere shell.
+    let pix = vec2<i32>(in.clip.xy);
+    let scene_d = textureLoad(scene_depth, pix, 0);
+    let ndc_at_d = vec4<f32>(in.ndc.x, in.ndc.y, scene_d, 1.0);
+    let w_at_d = u.inv_view_proj * ndc_at_d;
+    let scene_world = w_at_d.xyz / w_at_d.w;
+    let scene_dist = length(scene_world - ray_origin);
+
     let t_start = max(t_atmo.x, 0.0);
-    let t_end = select(t_atmo.y, t_planet.x, hit_planet);
+    var t_end = select(t_atmo.y, t_planet.x, hit_planet);
+    t_end = min(t_end, scene_dist);
     if (t_end <= t_start) {
+        // Nothing to integrate (scene object is in front of the atmosphere
+        // shell, or the planet hits before atmosphere entry).
         return vec4<f32>(aces(planet_color), 1.0);
     }
 

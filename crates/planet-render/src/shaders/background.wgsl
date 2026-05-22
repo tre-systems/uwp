@@ -57,6 +57,42 @@ fn hash31(p: vec3<f32>) -> f32 {
     return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
 }
 
+// Smooth value noise — trilinear interp over hash31 lattice. Output [0, 1].
+fn value_noise3(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = p - i;
+    let s = f * f * (3.0 - 2.0 * f);
+    let n000 = hash31(i + vec3<f32>(0.0, 0.0, 0.0));
+    let n100 = hash31(i + vec3<f32>(1.0, 0.0, 0.0));
+    let n010 = hash31(i + vec3<f32>(0.0, 1.0, 0.0));
+    let n110 = hash31(i + vec3<f32>(1.0, 1.0, 0.0));
+    let n001 = hash31(i + vec3<f32>(0.0, 0.0, 1.0));
+    let n101 = hash31(i + vec3<f32>(1.0, 0.0, 1.0));
+    let n011 = hash31(i + vec3<f32>(0.0, 1.0, 1.0));
+    let n111 = hash31(i + vec3<f32>(1.0, 1.0, 1.0));
+    let nx00 = mix(n000, n100, s.x);
+    let nx10 = mix(n010, n110, s.x);
+    let nx01 = mix(n001, n101, s.x);
+    let nx11 = mix(n011, n111, s.x);
+    let nxy0 = mix(nx00, nx10, s.y);
+    let nxy1 = mix(nx01, nx11, s.y);
+    return mix(nxy0, nxy1, s.z);
+}
+
+fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
+    var p = p_in;
+    var sum = 0.0;
+    var amp = 0.5;
+    var norm = 0.0;
+    for (var i: i32 = 0; i < octaves; i = i + 1) {
+        sum = sum + amp * value_noise3(p);
+        norm = norm + amp;
+        amp = amp * 0.5;
+        p = p * 2.07;
+    }
+    return sum / norm;
+}
+
 fn hash21(p: vec2<f32>) -> f32 {
     var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
     p3 = p3 + dot(p3, p3.yzx + 33.33);
@@ -163,10 +199,23 @@ fn fs_main(in: VsOut) -> BgOut {
         if (t > 0.0 && t < best_t) {
             let hit_pos = ray_origin + ray_dir * t;
             let n = normalize(hit_pos - moon_pos);
+            // Moon surface — multi-octave noise on the unit normal gives
+            // continental-scale dark maria, mid-scale pockmarks, fine grain.
+            // Stratified into highlands (bright) and maria (dark) regions
+            // like Earth's Moon.
+            let surf_seed = vec3<f32>(idx * 13.7, idx * 7.3, idx * 19.1);
+            let h_low = fbm3(n * 1.8 + surf_seed, 3);
+            let h_mid = fbm3(n * 6.0 + surf_seed * 1.3, 3);
+            let h_hi  = fbm3(n * 18.0 + surf_seed * 0.9, 2);
+            let maria_factor = smoothstep(0.42, 0.65, h_low) * 0.85;
+            let highland = vec3<f32>(0.66, 0.62, 0.56);
+            let maria    = vec3<f32>(0.24, 0.22, 0.20);
+            let base_tone = mix(highland, maria, maria_factor);
+            // Pockmark texture darkens patches like rough cratered terrain.
+            let pock = (h_mid - 0.5) * 0.30 + (h_hi - 0.5) * 0.18;
+            let surface = base_tone * (1.0 + pock);
             let n_dot_l = max(dot(n, sun_dir), 0.0);
-            let crater = hash31(n * 24.0) * 0.12;
-            let tone = mix(vec3<f32>(0.55, 0.52, 0.48), vec3<f32>(0.42, 0.40, 0.38), crater);
-            best_color = tone * (n_dot_l * 0.95 + 0.04);
+            best_color = surface * (n_dot_l * 0.95 + 0.03);
             best_t = t;
             has_hit = true;
         }
