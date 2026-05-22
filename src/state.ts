@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals'
 
 export const errorMessage = signal<string | null>(null)
-export const panelOpen = signal(true)
+export const panelOpen = signal(false)
 
 export interface Params {
   seed: number
@@ -25,7 +25,7 @@ export interface Params {
 export const defaultParams: Params = {
   seed: 1337,
   sea_level: 0.52,
-  mountain_height: 0.14,
+  mountain_height: 0.05,
   noise_frequency: 1.5,
   noise_octaves: 7,
   atmosphere_density: 0.45,
@@ -61,7 +61,7 @@ export function randomize() {
     ...params.value,
     seed: Math.floor(Math.random() * 0xFFFFFFFF),
     sea_level: rand(0.35, 0.7),
-    mountain_height: rand(0.08, 0.32),
+    mountain_height: rand(0.03, 0.12),
     noise_frequency: rand(1.2, 2.6),
     noise_octaves: Math.floor(rand(5, 9)),
     cloud_coverage: rand(0.15, 0.7),

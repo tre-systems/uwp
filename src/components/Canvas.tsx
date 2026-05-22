@@ -21,8 +21,11 @@ export function Canvas() {
 
     const sizeCanvas = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      const w = Math.max(1, Math.floor(canvas.clientWidth * dpr))
-      const h = Math.max(1, Math.floor(canvas.clientHeight * dpr))
+      // Fall back to viewport size if the canvas hasn't been laid out yet.
+      const cw = canvas.clientWidth || window.innerWidth
+      const ch = canvas.clientHeight || window.innerHeight
+      const w = Math.max(1, Math.floor(cw * dpr))
+      const h = Math.max(1, Math.floor(ch * dpr))
       if (canvas.width !== w) canvas.width = w
       if (canvas.height !== h) canvas.height = h
       planet?.resize(w, h)
@@ -30,6 +33,7 @@ export function Canvas() {
 
     const ro = new ResizeObserver(sizeCanvas)
     ro.observe(canvas)
+    window.addEventListener('resize', sizeCanvas)
 
     let lastPointer = { x: 0, y: 0 }
     let dragging = false
@@ -73,9 +77,12 @@ export function Canvas() {
           planet.free?.()
           return
         }
+        // After Planet.create, force a resize to the current canvas dims so the
+        // wgpu surface is in sync (handles the case where layout settled after
+        // Planet.create's initial read of canvas.width).
+        planet.resize(canvas.width, canvas.height)
         planet.setParams({ ...params.value })
         disposeSignal = effect(() => {
-          // Read .value inside the effect so it re-runs on changes.
           planet?.setParams({ ...params.value })
         })
         const loop = (t: number) => {
@@ -100,6 +107,7 @@ export function Canvas() {
       cancelAnimationFrame(raf)
       disposeSignal?.()
       ro.disconnect()
+      window.removeEventListener('resize', sizeCanvas)
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', endDrag)

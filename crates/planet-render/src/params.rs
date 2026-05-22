@@ -25,7 +25,7 @@ impl Default for PlanetParams {
         Self {
             seed: 1337,
             sea_level: 0.52,
-            mountain_height: 0.14,
+            mountain_height: 0.05,
             noise_frequency: 1.5,
             noise_octaves: 7,
             atmosphere_density: 0.45,
