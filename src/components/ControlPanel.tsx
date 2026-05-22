@@ -71,7 +71,7 @@ export function ControlPanel() {
 
       <aside class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open}>
         <header class="panel-header">
-          <h1>Planetto</h1>
+          <h1>UWP</h1>
           <div class="panel-actions">
             <button onClick={randomizeUwp}>Randomize</button>
             <button class="ghost" onClick={resetUwp}>Reset</button>

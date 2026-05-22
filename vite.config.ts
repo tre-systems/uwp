@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Planetto',
-        short_name: 'Planetto',
-        description: 'Procedural 3D planets, rendered with WebGPU.',
+        name: 'UWP',
+        short_name: 'UWP',
+        description: 'Procedural 3D planets driven by Cepheus/legacy 2d6 UWP codes, rendered with WebGPU.',
         theme_color: '#05070d',
         background_color: '#05070d',
         display: 'standalone',

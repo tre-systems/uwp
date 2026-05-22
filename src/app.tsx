@@ -13,7 +13,7 @@ export function App() {
           <h2>Can't start the renderer</h2>
           <p>{error}</p>
           <p class="hint">
-            Planetto needs WebGPU. Try Chrome, Edge, or Safari 18+. In Firefox you'll need
+            UWP needs WebGPU. Try Chrome, Edge, or Safari 18+. In Firefox you'll need
             to enable <code>dom.webgpu.enabled</code> in about:config.
           </p>
         </div>
