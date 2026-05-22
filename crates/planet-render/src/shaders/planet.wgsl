@@ -158,6 +158,40 @@ fn craters(dir: vec3<f32>) -> f32 {
     return (big + mid + pit) * density;
 }
 
+// 3D Voronoi for plate-tectonics emulation. Returns (F1, F2): distance to the
+// nearest "plate centre" and to the second-nearest. Points where F1 ≈ F2 sit
+// on a plate boundary — that's where real mountain chains form when plates
+// converge. We use jittered grid cells (same scheme as craters) so the
+// boundary network forms irregular polygons across the sphere.
+fn plate_voronoi(p: vec3<f32>) -> vec2<f32> {
+    let ip = floor(p);
+    let fp = fract(p);
+    var f1 = 9.0;
+    var f2 = 9.0;
+    for (var z = -1; z <= 1; z = z + 1) {
+        for (var y = -1; y <= 1; y = y + 1) {
+            for (var x = -1; x <= 1; x = x + 1) {
+                let offs = vec3<f32>(f32(x), f32(y), f32(z));
+                let cell = ip + offs;
+                let jitter = vec3<f32>(
+                    hash3_s(cell),
+                    hash3_s(cell + vec3<f32>(31.7, 17.3, 9.1)),
+                    hash3_s(cell + vec3<f32>(71.1, 43.1, 19.7))
+                );
+                let p_cell = offs + jitter;
+                let d = length(p_cell - fp);
+                if (d < f1) {
+                    f2 = f1;
+                    f1 = d;
+                } else if (d < f2) {
+                    f2 = d;
+                }
+            }
+        }
+    }
+    return vec2<f32>(f1, f2);
+}
+
 fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
     let b = dot(orig, dir);
     let c = dot(orig, orig) - radius * radius;
@@ -190,8 +224,34 @@ fn terrain_field(dir: vec3<f32>) -> f32 {
     let ridges     = ridged_fbm(pw * 2.7 + vec3<f32>(13.7, 91.3, 47.1), max(oct - 1, 2));
     let shaped = sign(continents) * pow(abs(continents), 0.85);
     let base = shaped * 0.85 + (ridges - 0.55) * 0.30;
+
+    // Plate-boundary uplift. Voronoi (F2 - F1) is small where two plates
+    // meet; we narrow that band into a thin ridge and gate it by a low-freq
+    // noise so most of the cell network stays silent — only a few segments
+    // become real mountain chains (Andes/Himalaya shape). The chain is
+    // additionally suppressed underwater so the Voronoi grid doesn't show
+    // through deep ocean as a visible lattice.
+    let plate_p = dir * 2.4 + off * 0.6;
+    // Domain-warp the Voronoi input with a low-freq noise field so the
+    // boundary lines bend organically — without this they read as the
+    // straight piecewise edges of a Voronoi diagram, not real ranges.
+    let plate_warp = vec3<f32>(
+        fbm(plate_p * 0.6 + vec3<f32>( 23.0,   7.0,  91.0), 3),
+        fbm(plate_p * 0.6 + vec3<f32>(-41.0,  53.0,  17.0), 3),
+        fbm(plate_p * 0.6 + vec3<f32>( 67.0, -29.0, -83.0), 3),
+    ) * 0.55;
+    let pv = plate_voronoi(plate_p + plate_warp);
+    let boundary = pv.y - pv.x;
+    let plate_ridge = pow(1.0 - smoothstep(0.0, 0.10, boundary), 2.5);
+    let chain_gate = smoothstep(-0.05, 0.45, fbm(dir * 1.3 + off * 1.3, 2));
+    let land_factor = smoothstep(-0.1, 0.25, base);
+    // Fine ridge perturbation so the crest itself isn't a clean curve.
+    let crest_jitter = (fbm(dir * 18.0 + off * 0.9, 2) * 0.5 + 0.5);
+    let plate_h = plate_ridge * chain_gate * (0.03 + land_factor * 0.15)
+                * (0.75 + crest_jitter * 0.5);
+
     let crater = craters(dir);
-    return clamp(base + crater, -1.0, 1.0);
+    return clamp(base + plate_h + crater, -1.0, 1.0);
 }
 
 // ---------- Vertex ----------
@@ -215,7 +275,8 @@ fn vs_main(in: VsIn) -> VsOut {
     let sea_h        = u.planet_params.x * 2.0 - 1.0;
     let mountain_amp = u.planet_params.y;
     let above        = max(h - sea_h, 0.0);
-    let radius       = 1.0 + above * mountain_amp;
+    let base_radius  = u.resolution.w;
+    let radius       = base_radius + above * mountain_amp * base_radius;
     let local_pos    = dir * radius;
 
     let world = (u.model * vec4<f32>(local_pos, 1.0)).xyz;
@@ -310,11 +371,25 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ice_lat = u.seed_block.w;
 
     // ---------- Biome colour ----------
+    // These three drive both colour AND which areas can host cities — hoisted
+    // to function scope so the population pass can read them.
+    var alpine: f32 = 0.0;
+    var snow: f32 = 0.0;
+    var desert_mask: f32 = 0.0;
+
     var surface: vec3<f32>;
     if (above_water) {
         let coast  = smoothstep(0.0, 0.025, above_amt);
-        // Alpine threshold pushed high so the bulk of land reads as land/grass.
-        let alpine = smoothstep(0.35, 0.70, above_amt);
+        // Per-area variable thresholds — snow line and tree line both wobble
+        // across the surface so caps and forests don't all cut off at exactly
+        // the same elevation. Some mountains stay green higher; others go bare
+        // earlier; some peaks have snow caps, others don't.
+        let snow_jitter = fbm(dir * 4.0 + u.seed_block.xyz + vec3<f32>(303.0, 71.0, -19.0), 2) * 0.18;
+        let tree_line_n = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(-49.0, 113.0, 67.0), 2);
+        let tree_line   = 0.28 + tree_line_n * 0.10;
+        let veg_top     = 1.0 - smoothstep(tree_line, tree_line + 0.12, above_amt);
+
+        alpine = smoothstep(0.36, 0.70, above_amt);
         let base_land = mix(u.sand_color.rgb, u.land_color.rgb, coast);
         var land = mix(base_land, u.mountain_color.rgb, alpine);
 
@@ -337,17 +412,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let savanna  = mix(u.land_color.rgb, u.sand_color.rgb, 0.75);
             var vegetated = mix(forest, grass, smoothstep(-0.55, 0.15, combined));
             vegetated = mix(vegetated, savanna, smoothstep(0.20, 0.65, combined));
-            let vegetated_band = (1.0 - alpine) * coast;
+            // Vegetation lives below the tree line and along the coast — above
+            // that it gives way to bare alpine rock.
+            let vegetated_band = veg_top * coast;
             land = mix(land, vegetated, veg_richness * vegetated_band);
         }
 
-        // Big desert zones — large low-freq noise carves out unambiguous arid
-        // continents (Sahara, Australian outback). Combined with the
-        // latitudinal aridity for that "subtropical dry belt" look.
+        // Desert placement: subtropical bands (Hadley-cell aridity) + occasional
+        // Sahara-scale patches + continental-interior dryness (places far from
+        // the ocean run drier — Gobi, Outback). The interior term is gated by
+        // latitude so polar regions don't pretend to be deserts.
         let desert_zone = fbm(dir * 0.9 + u.seed_block.xyz + vec3<f32>(-19.4, 78.1, 31.6), 3) * 0.5 + 0.5;
         let lat_arid = smoothstep(0.08, 0.30, lat) * (1.0 - smoothstep(0.42, 0.68, lat));
         let big_desert = smoothstep(0.62, 0.82, desert_zone);
-        let desert_mask = clamp(lat_arid * 0.5 + big_desert * 0.8, 0.0, 1.0);
+        let interior_n = fbm(dir * 1.0 + u.seed_block.xyz + vec3<f32>(157.0, -41.0, 89.0), 3);
+        let interior_dry = smoothstep(0.15, 0.55, interior_n);
+        desert_mask = clamp(lat_arid * 0.50 + big_desert * 0.75 + interior_dry * lat_arid * 0.55, 0.0, 1.0);
         land = mix(land, u.sand_color.rgb, desert_mask * (1.0 - alpine) * coast * (0.5 + veg_richness * 0.3));
 
         // Steep slopes read as exposed rock regardless of elevation — gives cliffs,
@@ -360,15 +440,29 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
         land = land * (0.88 + tint_n * 0.24);
 
-        // Snow on real peaks or polar regions. Suppress polar ice when there's
-        // no water on the planet — frost belongs to wet worlds. Polar caps get
-        // a noise-driven jagged edge and brightness variation so they read as
-        // natural ice sheets rather than a uniform white cap.
-        let snow_alt   = smoothstep(0.68, 0.92, above_amt);
+        // ---------- Rivers ----------
+        // Thin ridged-noise lines, confined to flat low-elevation valleys in
+        // vegetated (= moisture-bearing) regions, suppressed in deserts. Not a
+        // flow simulation — just a believable hint of waterways where they'd
+        // plausibly form. Requires the planet to have some surface water at
+        // all (sea_level > 0.2) so we don't draw rivers on Mars.
+        if (veg_richness > 0.10 && u.planet_params.x > 0.20) {
+            let river_n = ridged_fbm(dir * 16.0 + u.seed_block.xyz + vec3<f32>(91.0, -17.0, 41.0), 3);
+            let river_line = smoothstep(0.88, 0.96, river_n);
+            let in_valley  = 1.0 - smoothstep(0.0, 0.15, slope);
+            let lowland    = 1.0 - smoothstep(0.05, 0.40, above_amt);
+            let river = river_line * in_valley * lowland * (1.0 - desert_mask) * veg_richness * 0.9;
+            land = mix(land, u.ocean_color.rgb * 1.6, clamp(river, 0.0, 0.7));
+        }
+
+        // Snow on real peaks or polar regions. Snow line elevation jitters per
+        // area (snow_jitter) so caps don't all sit at the same height. Suppress
+        // polar ice on dry worlds — frost belongs to wet planets.
+        let snow_alt   = smoothstep(0.62 + snow_jitter, 0.86 + snow_jitter, above_amt);
         let polar_jitter = fbm(dir * 4.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), 3) * 0.05;
         let snow_polar = smoothstep(ice_lat - 0.05 + polar_jitter, ice_lat + 0.04 + polar_jitter, lat);
         let dry_world  = step(u.planet_params.x, 0.15);
-        let snow = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
+        snow = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
         let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
         let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25);
         surface = mix(land, ice_tone, snow);
@@ -387,6 +481,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let polar = smoothstep(ice_lat - 0.015, ice_lat + 0.04, lat);
         surface = mix(surface, u.snow_color.rgb * 0.94, polar);
     }
+
+    // ---------- Dirty up ----------
+    // Subtle layered noise so the surface reads closer to a satellite photo
+    // than to a flat-shaded globe: patchy warm-dust tint at mid scale, fine
+    // grunge multiplier, and a small global desaturation.
+    let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), 3);
+    let dirt_hi  = fbm(dir * 26.0 + u.seed_block.xyz + vec3<f32>(7.0, 53.0, -113.0), 2);
+    let warm_dirt = vec3<f32>(1.08, 0.95, 0.82);
+    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * 0.18;
+    surface = mix(surface, surface * warm_dirt, patch_amt);
+    surface = surface * (1.0 + dirt_hi * 0.07);
+    let luma = dot(surface, vec3<f32>(0.299, 0.587, 0.114));
+    surface = mix(surface, vec3<f32>(luma), 0.07);
 
     // ---------- Cloud noise ----------
     // Latitudinal banding: compress longitude sampling so clouds form east-west
@@ -499,7 +606,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let pixel_n   = fbm(dir * 24.0 + u.seed_block.xyz + vec3<f32>(13.2, 91.7, 217.3), 3) * 0.5 + 0.5;
         let clustered = smoothstep(0.48, 0.70, cluster_n);
         let dotted    = smoothstep(0.45, 0.82, pixel_n);
-        let urban     = clustered * dotted * coast_bias * habit_lat;
+        // Habitability gate — cities don't form on Himalayan peaks, in the
+        // middle of the Sahara, or on permanent ice caps. Multiplied in so
+        // these regions go dark even on a populous, high-tech world.
+        let habitable_terrain = (1.0 - alpine) * (1.0 - desert_mask * 0.85) * (1.0 - snow);
+        let urban     = clustered * dotted * coast_bias * habit_lat * habitable_terrain;
         // Only on the unlit side — pow(1 - n_dot_l, 3) so the terminator gets a
         // gentle warm glow that grows into full sodium-orange lights at midnight.
         let night_factor = pow(1.0 - n_dot_l, 3.0);

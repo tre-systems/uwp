@@ -49,7 +49,11 @@ impl Camera {
         self.pitch = (self.pitch + dy).clamp(-1.45, 1.45);
     }
 
-    pub fn dolly(&mut self, delta: f32) {
-        self.distance = (self.distance * (1.0 + delta * 0.0015)).clamp(1.35, 12.0);
+    pub fn dolly(&mut self, delta: f32, planet_radius: f32) {
+        // Min distance scales with the rendered planet so the camera never
+        // clips inside a super-Earth and we can still zoom right in on an
+        // asteroid-sized world.
+        let min_dist = (planet_radius * 1.4).max(0.25);
+        self.distance = (self.distance * (1.0 + delta * 0.0015)).clamp(min_dist, 12.0);
     }
 }

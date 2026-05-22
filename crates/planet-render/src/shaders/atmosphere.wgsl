@@ -29,8 +29,7 @@ struct Uniforms {
 @group(1) @binding(1) var scene_sampler: sampler;
 
 const PI: f32 = 3.141592653589793;
-const R_PLANET: f32 = 1.0;
-const R_ATMO: f32 = 1.075;
+const ATMO_REL_THICKNESS: f32 = 0.075;
 const VIEW_STEPS: i32 = 16;
 const LIGHT_STEPS: i32 = 6;
 const SCALE_R: f32 = 0.024;
@@ -56,10 +55,10 @@ fn density_at(h: f32) -> vec2<f32> {
 
 // Optical depth from `pos` toward the sun (or until the ray would exit the atmosphere).
 // Returns vec2(1e9) when the planet body blocks the sun (terminator shadow).
-fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>) -> vec2<f32> {
-    let t_atmo = ray_sphere(pos, sun, R_ATMO);
+fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>, r_planet: f32, r_atmo: f32) -> vec2<f32> {
+    let t_atmo = ray_sphere(pos, sun, r_atmo);
     if (t_atmo.y < 0.0) { return vec2<f32>(0.0); }
-    let t_planet = ray_sphere(pos, sun, R_PLANET);
+    let t_planet = ray_sphere(pos, sun, r_planet);
     if (t_planet.x > 0.0) { return vec2<f32>(1e9); }
 
     let dt = t_atmo.y / f32(LIGHT_STEPS);
@@ -67,7 +66,7 @@ fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>) -> vec2<f32> {
     for (var i: i32 = 0; i < LIGHT_STEPS; i = i + 1) {
         let t = (f32(i) + 0.5) * dt;
         let p = pos + sun * t;
-        let h = length(p) - R_PLANET;
+        let h = length(p) - r_planet;
         od = od + density_at(h) * dt;
     }
     return od;
@@ -113,13 +112,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.ndc.x * 0.5 + 0.5, in.ndc.y * -0.5 + 0.5);
     let planet_color = textureSample(scene_color, scene_sampler, uv).rgb;
 
-    let t_atmo = ray_sphere(ray_origin, ray_dir, R_ATMO);
+    let r_planet = u.resolution.w;
+    let r_atmo = r_planet + ATMO_REL_THICKNESS * r_planet;
+
+    let t_atmo = ray_sphere(ray_origin, ray_dir, r_atmo);
     if (t_atmo.y < 0.0) {
         // Ray misses atmosphere entirely — just tonemap the scene as-is.
         return vec4<f32>(aces(planet_color), 1.0);
     }
 
-    let t_planet = ray_sphere(ray_origin, ray_dir, R_PLANET);
+    let t_planet = ray_sphere(ray_origin, ray_dir, r_planet);
     let hit_planet = t_planet.x > 0.0;
     let t_start = max(t_atmo.x, 0.0);
     let t_end = select(t_atmo.y, t_planet.x, hit_planet);
@@ -142,11 +144,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     for (var i: i32 = 0; i < VIEW_STEPS; i = i + 1) {
         let t = t_start + (f32(i) + 0.5) * dt;
         let p = ray_origin + ray_dir * t;
-        let h = length(p) - R_PLANET;
+        let h = length(p) - r_planet;
         let d = density_at(h) * dt;
         od_view = od_view + d;
 
-        let od_light = light_optical_depth(p, sun_dir);
+        let od_light = light_optical_depth(p, sun_dir, r_planet, r_atmo);
         let tau = beta_r * (od_view.x + od_light.x) + beta_m * (od_view.y + od_light.y);
         let trans = exp(-tau);
 

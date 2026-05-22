@@ -267,6 +267,7 @@ export interface Params {
   population_intensity: number
   vegetation_richness: number
   atm_banding: number
+  planet_radius: number
 }
 
 export const defaultParams: Params = {
@@ -283,13 +284,14 @@ export const defaultParams: Params = {
   sand_color: [0.86, 0.76, 0.52],
   snow_color: [0.97, 0.98, 1.0],
   ice_latitude: 0.82,
-  sun_angle: 0.55,
+  sun_angle: 0.45,
   auto_rotate: 0.05,
   cloud_coverage: 0.22,
   crater_density: 0.0,
   population_intensity: 0.0,
   vegetation_richness: 0.65,
   atm_banding: 0.0,
+  planet_radius: 1.0,
 }
 
 export const params = signal<Params>({ ...defaultParams })
@@ -472,7 +474,10 @@ function atmoConfig(atm: number): AtmoConfig {
 export function applyUwp(code: string): boolean {
   const parsed = parseUwp(code)
   if (!parsed) return false
-  const { atm, hydro, pop } = parsed
+  const { size, atm, hydro, pop } = parsed
+  // Tech level pulled separately — parseUwp doesn't include it.
+  const techDigits = parseUwpDigits(code)
+  const tech = techDigits ? techDigits.tech : 0
   const atmo = atmoConfig(atm)
   const palette = paletteForUwp(atm, hydro)
   // Hydrographics digit (0-A) -> sea_level. 0=desert, A=almost all water.
@@ -492,10 +497,20 @@ export function applyUwp(code: string): boolean {
 
   // Population intensity (city lights). Pop digit 0=none through C=billions.
   // Need a vaguely habitable atmosphere — corrosive/insidious worlds don't get
-  // bright surface lights even if technically populated.
+  // bright surface lights even if technically populated. Tech level gates how
+  // much light the population actually emits at night — pre-industrial worlds
+  // (TL <= 3) are dark, electric grid only ramps up from TL 4 onward.
   const popDigit = pop
   const habitableAtm = atm >= 2 && atm <= 9 && atm !== 11 && atm !== 12
-  const population_intensity = habitableAtm ? Math.max(0, popDigit - 5) / 7 : 0
+  const tech_factor = Math.max(0, Math.min(1, (tech - 2) / 5))
+  const population_intensity = habitableAtm
+    ? (Math.max(0, popDigit - 5) / 7) * tech_factor
+    : 0
+
+  // Size digit drives the rendered planet radius — asteroid (0) through
+  // super-Earth (10). Clamped to a visible minimum so size-0 worlds still
+  // show as a dot rather than vanishing.
+  const planet_radius = Math.max(0.18, size / 8)
 
   // Atmospheric latitudinal banding. Thin atmospheres show no bands; Earth-like
   // atmospheres show subtle jet-stream bands; dense / tainted atmospheres get
@@ -518,6 +533,7 @@ export function applyUwp(code: string): boolean {
     vegetation_richness,
     population_intensity,
     atm_banding,
+    planet_radius,
     ...palette,
   }
   return true
@@ -539,6 +555,6 @@ export function randomize() {
     cloud_coverage: rand(0.15, 0.7),
     ice_latitude: rand(0.65, 0.92),
     atmosphere_density: rand(0.35, 0.85),
-    sun_angle: rand(0.42, 0.68),
+    sun_angle: rand(0.40, 0.52),
   }
 }

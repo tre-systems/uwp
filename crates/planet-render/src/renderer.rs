@@ -422,7 +422,7 @@ impl Renderer {
     }
 
     pub fn zoom(&mut self, delta: f32) {
-        self.camera.dolly(delta);
+        self.camera.dolly(delta, self.params.planet_radius);
     }
 
     pub fn render(&mut self, time: f32) -> Result<(), String> {
@@ -515,7 +515,14 @@ impl Renderer {
     }
 
     fn build_uniforms(&self, time: f32) -> Uniforms {
-        let model = Mat4::from_quat(Quat::from_rotation_y(self.rotation_t));
+        // Spin around the planet's local Y, then apply a seed-derived tilt so
+        // each world has its own axial inclination instead of standing
+        // bolt-upright. Quat multiply applies right-to-left: spin first, tilt
+        // wraps the result.
+        let (tilt_axis, tilt_angle) = seed_to_tilt(self.params.seed);
+        let tilt = Quat::from_axis_angle(tilt_axis, tilt_angle);
+        let spin = Quat::from_rotation_y(self.rotation_t);
+        let model = Mat4::from_quat(tilt * spin);
         let view_proj = self.camera.view_proj();
         let inv_view_proj = view_proj.inverse();
         let cam_pos = self.camera.position();
@@ -555,7 +562,7 @@ impl Renderer {
                 self.config.width as f32,
                 self.config.height as f32,
                 self.camera.aspect,
-                1.0,
+                self.params.planet_radius,
             ],
             world_features: [
                 self.params.crater_density,
@@ -627,6 +634,21 @@ fn create_atmosphere_bind_group(
 
 fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {
     [c[0], c[1], c[2], 1.0]
+}
+
+/// Derive a per-seed axial tilt (axis in the XZ plane + angle 0..~35°) so
+/// each world leans in its own direction.
+fn seed_to_tilt(seed: u32) -> (Vec3, f32) {
+    let mut s = seed.wrapping_mul(2246822519).wrapping_add(0x9E3779B9);
+    let mut h = || -> f32 {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        ((s >> 8) as f32) / 16_777_216.0
+    };
+    let angle = h() * 35f32.to_radians();
+    let dir = h() * std::f32::consts::TAU;
+    (Vec3::new(dir.cos(), 0.0, dir.sin()), angle)
 }
 
 /// Hash a u32 seed into three independent noise offsets so each seed produces

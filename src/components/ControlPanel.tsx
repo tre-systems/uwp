@@ -1,8 +1,6 @@
 import {
   ATM_DESC,
-  GOV_DESC,
   HYDRO_DESC,
-  LAW_DESC,
   panelOpen,
   params,
   parseUwpDigits,
@@ -147,20 +145,6 @@ export function ControlPanel() {
             max={12}
             descriptions={POP_DESC}
             onChange={(v) => setUwpField('pop', v)}
-          />
-          <UwpSlider
-            label="Government"
-            value={u.gov}
-            max={15}
-            descriptions={GOV_DESC}
-            onChange={(v) => setUwpField('gov', v)}
-          />
-          <UwpSlider
-            label="Law level"
-            value={u.law}
-            max={15}
-            descriptions={LAW_DESC}
-            onChange={(v) => setUwpField('law', v)}
           />
           <UwpSlider
             label="Tech level"

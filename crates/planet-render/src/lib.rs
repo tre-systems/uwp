@@ -45,9 +45,12 @@ impl Planet {
         self.inner.zoom(delta);
     }
 
-    pub fn render(&mut self, time: f64) -> Result<(), JsValue> {
+    pub fn render(&mut self, time_ms: f64) -> Result<(), JsValue> {
+        // requestAnimationFrame hands us milliseconds; the renderer works in
+        // seconds (so dt fits the .min(0.1) tab-switch clamp and cloud drift
+        // multipliers like 0.015 read as per-second, not per-millisecond).
         self.inner
-            .render(time as f32)
+            .render((time_ms * 0.001) as f32)
             .map_err(|e| JsValue::from_str(&format!("{e}")))
     }
 }

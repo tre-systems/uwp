@@ -22,6 +22,7 @@ pub struct PlanetParams {
     pub population_intensity: f32,
     pub vegetation_richness: f32,
     pub atm_banding: f32,
+    pub planet_radius: f32,
 }
 
 impl Default for PlanetParams {
@@ -40,13 +41,14 @@ impl Default for PlanetParams {
             sand_color: [0.86, 0.76, 0.52],
             snow_color: [0.97, 0.98, 1.0],
             ice_latitude: 0.82,
-            sun_angle: 0.55,
+            sun_angle: 0.45,
             auto_rotate: 0.05,
             cloud_coverage: 0.22,
             crater_density: 0.0,
             population_intensity: 0.0,
             vegetation_richness: 0.65,
             atm_banding: 0.0,
+            planet_radius: 1.0,
         }
     }
 }
