@@ -249,14 +249,30 @@ fn fs_main(in: VsOut) -> BgOut {
     for (var i: i32 = 0; i < 14; i = i + 1) {
         if (i >= n_sats) { break; }
         let idx = f32(i + 100) + u.seed_block.x * 0.041 + u.seed_block.y * 0.077;
-        let r_h = hash11(idx * 5.7);
-        let lat_h = hash11(idx * 11.3 + 1.1);
-        let lon_h = hash11(idx * 17.1 + 2.7);
+        let r_h    = hash11(idx * 5.7);
+        let inc_h  = hash11(idx * 11.3 + 1.1);
+        let node_h = hash11(idx * 17.1 + 2.7);
+        let ph_h   = hash11(idx * 23.9 + 5.3);
         let sat_r = planet_radius * mix(1.08, 1.35, r_h);
-        let lat = (lat_h - 0.5) * 3.14159;
-        let lon = lon_h * TAU + time * (0.45 / sat_r);
-        let cl = cos(lat); let sl = sin(lat);
-        let sat_pos = vec3<f32>(cl * cos(lon), sl, cl * sin(lon)) * sat_r;
+
+        // Proper great-circle orbit in a randomly oriented plane through the
+        // planet's centre. n_axis is the orbital normal (angular-momentum
+        // direction), uniformly distributed over the sphere. The satellite
+        // traces position = R * (e1*cos θ + e2*sin θ) where e1,e2 span the
+        // orbital plane. Angular speed follows Kepler's third law (ω ∝ 1/r^1.5)
+        // so outer satellites orbit slower than inner ones.
+        let cos_inc = 2.0 * inc_h - 1.0;
+        let sin_inc = sqrt(max(0.0, 1.0 - cos_inc * cos_inc));
+        let node_a = node_h * TAU;
+        let n_axis = vec3<f32>(sin_inc * cos(node_a), cos_inc, sin_inc * sin(node_a));
+        let helper = select(vec3<f32>(0.0, 0.0, 1.0),
+                            vec3<f32>(1.0, 0.0, 0.0),
+                            abs(n_axis.z) > 0.95);
+        let e1 = normalize(cross(n_axis, helper));
+        let e2 = cross(n_axis, e1);
+        let omega = 0.5 / pow(sat_r, 1.5);
+        let theta = ph_h * TAU + time * omega;
+        let sat_pos = (e1 * cos(theta) + e2 * sin(theta)) * sat_r;
 
         let sat_clip = u.view_proj * vec4<f32>(sat_pos, 1.0);
         if (sat_clip.w <= 0.0) { continue; }
