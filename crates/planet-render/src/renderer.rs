@@ -304,7 +304,10 @@ impl Renderer {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
+                // Background now writes per-pixel depth for raymarched
+                // moons / rings / satellites so the planet mesh occludes them
+                // correctly (and they occlude each other).
+                depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Always,
                 stencil: Default::default(),
                 bias: Default::default(),
