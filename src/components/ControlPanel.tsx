@@ -1,12 +1,62 @@
-import { applyUwp, panelOpen, params, parseUwp, randomize, reset, updateParams, uwpInput } from '../state'
+import {
+  ATM_DESC,
+  GOV_DESC,
+  HYDRO_DESC,
+  LAW_DESC,
+  panelOpen,
+  params,
+  parseUwpDigits,
+  POP_DESC,
+  randomizeUwp,
+  resetUwp,
+  setUwpField,
+  setUwpFromCode,
+  SIZE_DESC,
+  STARPORT_OPTIONS,
+  TECH_DESC,
+  updateParams,
+  uwp,
+  uwpHex,
+  uwpToCode,
+} from '../state'
 import { Slider } from './Slider'
-import { ColorInput } from './ColorInput'
+
+interface UwpSliderProps {
+  label: string
+  value: number
+  max: number
+  descriptions: readonly string[]
+  onChange: (v: number) => void
+}
+
+function UwpSlider({ label, value, max, descriptions, onChange }: UwpSliderProps) {
+  const desc = descriptions[value] ?? ''
+  return (
+    <div class="uwp-slider">
+      <div class="uwp-slider-row">
+        <span class="uwp-slider-label">{label}</span>
+        <span class="uwp-slider-code">{uwpHex(value)}</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={max}
+        step={1}
+        value={value}
+        onInput={(e) => onChange(parseInt((e.currentTarget as HTMLInputElement).value, 10))}
+      />
+      <div class="uwp-slider-desc">{desc}</div>
+    </div>
+  )
+}
 
 export function ControlPanel() {
   // Accessing .value inside JSX subscribes the component to changes.
+  const u = uwp.value
   const p = params.value
   const open = panelOpen.value
   const toggle = () => (panelOpen.value = !panelOpen.value)
+  const codeText = uwpToCode(u)
 
   return (
     <>
@@ -23,79 +73,129 @@ export function ControlPanel() {
         <header class="panel-header">
           <h1>Planetto</h1>
           <div class="panel-actions">
-            <button onClick={randomize}>Randomize</button>
-            <button class="ghost" onClick={reset}>Reset</button>
+            <button onClick={randomizeUwp}>Randomize</button>
+            <button class="ghost" onClick={resetUwp}>Reset</button>
           </div>
         </header>
 
         <section>
-          <h2>UWP</h2>
+          <h2>UWP code</h2>
           <div class="uwp-row">
             <input
               type="text"
-              class={`uwp-input ${parseUwp(uwpInput.value) ? '' : 'invalid'}`}
-              value={uwpInput.value}
+              class={`uwp-input ${parseUwpDigits(codeText) ? '' : 'invalid'}`}
+              value={codeText}
               spellcheck={false}
               autocapitalize="characters"
               placeholder="A867974-D"
-              onInput={(e) => (uwpInput.value = (e.currentTarget as HTMLInputElement).value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyUwp(uwpInput.value)
+              onInput={(e) => {
+                const v = (e.currentTarget as HTMLInputElement).value
+                setUwpFromCode(v)
               }}
             />
-            <button onClick={() => applyUwp(uwpInput.value)}>Apply</button>
           </div>
-          <div class="uwp-legend">size · atm · hydro from positions 2–4</div>
+          <div class="uwp-legend">
+            Starport · Size · Atmosphere · Hydrographics · Pop · Gov · Law — Tech
+          </div>
         </section>
 
         <section>
-          <h2>Geology</h2>
-          <Slider label="Seed" value={p.seed} min={0} max={0xffffffff} step={1}
-                  format={(v) => v.toFixed(0)}
-                  onInput={(v) => updateParams({ seed: v })} />
-          <Slider label="Sea level" value={p.sea_level} min={0.1} max={0.9}
-                  onInput={(v) => updateParams({ sea_level: v })} />
-          <Slider label="Mountains" value={p.mountain_height} min={0} max={0.18}
-                  onInput={(v) => updateParams({ mountain_height: v })} />
-          <Slider label="Detail" value={p.noise_frequency} min={0.6} max={3.6}
-                  onInput={(v) => updateParams({ noise_frequency: v })} />
-          <Slider label="Roughness" value={p.noise_octaves} min={3} max={9} step={1}
-                  format={(v) => v.toFixed(0)}
-                  onInput={(v) => updateParams({ noise_octaves: v })} />
+          <h2>Starport</h2>
+          <div class="starport-row">
+            {STARPORT_OPTIONS.map((sp) => (
+              <button
+                class={`starport-btn ${u.starport === sp ? 'active' : ''}`}
+                onClick={() => setUwpField('starport', sp)}
+                title={sp === 'X' ? 'No starport' : `Class ${sp}`}
+              >
+                {sp}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section>
-          <h2>Climate</h2>
-          <Slider label="Ice latitude" value={p.ice_latitude} min={0.45} max={1}
-                  onInput={(v) => updateParams({ ice_latitude: v })} />
-          <Slider label="Clouds" value={p.cloud_coverage} min={0} max={1}
-                  onInput={(v) => updateParams({ cloud_coverage: v })} />
-          <Slider label="Atmosphere" value={p.atmosphere_density} min={0} max={1.5}
-                  onInput={(v) => updateParams({ atmosphere_density: v })} />
+          <h2>World profile</h2>
+          <UwpSlider
+            label="Size"
+            value={u.size}
+            max={10}
+            descriptions={SIZE_DESC}
+            onChange={(v) => setUwpField('size', v)}
+          />
+          <UwpSlider
+            label="Atmosphere"
+            value={u.atm}
+            max={15}
+            descriptions={ATM_DESC}
+            onChange={(v) => setUwpField('atm', v)}
+          />
+          <UwpSlider
+            label="Hydrographics"
+            value={u.hydro}
+            max={10}
+            descriptions={HYDRO_DESC}
+            onChange={(v) => setUwpField('hydro', v)}
+          />
         </section>
 
         <section>
-          <h2>Lighting</h2>
-          <Slider label="Sun angle" value={p.sun_angle} min={0} max={1}
-                  onInput={(v) => updateParams({ sun_angle: v })} />
-          <Slider label="Auto rotate" value={p.auto_rotate} min={0} max={0.6}
-                  onInput={(v) => updateParams({ auto_rotate: v })} />
+          <h2>Society</h2>
+          <UwpSlider
+            label="Population"
+            value={u.pop}
+            max={12}
+            descriptions={POP_DESC}
+            onChange={(v) => setUwpField('pop', v)}
+          />
+          <UwpSlider
+            label="Government"
+            value={u.gov}
+            max={15}
+            descriptions={GOV_DESC}
+            onChange={(v) => setUwpField('gov', v)}
+          />
+          <UwpSlider
+            label="Law level"
+            value={u.law}
+            max={15}
+            descriptions={LAW_DESC}
+            onChange={(v) => setUwpField('law', v)}
+          />
+          <UwpSlider
+            label="Tech level"
+            value={u.tech}
+            max={15}
+            descriptions={TECH_DESC}
+            onChange={(v) => setUwpField('tech', v)}
+          />
         </section>
 
         <section>
-          <h2>Palette</h2>
-          <ColorInput label="Atmosphere" value={p.atmosphere_color}
-                  onInput={(v) => updateParams({ atmosphere_color: v })} />
-          <ColorInput label="Ocean" value={p.ocean_color}
-                  onInput={(v) => updateParams({ ocean_color: v })} />
-          <ColorInput label="Land" value={p.land_color}
-                  onInput={(v) => updateParams({ land_color: v })} />
-          <ColorInput label="Sand" value={p.sand_color}
-                  onInput={(v) => updateParams({ sand_color: v })} />
-          <ColorInput label="Mountains" value={p.mountain_color}
-                  onInput={(v) => updateParams({ mountain_color: v })} />
-          <ColorInput label="Ice" value={p.snow_color}
-                  onInput={(v) => updateParams({ snow_color: v })} />
+          <h2>View</h2>
+          <Slider
+            label="Seed"
+            value={p.seed}
+            min={0}
+            max={0xffffffff}
+            step={1}
+            format={(v) => v.toFixed(0)}
+            onInput={(v) => updateParams({ seed: v })}
+          />
+          <Slider
+            label="Sun angle"
+            value={p.sun_angle}
+            min={0}
+            max={1}
+            onInput={(v) => updateParams({ sun_angle: v })}
+          />
+          <Slider
+            label="Auto rotate"
+            value={p.auto_rotate}
+            min={0}
+            max={0.6}
+            onInput={(v) => updateParams({ auto_rotate: v })}
+          />
         </section>
 
         <footer class="panel-footer">

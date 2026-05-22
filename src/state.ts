@@ -2,7 +2,249 @@ import { signal } from '@preact/signals'
 
 export const errorMessage = signal<string | null>(null)
 export const panelOpen = signal(false)
-export const uwpInput = signal('A867974-D')
+
+// ---------- UWP digit state (drives the panel) ----------
+
+export interface UwpDigits {
+  starport: string  // A, B, C, D, E, X
+  size: number      // 0..10 (A)
+  atm: number       // 0..15 (F)
+  hydro: number     // 0..10 (A)
+  pop: number       // 0..12 (C)
+  gov: number       // 0..15 (F)
+  law: number       // 0..15 (F)
+  tech: number      // 0..15 (F)
+}
+
+export const defaultUwp: UwpDigits = {
+  starport: 'A',
+  size: 8,
+  atm: 6,
+  hydro: 7,
+  pop: 9,
+  gov: 7,
+  law: 4,
+  tech: 13,
+}
+
+export const uwp = signal<UwpDigits>({ ...defaultUwp })
+
+const STARPORTS = ['A', 'B', 'C', 'D', 'E', 'X'] as const
+export const STARPORT_OPTIONS = STARPORTS
+
+function hexDigit(n: number): string {
+  if (n < 10) return String(n)
+  return String.fromCharCode('A'.charCodeAt(0) + n - 10)
+}
+
+export function uwpToCode(u: UwpDigits): string {
+  return (
+    u.starport +
+    hexDigit(u.size) +
+    hexDigit(u.atm) +
+    hexDigit(u.hydro) +
+    hexDigit(u.pop) +
+    hexDigit(u.gov) +
+    hexDigit(u.law) +
+    '-' +
+    hexDigit(u.tech)
+  )
+}
+
+// Parse a full UWP into digit state. More permissive than the visual parser —
+// pads short bodies with zeros so live editing is comfortable.
+export function parseUwpDigits(code: string): UwpDigits | null {
+  const cleaned = code.toUpperCase().replace(/\s+/g, '')
+  const [main, techPart] = cleaned.split('-')
+  if (!main || main.length < 1) return null
+  let starport: string = 'A'
+  let body = main
+  // Anything that isn't a hex digit at the start is taken as starport.
+  if (main.length >= 1 && /[A-EX]/.test(main[0]) && main.length > 6) {
+    starport = main[0]
+    body = main.slice(1)
+  }
+  body = (body + '000000').slice(0, 6)
+  const hexParse = (c: string): number => {
+    const n = parseInt(c, 16)
+    return Number.isFinite(n) ? n : -1
+  }
+  const digits = [...body].map(hexParse)
+  if (digits.some((d) => d < 0)) return null
+  const tech = techPart ? parseInt(techPart, 16) : 0
+  return {
+    starport: STARPORTS.includes(starport as (typeof STARPORTS)[number]) ? starport : 'A',
+    size: Math.min(digits[0], 10),
+    atm: digits[1],
+    hydro: Math.min(digits[2], 10),
+    pop: Math.min(digits[3], 12),
+    gov: digits[4],
+    law: digits[5],
+    tech: Number.isFinite(tech) ? Math.min(tech, 15) : 0,
+  }
+}
+
+// Mutate a single UWP digit and immediately re-apply to renderer params.
+export function setUwpField<K extends keyof UwpDigits>(field: K, value: UwpDigits[K]) {
+  uwp.value = { ...uwp.value, [field]: value }
+  applyUwp(uwpToCode(uwp.value))
+}
+
+// Update from text field — accepts any partial code, snaps to digit state.
+export function setUwpFromCode(code: string): boolean {
+  const parsed = parseUwpDigits(code)
+  if (!parsed) return false
+  uwp.value = parsed
+  applyUwp(uwpToCode(parsed))
+  return true
+}
+
+// Roll a random UWP. Keeps biases mild — most worlds are mid-range, not
+// edge cases — so randomize doesn't constantly serve up asteroids or
+// uninhabited gas giants.
+export function randomizeUwp() {
+  const rint = (min: number, max: number) => min + Math.floor(Math.random() * (max - min + 1))
+  uwp.value = {
+    starport: STARPORTS[rint(0, 4)],  // Avoid X most of the time
+    size: rint(2, 10),
+    atm: rint(0, 15),
+    hydro: rint(0, 10),
+    pop: rint(0, 12),
+    gov: rint(0, 15),
+    law: rint(0, 15),
+    tech: rint(0, 15),
+  }
+  applyUwp(uwpToCode(uwp.value))
+}
+
+export function resetUwp() {
+  uwp.value = { ...defaultUwp }
+  applyUwp(uwpToCode(uwp.value))
+}
+
+// ---------- Human-readable descriptions per Cepheus tables ----------
+
+export const SIZE_DESC: readonly string[] = [
+  'Asteroid · 800 km · negligible g',
+  'Tiny · 1,600 km · 0.05 g',
+  'Small moon · 3,200 km · 0.15 g',
+  'Mercury-like · 4,800 km · 0.25 g',
+  'Mars-like · 6,400 km · 0.35 g',
+  '8,000 km · 0.45 g',
+  '9,600 km · 0.7 g',
+  '11,200 km · 0.9 g',
+  'Earth-like · 12,800 km · 1.0 g',
+  'Super-Earth · 14,400 km · 1.25 g',
+  'Large · 16,000 km · 1.4 g',
+]
+
+export const ATM_DESC: readonly string[] = [
+  'None — vacuum',
+  'Trace',
+  'Very thin, tainted',
+  'Very thin',
+  'Thin, tainted',
+  'Thin',
+  'Standard (Earth-like)',
+  'Standard, tainted',
+  'Dense',
+  'Dense, tainted',
+  'Exotic',
+  'Corrosive',
+  'Insidious',
+  'Dense high (highland habitable)',
+  'Thin low (lowland habitable)',
+  'Unusual / gas giant',
+]
+
+export const HYDRO_DESC: readonly string[] = [
+  'Desert · 0–5%',
+  'Dry · 6–15%',
+  'Few small seas · 16–25%',
+  'Small oceans · 26–35%',
+  'Wet · 36–45%',
+  'Large oceans · 46–55%',
+  '56–65%',
+  '66–75%',
+  'Water world · 76–85%',
+  'Islands / archipelagos · 86–95%',
+  'Almost entirely water · 96–100%',
+]
+
+export const POP_DESC: readonly string[] = [
+  'Uninhabited',
+  'Tens (10s)',
+  'Hundreds (100s)',
+  'Thousands',
+  'Ten thousands',
+  'Hundred thousands',
+  'Millions',
+  'Tens of millions',
+  'Hundreds of millions',
+  'Billions',
+  'Tens of billions',
+  'Hundreds of billions',
+  'Trillions',
+]
+
+export const GOV_DESC: readonly string[] = [
+  'None',
+  'Company / corporation',
+  'Participating democracy',
+  'Self-perpetuating oligarchy',
+  'Representative democracy',
+  'Feudal technocracy',
+  'Captive government',
+  'Balkanization',
+  'Civil service bureaucracy',
+  'Impersonal bureaucracy',
+  'Charismatic dictator',
+  'Non-charismatic leader',
+  'Charismatic oligarchy',
+  'Religious dictatorship',
+  'Religious autocracy',
+  'Totalitarian oligarchy',
+]
+
+export const LAW_DESC: readonly string[] = [
+  'No law',
+  'Low law',
+  'Most weapons restricted',
+  'Heavy weapons restricted',
+  'Light assault weapons restricted',
+  'Personal concealable weapons restricted',
+  'All firearms restricted',
+  'Shock weapons restricted',
+  'Blade weapons restricted',
+  'Sport weapons restricted',
+  'Most sport weapons restricted',
+  'High law',
+  'Very high law',
+  'Extreme law',
+  'Police state',
+  'Total prohibition',
+]
+
+export const TECH_DESC: readonly string[] = [
+  'TL 0 · stone age',
+  'TL 1 · bronze, iron',
+  'TL 2 · pre-industrial',
+  'TL 3 · industrial age',
+  'TL 4 · mechanised',
+  'TL 5 · atomic age',
+  'TL 6 · early computers',
+  'TL 7 · space probes',
+  'TL 8 · lunar landing',
+  'TL 9 · early interplanetary',
+  'TL A · interstellar',
+  'TL B · average imperial',
+  'TL C · high imperial',
+  'TL D · common interstellar',
+  'TL E · anti-grav',
+  'TL F · ultra-tech',
+]
+
+export { hexDigit as uwpHex }
 
 export interface Params {
   seed: number

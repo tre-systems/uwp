@@ -233,8 +233,57 @@ input[type="range"]::-moz-range-thumb {
 .uwp-legend {
   font-size: 10px;
   color: var(--text-dim);
+  margin-top: 4px;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
+}
+
+.starport-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.starport-btn {
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms;
+}
+.starport-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.starport-btn.active {
+  background: var(--accent-soft);
+  border-color: rgba(110, 164, 255, 0.5);
+}
+
+.uwp-slider { margin: 10px 0; }
+.uwp-slider-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.uwp-slider-label {
+  font-size: 12px;
+  color: var(--text);
+}
+.uwp-slider-code {
+  font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+}
+.uwp-slider-desc {
+  font-size: 11px;
+  color: var(--text-dim);
   margin-top: 2px;
-  letter-spacing: 0.5px;
+  line-height: 1.4;
+  min-height: 14px;
 }
 
 label.color {
