@@ -167,7 +167,32 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     // Final transmittance for the planet color through the atmosphere column we traversed.
     let final_trans = exp(-(beta_r * od_view.x + beta_m * od_view.y));
-    let final_color = planet_color * final_trans + scatter;
+    var final_color = planet_color * final_trans + scatter;
+
+    // Cheap lens bloom: 12 taps in two rings around this pixel, extract values
+    // above a soft threshold, average, and add back. Smears the brightest HDR
+    // pixels (specular sun spot on water, lit cloud tops, atmospheric forward-
+    // scatter near the sun limb) into a soft halo before tonemapping.
+    //
+    // textureSampleLevel is used (rather than textureSample) because loop iterations
+    // count as non-uniform control flow for the implicit-derivative version.
+    let texel = 1.0 / u.resolution.xy;
+    var bloom = vec3<f32>(0.0);
+    let r_outer = 9.0;
+    let r_inner = 4.0;
+    for (var i: i32 = 0; i < 12; i = i + 1) {
+        let a = f32(i) * 0.5235988;  // 2π / 12
+        let off = vec2<f32>(cos(a), sin(a));
+        let s1 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_inner * texel, 0.0).rgb;
+        let s2 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_outer * texel, 0.0).rgb;
+        bloom = bloom
+            + max(s1 - vec3<f32>(0.85), vec3<f32>(0.0)) * 0.65
+            + max(s2 - vec3<f32>(0.85), vec3<f32>(0.0)) * 0.35;
+    }
+    bloom = bloom / 12.0;
+    // Also bloom the in-scatter — atmospheric forward-peak is HDR-bright at the limb.
+    bloom = bloom + max(scatter - vec3<f32>(0.8), vec3<f32>(0.0)) * 0.35;
+    final_color = final_color + bloom * 0.85;
 
     return vec4<f32>(aces(final_color), 1.0);
 }
