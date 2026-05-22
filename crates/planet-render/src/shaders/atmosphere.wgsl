@@ -11,8 +11,8 @@
 
 const PI: f32 = 3.141592653589793;
 const ATMO_REL_THICKNESS: f32 = 0.075;
-const VIEW_STEPS: i32 = 16;
-const LIGHT_STEPS: i32 = 6;
+const VIEW_STEPS: i32 = 10;
+const LIGHT_STEPS: i32 = 4;
 const SCALE_R: f32 = 0.024;
 const SCALE_M: f32 = 0.0035;
 const G_MIE: f32 = 0.76;

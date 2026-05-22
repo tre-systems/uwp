@@ -443,8 +443,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // area (snow_jitter) so caps don't all sit at the same height. Suppress
         // polar ice on dry worlds — frost belongs to wet planets.
         let snow_alt   = smoothstep(0.62 + snow_jitter, 0.86 + snow_jitter, above_amt);
-        let polar_jitter = fbm(dir * 4.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), 3) * 0.05;
-        let snow_polar = smoothstep(ice_lat - 0.05 + polar_jitter, ice_lat + 0.04 + polar_jitter, lat);
+        // Two-scale jitter on the polar cap edge: a coarse lobe field gives
+        // big peninsulas of ice and ragged gulfs, and a fine ridged component
+        // adds fingers at the boundary so the line doesn't read as a clean
+        // smoothstep ring.
+        let polar_lobe   = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0,   0.0, 503.1), 3) * 0.14;
+        let polar_finger = ridged_fbm(dir * 11.0 + u.seed_block.xyz + vec3<f32>(17.0, 31.0, -41.0), 2) * 0.06;
+        let polar_offset = polar_lobe + polar_finger - 0.03;
+        let snow_polar = smoothstep(ice_lat - 0.10 + polar_offset, ice_lat + 0.06 + polar_offset, lat);
         let dry_world  = step(u.planet_params.x, 0.15);
         snow = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
         let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
@@ -465,8 +471,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         var water = mix(turquoise, shallow, smoothstep(0.0, 0.06, depth));
         water = mix(water, deep, smoothstep(0.10, 0.55, depth));
         surface = water;
-        // Polar ice on water — slightly sharper than the land snow line.
-        let polar = smoothstep(ice_lat - 0.015, ice_lat + 0.04, lat);
+        // Sea ice — ragged edge from same lobe + finger field used on land caps
+        // so the two cap halves match up at the coast and pack ice doesn't read
+        // as a clean ring offshore.
+        let sea_lobe   = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0,   0.0, 503.1), 3) * 0.14;
+        let sea_finger = ridged_fbm(dir * 11.0 + u.seed_block.xyz + vec3<f32>(17.0, 31.0, -41.0), 2) * 0.06;
+        let sea_off    = sea_lobe + sea_finger - 0.03;
+        let polar = smoothstep(ice_lat - 0.08 + sea_off, ice_lat + 0.05 + sea_off, lat);
         surface = mix(surface, u.snow_color.rgb * 0.94, polar);
     }
 

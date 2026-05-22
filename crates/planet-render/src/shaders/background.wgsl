@@ -106,16 +106,17 @@ fn ray_sphere_t(orig: vec3<f32>, dir: vec3<f32>, centre: vec3<f32>, radius: f32)
     return t1;
 }
 
-// Compute orbital position. Three independent random params (radius, inclination,
-// initial phase). Orbit precesses with planet time at a Kepler-ish rate (outer
-// bodies move slower). Radii kept tight enough (1.2 .. 1.55 base_r) that the
-// orbit stays inside the default camera frustum — at this view distance,
-// anything past ~1.6 base radii consistently swings off-screen.
-fn orbit_pos(idx: f32, base_r: f32, time: f32) -> vec3<f32> {
+// Compute orbital position. Each moon index gets its own orbital shell
+// (1.7, 2.7, 3.8 base radii), with per-moon random jitter inside the shell —
+// so multiple moons don't pile up at the same distance from the planet.
+// The outer shells sit beyond the default-camera frustum so those moons go
+// off-screen between orbital passes; zoom out to see them.
+fn orbit_pos(slot: i32, idx: f32, base_r: f32, time: f32) -> vec3<f32> {
     let r_h = hash11(idx * 7.13);
     let inc_h = hash11(idx * 13.31 + 4.7);
     let ph_h = hash11(idx * 19.71 + 9.3);
-    let orbit_r = base_r * (1.20 + r_h * 0.35);
+    let shell = 1.7 + f32(slot) * 1.1;          // 1.7, 2.8, 3.9
+    let orbit_r = base_r * (shell + r_h * 0.4);
     let inclination = (inc_h - 0.5) * 0.6;
     let omega = 0.06 / orbit_r;
     let phase = ph_h * TAU + time * omega;
@@ -172,7 +173,7 @@ fn fs_main(in: VsOut) -> BgOut {
     for (var i: i32 = 0; i < 3; i = i + 1) {
         if (i >= n_moons) { break; }
         let idx = f32(i + 1) + u.seed_block.x * 0.073 + u.seed_block.y * 0.131;
-        let moon_pos = orbit_pos(idx, planet_radius, time);
+        let moon_pos = orbit_pos(i, idx, planet_radius, time);
         let moon_radius = planet_radius * mix(0.10, 0.22, hash11(idx * 5.9));
         let t = ray_sphere_t(ray_origin, ray_dir, moon_pos, moon_radius);
         if (t > 0.0 && t < best_t) {
@@ -246,12 +247,12 @@ fn fs_main(in: VsOut) -> BgOut {
     // pixel". Sample positions are projected to screen space so the shape is
     // size-stable regardless of orbit distance.
     let pop = u.world_features.y;
-    let n_sats = i32(floor(pop * 22.0));
+    let n_sats = i32(floor(pop * 14.0));
     var sat_glow = vec3<f32>(0.0);
     var sat_nearest_t = 1e9;
     var sat_hit = false;
     let inv_pix = vec2<f32>(u.resolution.x, u.resolution.y) * 0.5;
-    for (var i: i32 = 0; i < 22; i = i + 1) {
+    for (var i: i32 = 0; i < 14; i = i + 1) {
         if (i >= n_sats) { break; }
         let idx = f32(i + 100) + u.seed_block.x * 0.041 + u.seed_block.y * 0.077;
         let r_h = hash11(idx * 5.7);
