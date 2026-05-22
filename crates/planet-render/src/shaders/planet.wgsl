@@ -361,12 +361,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         land = land * (0.88 + tint_n * 0.24);
 
         // Snow on real peaks or polar regions. Suppress polar ice when there's
-        // no water on the planet — frost belongs to wet worlds.
+        // no water on the planet — frost belongs to wet worlds. Polar caps get
+        // a noise-driven jagged edge and brightness variation so they read as
+        // natural ice sheets rather than a uniform white cap.
         let snow_alt   = smoothstep(0.68, 0.92, above_amt);
-        let snow_polar = smoothstep(ice_lat - 0.04, ice_lat + 0.03, lat);
+        let polar_jitter = fbm(dir * 4.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), 3) * 0.05;
+        let snow_polar = smoothstep(ice_lat - 0.05 + polar_jitter, ice_lat + 0.04 + polar_jitter, lat);
         let dry_world  = step(u.planet_params.x, 0.15);
         let snow = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
-        surface = mix(land, u.snow_color.rgb, snow);
+        let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
+        let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25);
+        surface = mix(land, ice_tone, snow);
     } else {
         let depth = sea_h - h;
         // Three-tone water: turquoise shallows (continental shelves), bright
@@ -435,21 +440,30 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     // ---------- Cloud composite ----------
-    // Cloud "silver lining": mid-density edges read brighter than the dense centre.
-    // Cloud peak brightness kept under sRGB-1.0 so the bloom pass can't latch onto
-    // the lit cloud tops and smear them into a giant white blob over the sun glint.
+    // Sample the cloud field a second time at a slightly higher "altitude"
+    // (offset toward the sun in local space). If that upper layer is dense,
+    // this pixel is sitting under a cloud and should read darker — gives
+    // clouds a 3D volume feel rather than a flat painted layer.
+    let upper_dir = normalize(dir + sun_dir_local * 0.020);
+    let upper_p = upper_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
+    let upper_raw = fbm(upper_p, 4) * 0.5 + 0.5;
+    let upper_density = smoothstep(cloud_low, cloud_high, upper_raw);
+    let cloud_self_shadow = 1.0 - upper_density * 0.55;
+
+    // Silver lining: mid-density edges read brighter than the dense centre.
+    // Cloud peak brightness kept under sRGB-1.0 so the bloom pass can't latch
+    // onto the lit cloud tops and smear them into a giant white blob.
     //
     // Tint the cloud body toward the atmosphere colour as density rises — at
     // Earth-ish density (≤ 0.6) clouds are white-ish, but for thick exotic
-    // atmospheres (Venus's sulfuric, dense tainted, etc.) the clouds pick up
-    // the atmosphere's hue so the planet reads as yellow / orange / purple
-    // instead of generic-white.
+    // atmospheres (Venus's sulfuric, dense tainted) the clouds pick up the
+    // atmosphere's hue instead of reading generic-white.
     let lining = smoothstep(0.18, 0.45, cloud_density)
                 * (1.0 - smoothstep(0.5, 0.85, cloud_density));
     let atm_d = u.misc.x;
     let cloud_tint_amt = smoothstep(0.55, 1.10, atm_d);
     let cloud_tint = mix(vec3<f32>(0.93), u.atmosphere_color.rgb * 1.25, cloud_tint_amt * 0.7);
-    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92) * (1.0 + lining * 0.35);
+    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow) * (1.0 + lining * 0.35);
     lit = mix(lit, cloud_lit, cloud_density * 0.85);
 
     // ---------- City lights ----------
