@@ -7,6 +7,7 @@
 
 struct Uniforms {
     view_proj:       mat4x4<f32>,
+    inv_view_proj:   mat4x4<f32>,
     model:           mat4x4<f32>,
     camera_pos:      vec4<f32>,
     sun_dir:         vec4<f32>,
@@ -142,11 +143,7 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 
 // ---------- Fragment ----------
-
-fn aces(c: vec3<f32>) -> vec3<f32> {
-    let a = 2.51; let b = 0.03; let cc = 2.43; let d = 0.59; let e = 0.14;
-    return clamp((c * (a * c + b)) / (c * (cc * c + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
-}
+// Output is HDR linear — the atmosphere pass tonemaps everything for display.
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -241,15 +238,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_lit = vec3<f32>(1.0) * (ambient + n_dot_l * 1.05);
     lit = mix(lit, cloud_lit, cloud_density * 0.85);
 
-    // ---------- Atmosphere rim glow (Fresnel) ----------
-    let fresnel = pow(1.0 - max(dot(world_normal, view_dir), 0.0), 3.2);
+    // The atmosphere pass adds Rayleigh + Mie in-scattering + tonemap, so this
+    // shader stays in linear HDR. We only emit a faint night-side ambient so the
+    // dark hemisphere doesn't read as pure black inside the atmospheric perspective.
     let atmo_density = u.misc.x;
-    let lit_side = clamp(n_dot_l * 1.7 + 0.18, 0.0, 1.6);
-    let atmo = u.atmosphere_color.rgb * fresnel * atmo_density * lit_side;
-    lit = lit + atmo;
+    lit = lit + u.atmosphere_color.rgb * (1.0 - n_dot_l) * 0.020 * atmo_density;
 
-    // Subtle night-side ambient (so the dark side isn't pitch black on a thick-atmo planet)
-    lit = lit + u.atmosphere_color.rgb * (1.0 - n_dot_l) * 0.015 * atmo_density;
-
-    return vec4<f32>(aces(lit), 1.0);
+    return vec4<f32>(lit, 1.0);
 }

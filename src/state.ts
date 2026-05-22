@@ -53,6 +53,8 @@ export function reset() {
 
 // Picks a new seed and randomizes the climate-y dials so each press feels different.
 // Palette colors are left alone — the user usually wants those stable.
+// Sun angle is kept in a range that mostly faces the default camera so randomize
+// shows a lit hemisphere; drag the camera to explore the dark side intentionally.
 export function randomize() {
   const rand = (a: number, b: number) => a + Math.random() * (b - a)
   params.value = {
@@ -65,6 +67,6 @@ export function randomize() {
     cloud_coverage: rand(0.15, 0.7),
     ice_latitude: rand(0.65, 0.92),
     atmosphere_density: rand(0.35, 0.85),
-    sun_angle: rand(0, 1),
+    sun_angle: rand(0.42, 0.68),
   }
 }
