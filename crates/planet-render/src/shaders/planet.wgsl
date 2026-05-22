@@ -384,12 +384,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     // ---------- Cloud noise ----------
-    // Latitudinal banding: stretch sampling along the equator so clouds form
-    // east-west streaks (jet streams, ITCZ, Hadley cells) rather than isotropic
-    // blobs. Compress longitude by 0.35 to elongate features in the x/z plane.
+    // Latitudinal banding: compress longitude sampling so clouds form east-west
+    // streaks rather than isotropic blobs. Strength varies from "barely there"
+    // for thin atmospheres up to "pure Jupiter stripes" for atm F (unusual).
     let cloud_freq = u.planet_params.z * 2.4;
     let cloud_off  = u.seed_block.xyz + vec3<f32>(213.7, 71.0, -109.4);
-    let band_warp  = vec3<f32>(0.35, 1.0, 0.35);
+    let banding    = u.world_features.w;
+    let band_x     = 1.0 - sqrt(banding) * 0.95;       // 1.0 at banding=0, ~0.05 at banding=1
+    let band_warp  = vec3<f32>(band_x, 1.0, band_x);
     let cloud_p    = dir * band_warp * cloud_freq + cloud_off + vec3<f32>(u.misc.y * 0.015, 0.0, 0.0);
     let cloud_raw  = fbm(cloud_p, 5) * 0.5 + 0.5;
     let coverage   = u.misc.z;

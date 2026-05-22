@@ -32,7 +32,7 @@ struct Uniforms {
     misc: [f32; 4],
     /// x = width, y = height, z = aspect, w = planet_radius
     resolution: [f32; 4],
-    /// x = crater_density, y = population_intensity, z = vegetation_richness, w = surface_age
+    /// x = crater_density, y = population_intensity, z = vegetation_richness, w = atm_banding
     world_features: [f32; 4],
 }
 
@@ -561,7 +561,7 @@ impl Renderer {
                 self.params.crater_density,
                 self.params.population_intensity,
                 self.params.vegetation_richness,
-                self.params.surface_age,
+                self.params.atm_banding,
             ],
         }
     }

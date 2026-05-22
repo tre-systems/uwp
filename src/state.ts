@@ -24,7 +24,7 @@ export interface Params {
   crater_density: number
   population_intensity: number
   vegetation_richness: number
-  surface_age: number
+  atm_banding: number
 }
 
 export const defaultParams: Params = {
@@ -47,7 +47,7 @@ export const defaultParams: Params = {
   crater_density: 0.0,
   population_intensity: 0.0,
   vegetation_richness: 0.65,
-  surface_age: 0.5,
+  atm_banding: 0.0,
 }
 
 export const params = signal<Params>({ ...defaultParams })
@@ -255,9 +255,16 @@ export function applyUwp(code: string): boolean {
   const habitableAtm = atm >= 2 && atm <= 9 && atm !== 11 && atm !== 12
   const population_intensity = habitableAtm ? Math.max(0, popDigit - 5) / 7 : 0
 
-  // Older surfaces (long since cooled) have more craters and more weathering.
-  // We approximate with the atm/water inputs we already have.
-  const surface_age = (1 - atmVeg) * 0.5 + (atm <= 1 ? 0.5 : 0)
+  // Atmospheric latitudinal banding. Thin atmospheres show no bands; Earth-like
+  // atmospheres show subtle jet-stream bands; dense / tainted atmospheres get
+  // pronounced bands; "unusual" (F) is full gas-giant banding.
+  const atm_banding =
+    atm === 15 ? 1.0 :
+    atm === 11 || atm === 12 ? 0.75 :
+    atm >= 8 ? 0.55 :
+    atm >= 4 ? 0.50 :
+    atm >= 2 ? 0.30 :
+    0.0
 
   params.value = {
     ...params.value,
@@ -268,7 +275,7 @@ export function applyUwp(code: string): boolean {
     crater_density,
     vegetation_richness,
     population_intensity,
-    surface_age,
+    atm_banding,
     ...palette,
   }
   return true

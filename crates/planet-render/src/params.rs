@@ -21,7 +21,7 @@ pub struct PlanetParams {
     pub crater_density: f32,
     pub population_intensity: f32,
     pub vegetation_richness: f32,
-    pub surface_age: f32,
+    pub atm_banding: f32,
 }
 
 impl Default for PlanetParams {
@@ -46,7 +46,7 @@ impl Default for PlanetParams {
             crater_density: 0.0,
             population_intensity: 0.0,
             vegetation_richness: 0.65,
-            surface_age: 0.5,
+            atm_banding: 0.0,
         }
     }
 }
