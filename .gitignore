@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-dist
+pkg
+target
+.vite
+.DS_Store
+*.log
+.env
+.env.local

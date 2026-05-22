@@ -1,0 +1,26 @@
+{
+  "name": "planetto",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --release",
+    "build:wasm:dev": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --dev",
+    "dev": "npm run build:wasm:dev && vite",
+    "build": "npm run build:wasm && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@preact/signals": "^2",
+    "preact": "^10"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2",
+    "typescript": "^5",
+    "vite": "^6",
+    "vite-plugin-pwa": "^0.21",
+    "vite-plugin-top-level-await": "^1",
+    "vite-plugin-wasm": "^3"
+  }
+}
