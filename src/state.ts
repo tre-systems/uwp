@@ -16,6 +16,14 @@ export const panelOpen = signal(false)
 export const uwp = signal<UwpDigits>({ ...defaultUwp })
 export const params = signal<Params>({ ...defaultParams })
 export const viewMode = signal<ViewMode>('detail')
+export const systemSeed = signal<number>(1337)
+/** Snapshot of the current SolarSystem from the WASM renderer.
+ * Updated by Canvas.tsx whenever systemSeed changes. */
+export const currentSystem = signal<any | null>(null)
+
+export function rerollSystemSeed() {
+  systemSeed.value = Math.floor(Math.random() * 0xffffffff)
+}
 
 export function updateParams(patch: Partial<Params>) {
   params.value = { ...params.value, ...patch }

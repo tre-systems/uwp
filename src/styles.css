@@ -129,6 +129,56 @@ html, body, #app {
 }
 .view-toggle:active { transform: scale(0.95); }
 
+.sys-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+.sys-meta strong { color: rgba(255, 255, 255, 0.95); font-weight: 500; }
+
+.sys-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.sys-seed {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+
+.sys-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.78);
+  font-variant-numeric: tabular-nums;
+}
+.sys-table th {
+  text-align: left;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 4px 6px 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+.sys-table td {
+  padding: 3px 6px 3px 0;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.sys-table tr.sys-main { color: rgba(170, 220, 255, 0.95); }
+.sys-table tr.sys-main td:first-child { color: rgba(255, 220, 120, 0.95); }
+
+.sys-belt {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 2px 0;
+}
+
 .panel-header {
   display: flex;
   flex-direction: column;

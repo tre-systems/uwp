@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'preact/hooks'
 import { effect } from '@preact/signals'
 import init, { Planet } from '../../pkg/planet_render'
 import { canvasPixelSize, detectRenderProfile } from '../renderProfile'
-import { errorMessage, params, viewMode } from '../state'
+import { currentSystem, errorMessage, params, systemSeed, viewMode } from '../state'
 
 let wasmReady: Promise<void> | null = null
 function ensureWasm() {
@@ -84,15 +84,23 @@ export function Canvas() {
         planet.resize(canvas.width, canvas.height)
         planet.setParams(renderParams())
         planet.setViewMode(viewMode.value)
+        planet.setSystemSeed(systemSeed.value)
+        currentSystem.value = planet.getSystem()
         const disposeParams = effect(() => {
           planet?.setParams(renderParams())
         })
         const disposeMode = effect(() => {
           planet?.setViewMode(viewMode.value)
         })
+        const disposeSeed = effect(() => {
+          if (!planet) return
+          planet.setSystemSeed(systemSeed.value)
+          currentSystem.value = planet.getSystem()
+        })
         disposeSignal = () => {
           disposeParams()
           disposeMode()
+          disposeSeed()
         }
         // Console-debug handle: lets us drive the renderer from the dev tools
         // without round-tripping through React. Set window.uwp.setSeed(n),
