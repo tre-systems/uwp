@@ -40,5 +40,6 @@ describe('paramsPatchFromUwp', () => {
 
   it('returns null for invalid UWP input', () => {
     expect(paramsPatchFromUwp('??')).toBeNull()
+    expect(paramsPatchFromUwp('Z867974-D')).toBeNull()
   })
 })

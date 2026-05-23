@@ -22,6 +22,11 @@ export const defaultUwp: UwpDigits = {
 
 const STARPORTS = ['A', 'B', 'C', 'D', 'E', 'X'] as const
 export const STARPORT_OPTIONS = STARPORTS
+type Starport = (typeof STARPORTS)[number]
+
+function isStarport(c: string): c is Starport {
+  return STARPORTS.includes(c as Starport)
+}
 
 function hexValue(c: string): number {
   if (!/^[0-9A-F]$/.test(c)) return -1
@@ -60,10 +65,11 @@ export function parseUwpDigits(code: string): UwpDigits | null {
   let body = main
   // Prefer starport semantics for A-E/X when live editing; numeric body-only
   // codes still work for the no-starport shorthand.
-  if (/[A-EX]/.test(main[0])) {
+  if (isStarport(main[0])) {
     starport = main[0]
     body = main.slice(1)
   }
+  if (body.length > 6) return null
 
   body = (body + '000000').slice(0, 6)
   const digits = [...body].map(hexValue)
@@ -73,7 +79,7 @@ export function parseUwpDigits(code: string): UwpDigits | null {
   if ((techPart && techPart.length > 1) || tech < 0) return null
 
   return {
-    starport: STARPORTS.includes(starport as (typeof STARPORTS)[number]) ? starport : 'A',
+    starport,
     size: Math.min(digits[0], 10),
     atm: digits[1],
     hydro: Math.min(digits[2], 10),
@@ -92,24 +98,13 @@ export interface UwpVisualExt {
 }
 
 export function parseUwp(code: string): UwpVisualExt | null {
-  const cleaned = code.toUpperCase().replace(/\s+/g, '')
-  const main = cleaned.split('-')[0]
-  // Accept either "A867974" (with starport) or "867974" (without).
-  let body = main
-  if (main.length >= 7) body = main.slice(1)
-  if (body.length < 3) return null
-
-  const size = hexValue(body[0])
-  const atm = hexValue(body[1])
-  const hydro = hexValue(body[2])
-  const pop = body.length > 3 ? hexValue(body[3]) : 0
-  if (size < 0 || atm < 0 || hydro < 0 || pop < 0) return null
-
+  const parsed = parseUwpDigits(code)
+  if (!parsed) return null
   return {
-    size,
-    atm,
-    hydro: Math.min(hydro, 10),
-    pop,
+    size: parsed.size,
+    atm: parsed.atm,
+    hydro: parsed.hydro,
+    pop: parsed.pop,
   }
 }
 

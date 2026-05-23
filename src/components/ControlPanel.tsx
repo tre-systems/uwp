@@ -25,10 +25,11 @@ interface UwpSliderProps {
   value: number
   max: number
   descriptions: readonly string[]
+  disabled?: boolean
   onChange: (v: number) => void
 }
 
-function UwpSlider({ label, value, max, descriptions, onChange }: UwpSliderProps) {
+function UwpSlider({ label, value, max, descriptions, disabled = false, onChange }: UwpSliderProps) {
   const desc = descriptions[value] ?? ''
   return (
     <div class="uwp-slider">
@@ -42,6 +43,7 @@ function UwpSlider({ label, value, max, descriptions, onChange }: UwpSliderProps
         max={max}
         step={1}
         value={value}
+        disabled={disabled}
         onInput={(e) => onChange(parseInt((e.currentTarget as HTMLInputElement).value, 10))}
       />
       <div class="uwp-slider-desc">{desc}</div>
@@ -56,6 +58,8 @@ export function ControlPanel() {
   const open = panelOpen.value
   const toggle = () => (panelOpen.value = !panelOpen.value)
   const codeText = uwpToCode(u)
+  const panelId = 'controls-panel'
+  const controlsDisabled = !open
   const [draftCode, setDraftCode] = useState(codeText)
   const codeValid = parseUwpDigits(draftCode) !== null
 
@@ -68,18 +72,20 @@ export function ControlPanel() {
       <button
         class={`panel-toggle ${open ? 'panel-toggle-open' : ''}`}
         onClick={toggle}
+        aria-controls={panelId}
+        aria-expanded={open}
         aria-label={open ? 'Hide controls' : 'Show controls'}
         title={open ? 'Hide controls' : 'Show controls'}
       >
         {open ? '✕' : '☰'}
       </button>
 
-      <aside class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open}>
+      <aside id={panelId} class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open} inert={!open}>
         <header class="panel-header">
           <h1>UWP</h1>
           <div class="panel-actions">
-            <button onClick={randomizeUwp}>Randomize</button>
-            <button class="ghost" onClick={resetUwp}>Reset</button>
+            <button onClick={randomizeUwp} disabled={controlsDisabled}>Randomize</button>
+            <button class="ghost" onClick={resetUwp} disabled={controlsDisabled}>Reset</button>
           </div>
         </header>
 
@@ -90,6 +96,7 @@ export function ControlPanel() {
               type="text"
               class={`uwp-input ${codeValid ? '' : 'invalid'}`}
               value={draftCode}
+              disabled={controlsDisabled}
               spellcheck={false}
               autocapitalize="characters"
               placeholder="A867974-D"
@@ -113,6 +120,7 @@ export function ControlPanel() {
               <button
                 class={`starport-btn ${u.starport === sp ? 'active' : ''}`}
                 onClick={() => setUwpField('starport', sp)}
+                disabled={controlsDisabled}
                 title={sp === 'X' ? 'No starport' : `Class ${sp}`}
               >
                 {sp}
@@ -128,6 +136,7 @@ export function ControlPanel() {
             value={u.size}
             max={10}
             descriptions={SIZE_DESC}
+            disabled={controlsDisabled}
             onChange={(v) => setUwpField('size', v)}
           />
           <UwpSlider
@@ -135,6 +144,7 @@ export function ControlPanel() {
             value={u.atm}
             max={15}
             descriptions={ATM_DESC}
+            disabled={controlsDisabled}
             onChange={(v) => setUwpField('atm', v)}
           />
           <UwpSlider
@@ -142,6 +152,7 @@ export function ControlPanel() {
             value={u.hydro}
             max={10}
             descriptions={HYDRO_DESC}
+            disabled={controlsDisabled}
             onChange={(v) => setUwpField('hydro', v)}
           />
         </section>
@@ -153,6 +164,7 @@ export function ControlPanel() {
             value={u.pop}
             max={12}
             descriptions={POP_DESC}
+            disabled={controlsDisabled}
             onChange={(v) => setUwpField('pop', v)}
           />
           <UwpSlider
@@ -160,6 +172,7 @@ export function ControlPanel() {
             value={u.tech}
             max={15}
             descriptions={TECH_DESC}
+            disabled={controlsDisabled}
             onChange={(v) => setUwpField('tech', v)}
           />
         </section>
@@ -172,6 +185,7 @@ export function ControlPanel() {
             min={0}
             max={0xffffffff}
             step={1}
+            disabled={controlsDisabled}
             format={(v) => v.toFixed(0)}
             onInput={(v) => updateParams({ seed: v })}
           />
@@ -180,6 +194,7 @@ export function ControlPanel() {
             value={p.sun_angle}
             min={0}
             max={1}
+            disabled={controlsDisabled}
             onInput={(v) => updateParams({ sun_angle: v })}
           />
           <Slider
@@ -187,6 +202,7 @@ export function ControlPanel() {
             value={p.auto_rotate}
             min={0}
             max={0.6}
+            disabled={controlsDisabled}
             onInput={(v) => updateParams({ auto_rotate: v })}
           />
         </section>

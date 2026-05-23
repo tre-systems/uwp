@@ -34,6 +34,8 @@ describe('parseUwpDigits', () => {
 
   it('rejects invalid body and tech digits', () => {
     expect(parseUwpDigits('??')).toBeNull()
+    expect(parseUwpDigits('Z867974-D')).toBeNull()
+    expect(parseUwpDigits('A867974X-D')).toBeNull()
     expect(parseUwpDigits('A867974-?')).toBeNull()
     expect(parseUwpDigits('A867974-DD')).toBeNull()
   })
@@ -61,5 +63,6 @@ describe('parseUwp', () => {
 
   it('rejects invalid visual fields', () => {
     expect(parseUwp('AX67974-D')).toBeNull()
+    expect(parseUwp('Z867974-D')).toBeNull()
   })
 })

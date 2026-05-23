@@ -1,5 +1,5 @@
 import type { Params, RGB } from './params'
-import { parseUwp, parseUwpDigits } from './uwp'
+import { parseUwpDigits } from './uwp'
 
 interface AtmoConfig {
   density: number
@@ -105,11 +105,9 @@ function atmoConfig(atm: number): AtmoConfig {
 }
 
 export function paramsPatchFromUwp(code: string): Partial<Params> | null {
-  const parsed = parseUwp(code)
+  const parsed = parseUwpDigits(code)
   if (!parsed) return null
-  const { size, atm, hydro, pop } = parsed
-  const techDigits = parseUwpDigits(code)
-  const tech = techDigits ? techDigits.tech : 0
+  const { size, atm, hydro, pop, tech } = parsed
   const atmo = atmoConfig(atm)
   const palette = paletteForUwp(atm, hydro)
 

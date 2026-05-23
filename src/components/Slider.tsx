@@ -4,6 +4,7 @@ interface SliderProps {
   min: number
   max: number
   step?: number
+  disabled?: boolean
   format?: (v: number) => string
   onInput: (v: number) => void
 }
@@ -11,7 +12,7 @@ interface SliderProps {
 const defaultFormat = (v: number) =>
   Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2)
 
-export function Slider({ label, value, min, max, step = 0.001, format, onInput }: SliderProps) {
+export function Slider({ label, value, min, max, step = 0.001, disabled = false, format, onInput }: SliderProps) {
   const fmt = format ?? defaultFormat
   return (
     <div class="slider">
@@ -25,6 +26,7 @@ export function Slider({ label, value, min, max, step = 0.001, format, onInput }
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onInput={(e) => onInput(parseFloat((e.currentTarget as HTMLInputElement).value))}
       />
     </div>
