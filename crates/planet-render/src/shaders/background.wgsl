@@ -83,6 +83,23 @@ fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
     return sum / norm;
 }
 
+// Ridged fbm — accentuates the high contour of each noise octave, producing
+// line-like ridge structures. Used on icy moons for crack/lineae texture.
+fn ridged_fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
+    var p = p_in;
+    var sum = 0.0;
+    var amp = 0.5;
+    var norm = 0.0;
+    for (var i: i32 = 0; i < octaves; i = i + 1) {
+        let n = 1.0 - abs(value_noise3(p) * 2.0 - 1.0);
+        sum = sum + amp * n * n;
+        norm = norm + amp;
+        amp = amp * 0.5;
+        p = p * 2.05;
+    }
+    return sum / norm;
+}
+
 // ---------- Stellar colour ----------
 // Map a temperature index t in [0, 1] to an RGB tint that roughly approximates
 // the blackbody locus over the stellar B-V range (M-class red at 0, hot blue
@@ -218,22 +235,84 @@ fn ray_sphere_t(orig: vec3<f32>, dir: vec3<f32>, centre: vec3<f32>, radius: f32)
     return t1;
 }
 
-// Compute orbital position. Each moon index gets its own orbital shell
-// (1.7, 2.7, 3.8 base radii), with per-moon random jitter inside the shell —
-// so multiple moons don't pile up at the same distance from the planet.
+// Compute orbital position. Each moon slot lives in a separate, widely
+// spaced shell so two moons can't physically clip into each other (the
+// previous 1.7 / 2.8 / 3.9-radii shells were inside Earth-Moon-distance
+// scaled down ~30×, and inner pairs would have crossed Roche-limit on
+// real bodies). New shells: ~5 / ~15 / ~38 planet radii — closer than
+// Earth-Moon (60 R) so the moons still read in-frame at default zoom,
+// but separated by enough that two moons in the same system never share
+// space. Inclination range widened so the orbital planes are also
+// genuinely distinct.
 fn orbit_pos(slot: i32, idx: f32, base_r: f32, time: f32) -> vec3<f32> {
     let r_h = hash11(idx * 7.13);
     let inc_h = hash11(idx * 13.31 + 4.7);
     let ph_h = hash11(idx * 19.71 + 9.3);
-    let shell = 1.7 + f32(slot) * 1.1;          // 1.7, 2.8, 3.9
-    let orbit_r = base_r * (shell + r_h * 0.4);
-    let inclination = (inc_h - 0.5) * 0.6;
-    let omega = 0.06 / orbit_r;
+    let node_h = hash11(idx * 27.19 + 1.7);
+    // Shell radii roughly 4-6, 12-18, 30-45 planet radii.
+    var shell_min: f32 = 4.0;
+    var shell_max: f32 = 6.0;
+    if (slot == 1) { shell_min = 12.0; shell_max = 18.0; }
+    if (slot == 2) { shell_min = 30.0; shell_max = 45.0; }
+    let orbit_r = base_r * mix(shell_min, shell_max, r_h);
+    // Inclination ±50° — second and third moons can have steep planes;
+    // close-in moons (slot 0) settled into the equatorial plane in real
+    // systems through tidal evolution, so we restrict slot 0 to ±15°.
+    let inc_range = select(0.9, 0.26, slot == 0);
+    let inclination = (inc_h - 0.5) * inc_range;
+    let node_a = node_h * TAU;
+    // Kepler: ω ∝ R^-1.5. Tuned so the closest moon takes ~1 minute.
+    let omega = 0.012 / pow(orbit_r, 1.5);
     let phase = ph_h * TAU + time * omega;
     let cp = cos(phase); let sp = sin(phase);
     let ci = cos(inclination); let si = sin(inclination);
-    // Orbit plane tilted from XZ by `inclination` around X axis.
-    return vec3<f32>(cp * orbit_r, sp * si * orbit_r, sp * ci * orbit_r);
+    let cn = cos(node_a); let sn = sin(node_a);
+    // Orbit plane: rotate around X by inclination, then around Y by
+    // ascending node. Gives a genuinely 3D orbital plane that doesn't
+    // align with any other moon's plane by default.
+    let p0 = vec3<f32>(cp * orbit_r, sp * si * orbit_r, sp * ci * orbit_r);
+    return vec3<f32>(p0.x * cn + p0.z * sn, p0.y, -p0.x * sn + p0.z * cn);
+}
+
+// Per-moon surface character. Returns base highland / maria tint plus a
+// modifier mode (0 = rocky cratered, 1 = icy with streaks, 2 = reddish
+// ferrous, 3 = dusty captured asteroid).
+struct MoonStyle {
+    highland: vec3<f32>,
+    maria: vec3<f32>,
+    mode: i32,
+    rough: f32,    // 0 = smooth Europa-like, 1 = heavily pockmarked
+};
+
+fn moon_style_for(idx: f32) -> MoonStyle {
+    let h = hash11(idx * 41.7 + 3.3);
+    var s: MoonStyle;
+    if (h < 0.55) {
+        // Rocky / Earth's-Moon-like — common case.
+        s.highland = vec3<f32>(0.66, 0.62, 0.56);
+        s.maria    = vec3<f32>(0.24, 0.22, 0.20);
+        s.mode = 0;
+        s.rough = 0.85;
+    } else if (h < 0.78) {
+        // Icy (Europa / Enceladus / Triton). Bright white-blue with cracks.
+        s.highland = vec3<f32>(0.88, 0.92, 1.00);
+        s.maria    = vec3<f32>(0.52, 0.62, 0.78);
+        s.mode = 1;
+        s.rough = 0.25;
+    } else if (h < 0.92) {
+        // Ferrous / weathered (Io / Phobos / Deimos colour family).
+        s.highland = vec3<f32>(0.74, 0.52, 0.36);
+        s.maria    = vec3<f32>(0.36, 0.20, 0.12);
+        s.mode = 2;
+        s.rough = 0.95;
+    } else {
+        // Carbonaceous chondrite — dark and very rough (Phobos true colour).
+        s.highland = vec3<f32>(0.32, 0.30, 0.27);
+        s.maria    = vec3<f32>(0.13, 0.11, 0.10);
+        s.mode = 3;
+        s.rough = 1.0;
+    }
+    return s;
 }
 
 @fragment
@@ -251,20 +330,30 @@ fn fs_main(in: VsOut) -> BgOut {
     let sun_dir = normalize(u.sun_dir.xyz);
     let planet_radius = u.resolution.w;
     let time = u.misc.y;
+    let quality = u.misc.w;
 
     // ---------- Background gradient + stars (anchored to celestial sphere) ----------
     let sky = sky_uv(ray_dir);
     var stars = vec3<f32>(0.0);
     // Three star populations: rare bright (giants), common mid, dense dim.
+    // Lower quality profiles keep the bright layer, then add back dim density
+    // only when the device budget can afford the extra full-screen work.
     stars = stars + star_layer(sky, 28.0,  0.060,  0.25, time);
-    stars = stars + star_layer(sky, 72.0,  0.030, -0.05, time) * 0.85;
-    stars = stars + star_layer(sky, 180.0, 0.014, -0.18, time) * 0.65;
+    if (quality > 0.45) {
+        stars = stars + star_layer(sky, 72.0,  0.030, -0.05, time) * 0.85;
+    }
+    if (quality > 0.85) {
+        stars = stars + star_layer(sky, 180.0, 0.014, -0.18, time) * 0.65;
+    }
 
     // Faint deep-space gradient — sub-percent linear values so the background
     // tonemaps to genuine black, only barely lifted by the atmosphere tint.
     let base_sky = vec3<f32>(0.0008, 0.0010, 0.0018)
                  + u.atmosphere_color.rgb * 0.0015;
-    var bg_color = base_sky + milky_way(ray_dir) + stars;
+    var bg_color = base_sky + stars;
+    if (quality > 0.55) {
+        bg_color = bg_color + milky_way(ray_dir);
+    }
 
     var best_t = 1e9;
     var best_color = vec3<f32>(0.0);
@@ -277,29 +366,45 @@ fn fs_main(in: VsOut) -> BgOut {
     if (moon_h > 0.40) { n_moons = 1; }
     if (moon_h > 0.75) { n_moons = 2; }
     if (moon_h > 0.95) { n_moons = 3; }
+    n_moons = min(n_moons, select(select(1, 2, quality > 0.50), 3, quality > 0.85));
     for (var i: i32 = 0; i < 3; i = i + 1) {
         if (i >= n_moons) { break; }
         let idx = f32(i + 1) + u.seed_block.x * 0.073 + u.seed_block.y * 0.131;
         let moon_pos = orbit_pos(i, idx, planet_radius, time);
-        let moon_radius = planet_radius * mix(0.10, 0.22, hash11(idx * 5.9));
+        // Size range expanded — small captured asteroids (4 %) to substantial
+        // sister-worlds (25 %) so a system can have a Phobos-style speck
+        // alongside a Charon-style near-twin.
+        let moon_radius = planet_radius * mix(0.04, 0.25, pow(hash11(idx * 5.9), 1.6));
         let t = ray_sphere_t(ray_origin, ray_dir, moon_pos, moon_radius);
         if (t > 0.0 && t < best_t) {
             let hit_pos = ray_origin + ray_dir * t;
             let n = normalize(hit_pos - moon_pos);
-            // Moon surface — multi-octave noise on the unit normal gives
-            // continental-scale dark maria, mid-scale pockmarks, fine grain.
-            // Stratified into highlands (bright) and maria (dark) regions
-            // like Earth's Moon.
+            let style = moon_style_for(idx);
             let surf_seed = vec3<f32>(idx * 13.7, idx * 7.3, idx * 19.1);
             let h_low = fbm3(n * 1.8 + surf_seed, 3);
             let h_mid = fbm3(n * 6.0 + surf_seed * 1.3, 3);
             let h_hi  = fbm3(n * 18.0 + surf_seed * 0.9, 2);
-            let maria_factor = smoothstep(0.42, 0.65, h_low) * 0.85;
-            let highland = vec3<f32>(0.66, 0.62, 0.56);
-            let maria    = vec3<f32>(0.24, 0.22, 0.20);
-            let base_tone = mix(highland, maria, maria_factor);
-            // Pockmark texture darkens patches like rough cratered terrain.
-            let pock = (h_mid - 0.5) * 0.30 + (h_hi - 0.5) * 0.18;
+            // Maria / dark-region fraction varies by moon type — rocky bodies
+            // are highly contrasted; icy bodies have subtle albedo variation.
+            let maria_strength = mix(0.45, 0.92, style.rough);
+            let maria_factor = smoothstep(0.42, 0.65, h_low) * maria_strength;
+            var base_tone = mix(style.highland, style.maria, maria_factor);
+            // Pockmark depth scales with surface roughness (more on rocky
+            // moons, less on smooth icy ones).
+            let pock = ((h_mid - 0.5) * 0.30 + (h_hi - 0.5) * 0.18) * style.rough;
+            // Icy moons get linear surface cracks (Europa-style chaos terrain).
+            if (style.mode == 1) {
+                let crack = ridged_fbm3(n * 9.0 + surf_seed * 0.7, 2);
+                let crack_line = smoothstep(0.78, 0.93, crack);
+                base_tone = base_tone * (1.0 - crack_line * 0.45)
+                          + vec3<f32>(0.18, 0.25, 0.40) * crack_line * 0.6;
+            }
+            // Reddish bodies (Io/Phobos colour family) get sulphur-yellow
+            // splotches at high-noise spots — volcanic deposits etc.
+            if (style.mode == 2) {
+                let sulphur = smoothstep(0.60, 0.85, h_low);
+                base_tone = mix(base_tone, vec3<f32>(0.95, 0.78, 0.32), sulphur * 0.30);
+            }
             let surface = base_tone * (1.0 + pock);
             let n_dot_l = max(dot(n, sun_dir), 0.0);
             best_color = surface * (n_dot_l * 0.95 + 0.03);
@@ -351,7 +456,10 @@ fn fs_main(in: VsOut) -> BgOut {
     // Rendered as tiny bright-grey pinpoints — just a ~1 px soft gaussian per
     // satellite. No glint, no halo, no diffraction spikes.
     let pop = u.world_features.y;
-    let n_sats = i32(floor(pop * 14.0));
+    let n_sats = min(
+        i32(floor(pop * 14.0)),
+        select(select(4, 8, quality > 0.50), 14, quality > 0.85),
+    );
     let inv_pix = vec2<f32>(u.resolution.x, u.resolution.y) * 0.5;
     for (var i: i32 = 0; i < 14; i = i + 1) {
         if (i >= n_sats) { break; }

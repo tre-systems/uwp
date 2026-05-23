@@ -19,7 +19,10 @@ impl Camera {
             aspect,
             fov_y: 35f32.to_radians(),
             near: 0.05,
-            far: 100.0,
+            // Far plane must comfortably contain the outermost moon shell
+            // (~45 R) at maximum camera distance (~60 R). 200 leaves margin
+            // for ring systems and stars projected at infinity.
+            far: 200.0,
         }
     }
 
@@ -52,8 +55,11 @@ impl Camera {
     pub fn dolly(&mut self, delta: f32, planet_radius: f32) {
         // Min distance scales with the rendered planet so the camera never
         // clips inside a super-Earth and we can still zoom right in on an
-        // asteroid-sized world.
+        // asteroid-sized world. Max distance widened to 60× planet radius
+        // so distant moons (3rd orbital shell sits at 30-45 planet radii)
+        // come into frame when zoomed all the way out.
         let min_dist = (planet_radius * 1.4).max(0.25);
-        self.distance = (self.distance * (1.0 + delta * 0.0015)).clamp(min_dist, 12.0);
+        let max_dist = (planet_radius * 60.0).max(60.0);
+        self.distance = (self.distance * (1.0 + delta * 0.0015)).clamp(min_dist, max_dist);
     }
 }

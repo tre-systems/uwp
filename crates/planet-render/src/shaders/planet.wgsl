@@ -76,15 +76,21 @@ fn hash3_s(p: vec3<f32>) -> f32 {
 }
 
 // Worley-style cratering. For each of the 27 cells near `p` (in cell space),
-// pick a random crater position + radius, find the closest one to `p`, and
-// return a vertical displacement: bowl-shaped depression inside, raised rim
-// just outside the bowl edge. Returns 0 outside any crater's reach.
+// pick a random crater position + radius, find the closest one. Each crater
+// then has its own per-seed shape parameters: irregular rim outline, optional
+// central peak, slight elliptical squash. This breaks the "perfectly circular"
+// look you'd get from a plain Worley distance field — real craters have
+// scalloped rims (terraced slumping), oblique-impact ellipses, and complex
+// crater central peaks (Tycho, Copernicus, Tsiolkovsky).
 fn crater_layer(p: vec3<f32>, scale: f32, depth: f32) -> f32 {
     let sp = p * scale;
     let ip = floor(sp);
     let fp = fract(sp);
     var best_r = 1e9;
     var best_norm = 0.0;
+    var best_seed: f32 = 0.0;
+    var best_local: vec3<f32> = vec3<f32>(0.0);
+    var best_radius: f32 = 1.0;
     for (var z = -1; z <= 1; z = z + 1) {
         for (var y = -1; y <= 1; y = y + 1) {
             for (var x = -1; x <= 1; x = x + 1) {
@@ -97,26 +103,61 @@ fn crater_layer(p: vec3<f32>, scale: f32, depth: f32) -> f32 {
                 );
                 let centre = offs + jitter;
                 let radius = hash3_s(cell + vec3<f32>(113.3, 7.1, 51.9)) * 0.45 + 0.10;
-                let d = length(centre - fp);
+                // Anisotropic stretch — oblique impacts produce elliptical
+                // craters. Per-crater axis hash gives each one its own angle
+                // and elongation ratio (mostly mild, occasionally extreme).
+                let axis_h = hash3_s(cell + vec3<f32>(17.0, 41.0, 89.0));
+                let stretch_h = hash3_s(cell + vec3<f32>(91.0, -23.0, 7.0));
+                let axis_ang = axis_h * 6.2831853;
+                let ax = vec3<f32>(cos(axis_ang), 0.0, sin(axis_ang));
+                let ay = vec3<f32>(-sin(axis_ang), 0.0, cos(axis_ang));
+                let local = centre - fp;
+                let lx = dot(local, ax);
+                let ly = dot(local, ay);
+                let lz = local.y;
+                let stretch = 1.0 + (stretch_h - 0.5) * 0.35;  // 0.825 .. 1.175
+                let d = sqrt(lx * lx / (stretch * stretch) + ly * ly + lz * lz * stretch * stretch);
                 let normalised = d / radius;
                 if (normalised < 1.0 && d < best_r) {
                     best_r = d;
                     best_norm = normalised;
+                    best_seed = hash3_s(cell + vec3<f32>(53.7, 19.1, 71.3));
+                    best_local = local;
+                    best_radius = radius;
                 }
             }
         }
     }
     if (best_r >= 1e9) { return 0.0; }
-    let r = best_norm;
+    // Rim irregularity. Each crater's rim is perturbed by a per-crater noise
+    // field driven by the azimuth angle around the crater centre. The
+    // perturbation shifts the rim radius inward/outward by a few percent,
+    // turning the clean circle into a scalloped polygon.
+    let rim_freq = 4.0 + best_seed * 6.0;
+    let rim_phase = best_seed * 6.2831853;
+    let azimuth = atan2(best_local.z, best_local.x);
+    let rim_pert = sin(azimuth * rim_freq + rim_phase) * 0.08
+                 + sin(azimuth * (rim_freq * 0.4 + 1.7)) * 0.05;
+    let r = best_norm * (1.0 + rim_pert);
+    if (r >= 1.0) { return 0.0; }
     // Bowl up to r=0.85, then a raised rim that smoothly tapers back to 0 by r=1.
     if (r < 0.85) {
         let t = r / 0.85;
         // Smooth cosine bowl — flat-bottomed at r=0, lifts back to 0 at the rim base.
-        let bowl = -0.5 * (1.0 + cos(t * 3.14159265));
+        var bowl = -0.5 * (1.0 + cos(t * 3.14159265));
+        // Central peak for large complex craters. Real lunar craters >~15 km
+        // diameter have rebound peaks; we trigger on absolute radius and only
+        // raise a peak in the inner ~25 % of the bowl. The peak height is
+        // bounded so it doesn't pierce the rim. About 50 % of craters get a
+        // peak (large-impact stochastic process, modelled by a hash gate).
+        let big = smoothstep(0.30, 0.55, best_radius) * step(0.45, best_seed);
+        let peak_inner = 1.0 - smoothstep(0.0, 0.22, t);
+        bowl = bowl + peak_inner * peak_inner * big * 0.55;
         return bowl * depth;
     }
     let t = (r - 0.85) / 0.15;
-    let ring = sin(t * 3.14159265);  // 0 -> 1 -> 0
+    // Rim ring with the same azimuthal noise so the rim crest also scallops.
+    let ring = sin(t * 3.14159265);
     return ring * depth * 0.55;
 }
 
@@ -301,6 +342,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // (very low sea_h) and water worlds (very high sea_h).
     let above_range = max(1.0 - sea_h, 0.0001);
     let above_amt = max(h - sea_h, 0.0) / above_range;
+    let quality = u.misc.w;
 
     // Build a tangent frame from the sphere direction so we can do finite-difference
     // gradients on the terrain field. We pick an arbitrary helper vector and project.
@@ -308,14 +350,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let tangent = normalize(cross(helper, dir));
     let bitangent = normalize(cross(dir, tangent));
 
-    let eps = 0.0025;
-    let h0 = h;
-    let ht = terrain_field(normalize(dir + tangent * eps));
-    let hb = terrain_field(normalize(dir + bitangent * eps));
-
     var local_normal: vec3<f32>;
     var slope: f32 = 0.0;
-    if (above_water) {
+    if (above_water && quality > 0.45) {
+        let eps = 0.0025;
+        let h0 = h;
+        let ht = terrain_field(normalize(dir + tangent * eps));
+        let hb = terrain_field(normalize(dir + bitangent * eps));
         let dx = (max(ht - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
         let dy = (max(hb - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
         local_normal = normalize(dir - tangent * dx - bitangent * dy);
@@ -325,13 +366,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let detail_a = fbm(dir * 55.0 + u.seed_block.xyz, 2);
         let detail_b = fbm(dir * 55.0 + u.seed_block.xyz + vec3<f32>(13.7, 0.0, 0.0), 2);
         local_normal = normalize(local_normal + tangent * detail_a * 0.025 + bitangent * detail_b * 0.025);
-    } else {
+    } else if (!above_water && quality > 0.45) {
         // Wave shimmer — subtle moving normal perturbation gives the ocean
         // surface life and lets the sun specular scatter into a wider, more
         // believable highlight rather than a single dot.
         let wave_a = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(u.misc.y * 0.40, 0.0, 0.0), 2);
         let wave_b = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, u.misc.y * 0.40), 2);
         local_normal = normalize(dir + tangent * wave_a * 0.030 + bitangent * wave_b * 0.030);
+    } else {
+        local_normal = dir;
     }
 
     let world_normal = normalize((u.model * vec4<f32>(local_normal, 0.0)).xyz);
@@ -545,12 +588,48 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_bit = cross(dir, cloud_tan);
     let swirl_amt  = fbm(dir * 0.9 + warp_seed * 0.7, 3) * 0.5 + 0.5;       // strength
     let swirl_ang  = fbm(dir * 2.4 + warp_seed + vec3<f32>(17.7, -41.0, 9.3), 3) * 6.2831;
-    let swirl_vec  = (cloud_tan * cos(swirl_ang) + cloud_bit * sin(swirl_ang)) * swirl_amt * 0.045;
+    let swirl_vec  = (cloud_tan * cos(swirl_ang) + cloud_bit * sin(swirl_ang)) * swirl_amt * 0.030;
+
+    // Explicit cyclonic vortex centres — 3 seed-driven hurricane points on
+    // the sphere. At each one the cloud warp gets a tangential rotation that
+    // decays with angular distance, producing a visible spiral structure
+    // (clearly hurricane-shaped at the centre, blending into the broader
+    // swirl field further out). This is what the previous noise-only warp
+    // couldn't deliver — clear discrete cyclones, not just fluid mush.
+    var vortex_disp = vec3<f32>(0.0);
+    for (var vi: i32 = 0; vi < 3; vi = vi + 1) {
+        let v_h1 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 17.3, 5.7, 91.0));
+        let v_h2 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 41.7, 23.1, -7.3));
+        let v_h3 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 91.1, -17.3, 53.7));
+        // Latitude bias: hurricanes form in tropical/sub-tropical bands on
+        // Earth (10–30° from equator), almost never on the equator itself or
+        // near the poles. Map hash through that band, randomly mirrored to
+        // the north or south.
+        let band_lat = (0.18 + v_h2 * 0.30) * select(-1.0, 1.0, v_h3 > 0.5);
+        let lat_c = band_lat * 3.14159265;
+        let lon_c = v_h1 * 6.2831853;
+        let cos_lat = cos(lat_c);
+        let v_dir = vec3<f32>(cos_lat * cos(lon_c), sin(lat_c), cos_lat * sin(lon_c));
+        // Squared angular distance — tight gaussian falloff so the vortex
+        // is a localised hot spot, not a planet-wide rotation.
+        let cos_d = clamp(dot(dir, v_dir), -1.0, 1.0);
+        let ang2 = 2.0 * (1.0 - cos_d);
+        let strength = mix(0.6, 1.1, v_h3);
+        let falloff = exp(-ang2 * 90.0) * strength;
+        // Tangent direction at `dir`, pointing around the vortex centre.
+        // Cross of dir with the projection of v_dir onto the tangent plane
+        // gives a clean rotational vector that flips hemispheres correctly
+        // (Coriolis-style — north of equator goes counter-clockwise, south
+        // goes clockwise — by virtue of the cross product sign).
+        let to_v = v_dir - dir * cos_d;
+        let tan_v = cross(dir, to_v);
+        vortex_disp = vortex_disp + tan_v * falloff * 0.060;
+    }
 
     // -- Main cumulus deck (lowest visible layer) --
     // Domain-warped fbm + ridged_fbm gives the deck billowy cumulus tops
     // rather than uniform fuzz.
-    let main_dir = dir + cloud_warp + swirl_vec;
+    let main_dir = dir + cloud_warp + swirl_vec + vortex_disp;
     let cloud_p = main_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let cloud_smooth = fbm(cloud_p, 5) * 0.5 + 0.5;
     let cloud_billow = ridged_fbm(cloud_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 3);
@@ -564,7 +643,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Cast a soft shadow from clouds onto the surface by sampling the cloud
     // field offset toward the sun in local frame. Reuse the same warp so the
     // shadow tracks the actual cloud shape rather than the unwarped field.
-    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec;
+    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec + vortex_disp;
     let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
     let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
@@ -651,8 +730,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // toward the sun, with diminishing weight. Stronger near-tap reads as
     // the immediate shadow side, far-tap as the bulk above. Together they
     // give the deck the chunky cumulus volume that one-sample shadow misses.
-    let near_dir = normalize(dir + sun_dir_local * 0.018) + cloud_warp + swirl_vec;
-    let far_dir  = normalize(dir + sun_dir_local * 0.045) + cloud_warp + swirl_vec;
+    let near_dir = normalize(dir + sun_dir_local * 0.018) + cloud_warp + swirl_vec + vortex_disp;
+    let far_dir  = normalize(dir + sun_dir_local * 0.045) + cloud_warp + swirl_vec + vortex_disp;
     let near_p = near_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let far_p  = far_dir  * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let near_smooth  = fbm(near_p, 4) * 0.5 + 0.5;
