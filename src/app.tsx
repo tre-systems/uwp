@@ -1,9 +1,10 @@
 import { Canvas } from './components/Canvas'
 import { ControlPanel } from './components/ControlPanel'
-import { errorMessage } from './state'
+import { errorMessage, viewMode } from './state'
 
 export function App() {
   const error = errorMessage.value
+  const mode = viewMode.value
 
   return (
     <div class="app">
@@ -18,6 +19,13 @@ export function App() {
           </p>
         </div>
       ) : null}
+      <button
+        class="view-toggle"
+        title={mode === 'detail' ? 'Switch to system view' : 'Switch to planet view'}
+        onClick={() => { viewMode.value = mode === 'detail' ? 'system' : 'detail' }}
+      >
+        {mode === 'detail' ? '☉ System' : '◉ Planet'}
+      </button>
       <ControlPanel />
     </div>
   )

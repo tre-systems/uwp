@@ -18,6 +18,7 @@ mod tests {
             ("planet.wgsl", include_str!("shaders/planet.wgsl")),
             ("background.wgsl", include_str!("shaders/background.wgsl")),
             ("atmosphere.wgsl", include_str!("shaders/atmosphere.wgsl")),
+            ("system.wgsl", include_str!("shaders/system.wgsl")),
         ] {
             let mut validator = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),

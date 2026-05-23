@@ -9,10 +9,13 @@ export * from './uwp'
 export * from './uwpDescriptions'
 export { paramsPatchFromUwp }
 
+export type ViewMode = 'detail' | 'system'
+
 export const errorMessage = signal<string | null>(null)
 export const panelOpen = signal(false)
 export const uwp = signal<UwpDigits>({ ...defaultUwp })
 export const params = signal<Params>({ ...defaultParams })
+export const viewMode = signal<ViewMode>('detail')
 
 export function updateParams(patch: Partial<Params>) {
   params.value = { ...params.value, ...patch }

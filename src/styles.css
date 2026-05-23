@@ -101,6 +101,34 @@ html, body, #app {
 .panel-toggle:active { transform: scale(0.95); }
 .panel-toggle-open { font-size: 14px; }
 
+.view-toggle {
+  position: fixed;
+  top: 16px;
+  right: 68px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 22, 0.78);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: background 160ms, transform 160ms, border-color 160ms;
+  z-index: 10;
+}
+.view-toggle:hover {
+  background: rgba(20, 28, 44, 0.88);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.view-toggle:active { transform: scale(0.95); }
+
 .panel-header {
   display: flex;
   flex-direction: column;

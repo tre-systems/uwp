@@ -8,6 +8,7 @@ mod mesh;
 mod params;
 mod renderer;
 mod shader;
+mod system;
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -54,6 +55,32 @@ impl Planet {
         // multipliers like 0.015 read as per-second, not per-millisecond).
         self.inner
             .render((time_ms * 0.001) as f32)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Switch between the detail planet view and the system overview view.
+    /// `mode` is "detail" or "system" — any other value resets to detail.
+    #[wasm_bindgen(js_name = setViewMode)]
+    pub fn set_view_mode(&mut self, mode: &str) {
+        let m = match mode {
+            "system" => renderer::ViewMode::System,
+            _ => renderer::ViewMode::Detail,
+        };
+        self.inner.set_view_mode(m);
+    }
+
+    /// Generate a new solar system from the given seed (replaces current one).
+    /// Auto-refits the system-view camera to the new outermost orbit.
+    #[wasm_bindgen(js_name = setSystemSeed)]
+    pub fn set_system_seed(&mut self, seed: u32) {
+        self.inner.set_system_seed(seed);
+    }
+
+    /// Returns the current solar system as a JS object — used by the UI to
+    /// render the planet list / starport classifications etc.
+    #[wasm_bindgen(js_name = getSystem)]
+    pub fn get_system(&self) -> Result<JsValue, JsValue> {
+        serde_wasm_bindgen::to_value(self.inner.system())
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

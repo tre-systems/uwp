@@ -7,6 +7,18 @@ use crate::camera::Camera;
 use crate::mesh::{cubesphere, Vertex};
 use crate::params::PlanetParams;
 use crate::shader::shader_with_common;
+use crate::system::{generate as generate_system, BodyType, SolarSystem};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewMode {
+    /// Existing detail render — single planet, cubesphere mesh, atmosphere pass.
+    Detail,
+    /// New system overview — star at origin, planets on circular orbits.
+    System,
+}
+
+const MAX_SYSTEM_PLANETS: usize = 16;
+const SCENE_UNITS_PER_AU: f32 = 1.0;
 
 const PLANET_RES: u32 = 200;
 
@@ -38,6 +50,19 @@ struct Uniforms {
 
 const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+/// Packed planet data for the system shader: two vec4s per planet.
+///   slot 2i  : xyz = world position, w = display radius
+///   slot 2i+1: xyz = base colour,    w = orbital radius (scene units)
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Default)]
+struct SystemUniforms {
+    /// x = planet count, y = star display radius, z = star colour intensity, w = unused.
+    info: [f32; 4],
+    /// xyz = star colour, w = star temperature.
+    star_color: [f32; 4],
+    planets: [[f32; 4]; MAX_SYSTEM_PLANETS * 2],
+}
+
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -47,6 +72,7 @@ pub struct Renderer {
     planet_pipeline: wgpu::RenderPipeline,
     background_pipeline: wgpu::RenderPipeline,
     atmosphere_pipeline: wgpu::RenderPipeline,
+    system_pipeline: wgpu::RenderPipeline,
 
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -54,6 +80,9 @@ pub struct Renderer {
 
     uniform_buffer: wgpu::Buffer,
     uniforms_bind_group: wgpu::BindGroup,
+
+    system_uniform_buffer: wgpu::Buffer,
+    system_bind_group: wgpu::BindGroup,
 
     scene_view: wgpu::TextureView,
     scene_sampler: wgpu::Sampler,
@@ -66,6 +95,9 @@ pub struct Renderer {
     params: PlanetParams,
     rotation_t: f32,
     last_time: f32,
+
+    view_mode: ViewMode,
+    system: SolarSystem,
 }
 
 impl Renderer {
@@ -225,6 +257,42 @@ impl Renderer {
             push_constant_ranges: &[],
         });
 
+        // System overview: one extra uniform block packed with star + planet
+        // positions/colours.
+        let system_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("system_uniforms"),
+            size: std::mem::size_of::<SystemUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let system_uniform_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("system_uniform_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let system_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("system_bind_group"),
+            layout: &system_uniform_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: system_uniform_buffer.as_entire_binding(),
+            }],
+        });
+        let system_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("system_pipeline_layout"),
+            bind_group_layouts: &[&uniforms_layout, &system_uniform_layout],
+            push_constant_ranges: &[],
+        });
+
         // Shaders
         let planet_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("planet.wgsl"),
@@ -237,6 +305,10 @@ impl Renderer {
         let atmosphere_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("atmosphere.wgsl"),
             source: shader_with_common(include_str!("shaders/atmosphere.wgsl")),
+        });
+        let system_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("system.wgsl"),
+            source: shader_with_common(include_str!("shaders/system.wgsl")),
         });
 
         let vertex_layout = wgpu::VertexBufferLayout {
@@ -332,6 +404,43 @@ impl Renderer {
             cache: None,
         });
 
+        // System pipeline: fullscreen triangle, writes directly to swapchain
+        // (does its own tonemap). No depth attachment — the shader composites
+        // background + star + planets internally via ray-sphere tests.
+        let system_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("system_pipeline"),
+            layout: Some(&system_layout),
+            vertex: wgpu::VertexState {
+                module: &system_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &system_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         // Atmosphere pipeline: fullscreen triangle, samples the HDR scene target.
         let atmosphere_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("atmosphere_pipeline"),
@@ -389,6 +498,19 @@ impl Renderer {
 
         let camera = Camera::new(width as f32 / height as f32);
 
+        // Seed the system with a default G-class+ system (seed 1337) so the
+        // System view has something to display before the JS layer hands us a
+        // real system. The buffer is also pre-populated so the first render
+        // doesn't read uninitialised memory.
+        let initial_system = generate_system(1337);
+        let initial_system_uniforms = system_uniforms_for(&initial_system, 0.0);
+        let queue_for_init = &queue;
+        queue_for_init.write_buffer(
+            &system_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&initial_system_uniforms),
+        );
+
         Ok(Self {
             surface,
             device,
@@ -397,11 +519,14 @@ impl Renderer {
             planet_pipeline,
             background_pipeline,
             atmosphere_pipeline,
+            system_pipeline,
             vertex_buffer,
             index_buffer,
             num_indices,
             uniform_buffer,
             uniforms_bind_group,
+            system_uniform_buffer,
+            system_bind_group,
             scene_view,
             scene_sampler,
             atmosphere_bind_group_layout,
@@ -411,11 +536,65 @@ impl Renderer {
             params: PlanetParams::default(),
             rotation_t: 0.0,
             last_time: 0.0,
+            view_mode: ViewMode::Detail,
+            system: initial_system,
         })
     }
 
     pub fn set_params(&mut self, params: PlanetParams) {
         self.params = params;
+    }
+
+    pub fn set_view_mode(&mut self, mode: ViewMode) {
+        if self.view_mode == mode {
+            return;
+        }
+        self.view_mode = mode;
+        // Reset camera distance to fit whichever scene we're about to render.
+        match mode {
+            ViewMode::Detail => {
+                self.camera.distance = self.camera.distance.clamp(
+                    (self.params.planet_radius * 1.4).max(0.25),
+                    self.params.planet_radius * 60.0,
+                );
+                if self.camera.distance > 6.0 {
+                    self.camera.distance = 3.0;
+                }
+            }
+            ViewMode::System => {
+                // Fit the outermost orbit comfortably in frame.
+                let outer = self
+                    .system
+                    .planets
+                    .last()
+                    .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
+                    .unwrap_or(5.0);
+                self.camera.distance = (outer * 1.6).max(3.0);
+            }
+        }
+    }
+
+    pub fn view_mode(&self) -> ViewMode {
+        self.view_mode
+    }
+
+    pub fn set_system_seed(&mut self, seed: u32) {
+        self.system = generate_system(seed);
+        // If we're currently in system view, refit the camera to the new outer
+        // orbit so swapping systems doesn't leave us looking at empty space.
+        if self.view_mode == ViewMode::System {
+            let outer = self
+                .system
+                .planets
+                .last()
+                .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
+                .unwrap_or(5.0);
+            self.camera.distance = (outer * 1.6).max(3.0);
+        }
+    }
+
+    pub fn system(&self) -> &SolarSystem {
+        &self.system
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -442,7 +621,22 @@ impl Renderer {
     }
 
     pub fn zoom(&mut self, delta: f32) {
-        self.camera.dolly(delta, self.params.planet_radius);
+        match self.view_mode {
+            ViewMode::Detail => self.camera.dolly(delta, self.params.planet_radius),
+            ViewMode::System => {
+                // In system view we want a much larger zoom range — the camera
+                // must accommodate seeing a single planet up close (~0.1 scene
+                // units) AND the full outermost orbit (potentially 80+ AU).
+                let outer = self
+                    .system
+                    .planets
+                    .last()
+                    .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
+                    .unwrap_or(5.0);
+                self.camera.distance = (self.camera.distance * (1.0 + delta * 0.0015))
+                    .clamp(0.10, (outer * 4.0).max(20.0));
+            }
+        }
     }
 
     pub fn render(&mut self, time: f32) -> Result<(), String> {
@@ -481,6 +675,33 @@ impl Renderer {
                 label: Some("frame_encoder"),
             });
 
+        match self.view_mode {
+            ViewMode::Detail => {
+                self.encode_detail_render(&mut encoder, &view);
+            }
+            ViewMode::System => {
+                // Push the latest system layout (planet positions move every
+                // frame as orbits advance).
+                let sys_u = system_uniforms_for(&self.system, time);
+                self.queue.write_buffer(
+                    &self.system_uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&sys_u),
+                );
+                self.encode_system_render(&mut encoder, &view);
+            }
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        frame.present();
+        Ok(())
+    }
+
+    fn encode_detail_render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) {
         // Pass 1: render planet + background into the HDR scene texture.
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -521,7 +742,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("atmosphere_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -537,10 +758,33 @@ impl Renderer {
             pass.set_bind_group(1, &self.atmosphere_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
+    }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
-        frame.present();
-        Ok(())
+    fn encode_system_render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) {
+        // Single fullscreen pass directly to swapchain. The system shader
+        // does its own raymarched composite + tonemap.
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("system_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_pipeline(&self.system_pipeline);
+        pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
+        pass.set_bind_group(1, &self.system_bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 
     fn build_uniforms(&self, time: f32) -> Uniforms {
@@ -671,6 +915,110 @@ fn create_atmosphere_bind_group(
 
 fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {
     [c[0], c[1], c[2], 1.0]
+}
+
+/// Visual radius for a planet rendered in system view. Real planets at AU
+/// scale would be sub-pixel against the star; we exaggerate them — but
+/// always keep them visibly smaller than the star itself (so a gas giant
+/// can't transit and eclipse the whole star in the overview).
+///
+/// `system_scale` is a per-system unit length (typically the outermost
+/// orbit radius in scene units) — we size bodies as a fraction of that
+/// so compact M-dwarf systems and big G-star systems both stay readable.
+fn display_radius_for(body: BodyType, real_radius_earth: f32, system_scale: f32) -> f32 {
+    // Base: a small fraction of the system's overall scale, with a sublinear
+    // dependence on real radius so a 14 R⊕ gas giant only reads ~3× bigger
+    // than a 1 R⊕ terrestrial (rather than 14× — which would dwarf the star).
+    let real_factor = real_radius_earth.max(0.3).powf(0.30);
+    let mult = match body {
+        BodyType::GasGiant => 1.8,
+        BodyType::IceGiant => 1.4,
+        BodyType::MiniNeptune => 1.2,
+        BodyType::SuperEarth => 1.0,
+        BodyType::Terrestrial => 0.9,
+        BodyType::Inferno => 0.8,
+        BodyType::Frozen => 0.8,
+        BodyType::Rocky => 0.7,
+    };
+    let scale_unit = system_scale.max(0.5);
+    (scale_unit * 0.012 * real_factor * mult).max(0.008)
+}
+
+/// Schematic colour for a body in system view. The detail-render planet
+/// shader produces the textured surface — at system scale we just want a
+/// solid tint that conveys body class.
+fn schematic_color_for(body: BodyType, in_hz: bool) -> [f32; 3] {
+    match body {
+        BodyType::GasGiant => [0.86, 0.74, 0.55],   // pale gold (Jupiter)
+        BodyType::IceGiant => [0.47, 0.63, 0.85],   // pale cyan (Neptune)
+        BodyType::MiniNeptune => [0.55, 0.70, 0.88],
+        BodyType::SuperEarth => {
+            if in_hz {
+                [0.40, 0.65, 0.50]
+            } else {
+                [0.55, 0.48, 0.40]
+            }
+        }
+        BodyType::Terrestrial => {
+            if in_hz {
+                [0.30, 0.60, 0.85]
+            } else {
+                [0.55, 0.50, 0.42]
+            }
+        }
+        BodyType::Inferno => [0.78, 0.42, 0.22],
+        BodyType::Frozen => [0.78, 0.84, 0.92],
+        BodyType::Rocky => [0.55, 0.50, 0.46],
+    }
+}
+
+/// Build the system-view uniform buffer contents for the current system at a
+/// given time. Planet positions advance along circular orbits (Kepler 3rd
+/// law) so the system visibly evolves as time progresses.
+fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
+    let mut out = SystemUniforms::default();
+    let n = sys.planets.len().min(MAX_SYSTEM_PLANETS);
+
+    // Compute system scale = outermost orbit radius (or 1 if no planets).
+    let system_scale = sys
+        .planets
+        .last()
+        .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
+        .unwrap_or(1.0);
+
+    // Star display size — fraction of the system scale so the star is always
+    // a clearly visible disc but smaller than the inner orbits would suggest
+    // at true scale (real Sun is ~0.005 AU). Modest extra growth with
+    // radius so M-dwarfs sit slightly smaller than G-stars and O-class
+    // stars sit visibly larger.
+    let star_disp =
+        (system_scale * 0.045 * (sys.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
+    // Intensity scales with luminosity, soft-capped so even O-class stars
+    // don't blow out the bloom completely.
+    let intensity = 1.4 + sys.star.luminosity_solar.powf(0.2);
+
+    out.info = [n as f32, star_disp, intensity, 0.0];
+    out.star_color = [
+        sys.star.color[0],
+        sys.star.color[1],
+        sys.star.color[2],
+        sys.star.temperature_k,
+    ];
+
+    for (i, planet) in sys.planets.iter().take(n).enumerate() {
+        // Mean motion ∝ a^-1.5 (Kepler 3rd law). Time-scale tuned so an
+        // Earth-AU orbit completes in ~30 s of wall clock, giving a visibly
+        // moving system without being frantic.
+        let omega = 0.20 / planet.orbit_au.powf(1.5);
+        let theta = planet.phase_rad + time * omega;
+        let r = planet.orbit_au * SCENE_UNITS_PER_AU;
+        let pos = [r * theta.cos(), 0.0, r * theta.sin()];
+        let disp_r = display_radius_for(planet.body_type, planet.radius_earth, system_scale);
+        let col = schematic_color_for(planet.body_type, planet.in_habitable_zone);
+        out.planets[i * 2] = [pos[0], pos[1], pos[2], disp_r];
+        out.planets[i * 2 + 1] = [col[0], col[1], col[2], r];
+    }
+    out
 }
 
 fn mesh_resolution(quality: f32) -> u32 {
