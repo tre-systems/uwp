@@ -518,38 +518,52 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // View ray in local frame — drives parallax offsets between cloud layers.
     let view_dir_local = (transpose(u.model) * vec4<f32>(view_dir, 0.0)).xyz;
 
-    // Domain-warp field — shared across the main + mid cloud layers so the
-    // two read as a coherent system (the mid layer breaks where the main
-    // deck breaks) instead of two unrelated noise patterns laid on top of
-    // each other. This is the single biggest "real clouds" cue: turns
-    // round fbm blobs into fluid swirly fronts and cells.
+    // Two-stage warp. First a translational fbm displacement breaks the
+    // underlying fbm grid into fluid masses. Then a rotational warp in the
+    // tangent plane swirls those masses around — approximating the
+    // divergence-free flow you get from a real curl-noise field at a tiny
+    // fraction of the cost (no finite-difference curl, just one extra fbm
+    // for the rotation angle).
     let warp_seed = u.seed_block.xyz;
     let cloud_warp = vec3<f32>(
         fbm(dir * 1.7 + warp_seed + vec3<f32>(31.0,   0.0,   0.0), 3),
         fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,  91.0,   0.0), 3),
         fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,   0.0,  47.0), 3),
-    ) * 0.14;
+    ) * 0.10;
+
+    // Curl-like rotational warp: build a tangent frame at `dir`, rotate the
+    // offset by a per-location angle drawn from a low-frequency fbm. Gives
+    // the deck the cyclonic swirl real weather systems have (storms,
+    // anticyclones, frontal hooks).
+    let cloud_helper = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.95);
+    let cloud_tan = normalize(cross(cloud_helper, dir));
+    let cloud_bit = cross(dir, cloud_tan);
+    let swirl_amt  = fbm(dir * 0.9 + warp_seed * 0.7, 3) * 0.5 + 0.5;       // strength
+    let swirl_ang  = fbm(dir * 2.4 + warp_seed + vec3<f32>(17.7, -41.0, 9.3), 3) * 6.2831;
+    let swirl_vec  = (cloud_tan * cos(swirl_ang) + cloud_bit * sin(swirl_ang)) * swirl_amt * 0.045;
 
     // -- Main cumulus deck (lowest visible layer) --
     // Domain-warped fbm + ridged_fbm gives the deck billowy cumulus tops
     // rather than uniform fuzz.
-    let main_dir = dir + cloud_warp;
+    let main_dir = dir + cloud_warp + swirl_vec;
     let cloud_p = main_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let cloud_smooth = fbm(cloud_p, 5) * 0.5 + 0.5;
     let cloud_billow = ridged_fbm(cloud_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 3);
-    let cloud_raw = cloud_smooth * 0.62 + cloud_billow * 0.38;
-    let cloud_low  = mix(0.85, 0.20, coverage);
-    let cloud_high = mix(1.05, 0.55, coverage);
+    let cloud_raw = cloud_smooth * 0.55 + cloud_billow * 0.45;
+    // Narrower smoothstep band — sharper edges, more cumulus-like billows
+    // instead of soft cotton-candy fuzz.
+    let cloud_low  = mix(0.85, 0.30, coverage);
+    let cloud_high = mix(1.02, 0.50, coverage);
     let cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
 
     // Cast a soft shadow from clouds onto the surface by sampling the cloud
     // field offset toward the sun in local frame. Reuse the same warp so the
     // shadow tracks the actual cloud shape rather than the unwarped field.
-    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp;
+    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec;
     let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
     let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
     let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
-    let shadow_factor    = 1.0 - cloud_shadow * 0.55;
+    let shadow_factor    = 1.0 - cloud_shadow * 0.65;
 
     // ---------- Lighting ----------
     let ambient   = u.atmosphere_color.rgb * 0.06 + vec3<f32>(0.015);
@@ -619,21 +633,32 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_tint = mix(vec3<f32>(0.93), u.atmosphere_color.rgb * 1.25, cloud_tint_amt * 0.7);
 
     // -- Main cumulus deck (volumetric self-shadow) --
-    // Sample the cloud field offset toward the sun in local space — if the
-    // upper layer is dense, this pixel is sitting under a cloud and reads
-    // darker. Gives the deck volume rather than a flat painted layer.
-    let upper_dir = normalize(dir + sun_dir_local * 0.020) + cloud_warp;
-    let upper_p = upper_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
-    let upper_smooth = fbm(upper_p, 4) * 0.5 + 0.5;
-    let upper_billow = ridged_fbm(upper_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 2);
-    let upper_density = smoothstep(cloud_low, cloud_high, upper_smooth * 0.62 + upper_billow * 0.38);
-    let cloud_self_shadow = 1.0 - upper_density * 0.55;
+    // Two-tap self-shadow trace: sample the cloud field at two offsets
+    // toward the sun, with diminishing weight. Stronger near-tap reads as
+    // the immediate shadow side, far-tap as the bulk above. Together they
+    // give the deck the chunky cumulus volume that one-sample shadow misses.
+    let near_dir = normalize(dir + sun_dir_local * 0.018) + cloud_warp + swirl_vec;
+    let far_dir  = normalize(dir + sun_dir_local * 0.045) + cloud_warp + swirl_vec;
+    let near_p = near_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+    let far_p  = far_dir  * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+    let near_smooth  = fbm(near_p, 4) * 0.5 + 0.5;
+    let near_ridge   = ridged_fbm(near_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 2);
+    let near_d = smoothstep(cloud_low, cloud_high, near_smooth * 0.55 + near_ridge * 0.45);
+    let far_d  = smoothstep(cloud_low, cloud_high, fbm(far_p, 3) * 0.5 + 0.5);
+    let cloud_self_shadow = 1.0 - clamp(near_d * 0.55 + far_d * 0.35, 0.0, 0.85);
 
     // Silver lining: mid-density edges read brighter than the dense centre.
-    let lining = smoothstep(0.18, 0.45, cloud_density)
-                * (1.0 - smoothstep(0.5, 0.85, cloud_density));
-    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow) * (1.0 + lining * 0.35);
-    lit = mix(lit, cloud_lit, cloud_density * 0.88);
+    let lining = smoothstep(0.10, 0.40, cloud_density)
+                * (1.0 - smoothstep(0.55, 0.90, cloud_density));
+
+    // Anvil top: densest cumulus tops catch extra direct sunlight before the
+    // light has to penetrate the deck. Gives cumulonimbus the bright flat
+    // top you see in real Earth-from-space cloud photos.
+    let anvil = smoothstep(0.72, 0.95, cloud_density) * smoothstep(0.0, 0.30, n_dot_l);
+
+    let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow)
+                  * (1.0 + lining * 0.45 + anvil * 0.40);
+    lit = mix(lit, cloud_lit, cloud_density * 0.92);
 
     // -- Mid-altitude broken cumulus (NEW layer) --
     // Smaller-cell cumulus mass between the main deck and the cirrus, with a
