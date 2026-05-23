@@ -14,7 +14,7 @@ struct Uniforms {
     seed_block:      vec4<f32>,
     // x = sea_level, y = mountain_amp, z = noise_freq, w = noise_octaves
     planet_params:   vec4<f32>,
-    // x = atmosphere_density, y = time, z = cloud_coverage, w = -
+    // x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     misc:            vec4<f32>,
     // x = width, y = height, z = aspect, w = planet radius
     resolution:      vec4<f32>,

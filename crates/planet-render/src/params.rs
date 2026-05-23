@@ -23,6 +23,7 @@ pub struct PlanetParams {
     pub vegetation_richness: f32,
     pub atm_banding: f32,
     pub planet_radius: f32,
+    pub render_quality: f32,
 }
 
 impl Default for PlanetParams {
@@ -49,6 +50,7 @@ impl Default for PlanetParams {
             vegetation_richness: 0.65,
             atm_banding: 0.0,
             planet_radius: 1.0,
+            render_quality: 1.0,
         }
     }
 }

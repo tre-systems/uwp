@@ -30,3 +30,6 @@ features = [
   "Window",
   "console",
 ]
+
+[dev-dependencies]
+naga = { version = "24.0.0", features = ["wgsl-in"] }

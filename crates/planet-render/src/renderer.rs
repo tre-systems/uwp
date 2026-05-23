@@ -1,12 +1,12 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3};
-use std::borrow::Cow;
 use web_sys::HtmlCanvasElement;
 use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
 use crate::mesh::{cubesphere, Vertex};
 use crate::params::PlanetParams;
+use crate::shader::shader_with_common;
 
 const PLANET_RES: u32 = 200;
 
@@ -28,7 +28,7 @@ struct Uniforms {
     seed_block: [f32; 4],
     /// x = sea_level, y = mountain_amp, z = noise_freq, w = noise_octaves
     planet_params: [f32; 4],
-    /// x = atmosphere_density, y = time, z = cloud_coverage, w = unused
+    /// x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     misc: [f32; 4],
     /// x = width, y = height, z = aspect, w = planet_radius
     resolution: [f32; 4],
@@ -70,13 +70,13 @@ pub struct Renderer {
 
 impl Renderer {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, String> {
-        let _ = canvas;
+    pub async fn new(canvas: HtmlCanvasElement, mesh_quality: f32) -> Result<Self, String> {
+        let _ = (canvas, mesh_quality);
         Err("planet-render only supports browser WebGPU canvas surfaces on wasm32".to_string())
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, String> {
+    pub async fn new(canvas: HtmlCanvasElement, mesh_quality: f32) -> Result<Self, String> {
         let width = canvas.width().max(1);
         let height = canvas.height().max(1);
 
@@ -135,7 +135,7 @@ impl Renderer {
         surface.configure(&device, &config);
 
         // Mesh
-        let mesh = cubesphere(PLANET_RES);
+        let mesh = cubesphere(mesh_resolution(mesh_quality));
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex_buffer"),
             contents: bytemuck::cast_slice(&mesh.vertices),
@@ -585,7 +585,7 @@ impl Renderer {
                 self.params.atmosphere_density,
                 time,
                 self.params.cloud_coverage,
-                0.0,
+                self.params.render_quality.clamp(0.0, 1.0),
             ],
             resolution: [
                 self.config.width as f32,
@@ -673,12 +673,14 @@ fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {
     [c[0], c[1], c[2], 1.0]
 }
 
-fn shader_with_common(source: &'static str) -> wgpu::ShaderSource<'static> {
-    wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
-        "{}\n{}",
-        include_str!("shaders/common.wgsl"),
-        source
-    )))
+fn mesh_resolution(quality: f32) -> u32 {
+    if quality < 0.55 {
+        96
+    } else if quality < 0.85 {
+        144
+    } else {
+        PLANET_RES
+    }
 }
 
 /// Derive a per-seed axial tilt (axis in the XZ plane + angle 0..~35°) so

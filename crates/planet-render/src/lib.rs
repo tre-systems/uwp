@@ -7,6 +7,7 @@ mod camera;
 mod mesh;
 mod params;
 mod renderer;
+mod shader;
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -21,8 +22,8 @@ pub struct Planet {
 
 #[wasm_bindgen]
 impl Planet {
-    pub async fn create(canvas: HtmlCanvasElement) -> Result<Planet, JsValue> {
-        let inner = renderer::Renderer::new(canvas)
+    pub async fn create(canvas: HtmlCanvasElement, mesh_quality: f32) -> Result<Planet, JsValue> {
+        let inner = renderer::Renderer::new(canvas, mesh_quality)
             .await
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(Planet { inner })

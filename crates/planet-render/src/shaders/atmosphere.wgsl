@@ -53,15 +53,16 @@ fn density_at(h: f32) -> vec3<f32> {
 
 // Optical depth from `pos` toward the sun (or until the ray would exit the atmosphere).
 // Returns vec3(1e9) when the planet body blocks the sun (terminator shadow).
-fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>, r_planet: f32, r_atmo: f32) -> vec3<f32> {
+fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>, r_planet: f32, r_atmo: f32, light_steps: i32) -> vec3<f32> {
     let t_atmo = ray_sphere(pos, sun, r_atmo);
     if (t_atmo.y < 0.0) { return vec3<f32>(0.0); }
     let t_planet = ray_sphere(pos, sun, r_planet);
     if (t_planet.x > 0.0) { return vec3<f32>(1e9); }
 
-    let dt = t_atmo.y / f32(LIGHT_STEPS);
+    let dt = t_atmo.y / f32(light_steps);
     var od = vec3<f32>(0.0);
     for (var i: i32 = 0; i < LIGHT_STEPS; i = i + 1) {
+        if (i >= light_steps) { break; }
         let t = (f32(i) + 0.5) * dt;
         let p = pos + sun * t;
         let h = length(p) - r_planet;
@@ -180,6 +181,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     let atmo_density = u.misc.x;
+    let quality = u.misc.w;
     // Rayleigh tint: a tinted vec3 keeps the slider meaningful while preserving
     // the per-wavelength scattering ratio (blue scatters ~5× more than red on
     // Earth — coefficients (5.8, 13.5, 33.1) in literature, here scaled).
@@ -191,19 +193,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // band and deeper-blue zenith. Coefficients per Hillaire 2020.
     let beta_o = vec3<f32>(0.650, 1.881, 0.085) * atmo_density * 0.6;
 
-    let dt = (t_end - t_start) / f32(VIEW_STEPS);
+    let view_steps = select(select(6, 8, quality > 0.50), VIEW_STEPS, quality > 0.85);
+    let light_steps = select(select(2, 3, quality > 0.50), LIGHT_STEPS, quality > 0.85);
+    let dt = (t_end - t_start) / f32(view_steps);
     var od_view = vec3<f32>(0.0);
     var in_scatter_r = vec3<f32>(0.0);
     var in_scatter_m = vec3<f32>(0.0);
 
     for (var i: i32 = 0; i < VIEW_STEPS; i = i + 1) {
+        if (i >= view_steps) { break; }
         let t = t_start + (f32(i) + 0.5) * dt;
         let p = ray_origin + ray_dir * t;
         let h = length(p) - r_planet;
         let d = density_at(h) * dt;
         od_view = od_view + d;
 
-        let od_light = light_optical_depth(p, sun_dir, r_planet, r_atmo);
+        let od_light = light_optical_depth(p, sun_dir, r_planet, r_atmo, light_steps);
         let tau = beta_r * (od_view.x + od_light.x)
                 + beta_m * (od_view.y + od_light.y)
                 + beta_o * (od_view.z + od_light.z);
@@ -250,7 +255,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let r_inner = 5.0;
     let thr_inner = vec3<f32>(1.05);
     let thr_outer = vec3<f32>(1.30);
+    let bloom_taps = select(select(4, 8, quality > 0.50), 12, quality > 0.85);
     for (var i: i32 = 0; i < 12; i = i + 1) {
+        if (i >= bloom_taps) { break; }
         let a = f32(i) * 0.5235988;  // 2π / 12
         let off = vec2<f32>(cos(a), sin(a));
         let s1 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_inner * texel, 0.0).rgb;
@@ -259,7 +266,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             + max(s1 - thr_inner, vec3<f32>(0.0)) * 0.70
             + max(s2 - thr_outer, vec3<f32>(0.0)) * 0.30;
     }
-    bloom = bloom / 12.0;
+    bloom = bloom / f32(bloom_taps);
     bloom = bloom + max(scatter - vec3<f32>(1.5), vec3<f32>(0.0)) * 0.25;
     final_color = final_color + bloom * 0.35;
 

@@ -579,16 +579,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,   0.0,  47.0), 3),
     ) * 0.10;
 
-    // Curl-like rotational warp: build a tangent frame at `dir`, rotate the
-    // offset by a per-location angle drawn from a low-frequency fbm. Gives
-    // the deck the cyclonic swirl real weather systems have (storms,
-    // anticyclones, frontal hooks).
-    let cloud_helper = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.95);
-    let cloud_tan = normalize(cross(cloud_helper, dir));
-    let cloud_bit = cross(dir, cloud_tan);
-    let swirl_amt  = fbm(dir * 0.9 + warp_seed * 0.7, 3) * 0.5 + 0.5;       // strength
-    let swirl_ang  = fbm(dir * 2.4 + warp_seed + vec3<f32>(17.7, -41.0, 9.3), 3) * 6.2831;
-    let swirl_vec  = (cloud_tan * cos(swirl_ang) + cloud_bit * sin(swirl_ang)) * swirl_amt * 0.030;
+    var swirl_vec = vec3<f32>(0.0);
+    if (quality > 0.50) {
+        // Curl-like rotational warp: build a tangent frame at `dir`, rotate the
+        // offset by a per-location angle drawn from a low-frequency fbm. Gives
+        // the deck the cyclonic swirl real weather systems have (storms,
+        // anticyclones, frontal hooks).
+        let cloud_helper = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.95);
+        let cloud_tan = normalize(cross(cloud_helper, dir));
+        let cloud_bit = cross(dir, cloud_tan);
+        let swirl_amt  = fbm(dir * 0.9 + warp_seed * 0.7, 3) * 0.5 + 0.5;       // strength
+        let swirl_ang  = fbm(dir * 2.4 + warp_seed + vec3<f32>(17.7, -41.0, 9.3), 3) * 6.2831;
+        swirl_vec = (cloud_tan * cos(swirl_ang) + cloud_bit * sin(swirl_ang)) * swirl_amt * 0.030;
+    }
 
     // Explicit cyclonic vortex centres — 3 seed-driven hurricane points on
     // the sphere. At each one the cloud warp gets a tangential rotation that
@@ -597,33 +600,35 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // swirl field further out). This is what the previous noise-only warp
     // couldn't deliver — clear discrete cyclones, not just fluid mush.
     var vortex_disp = vec3<f32>(0.0);
-    for (var vi: i32 = 0; vi < 3; vi = vi + 1) {
-        let v_h1 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 17.3, 5.7, 91.0));
-        let v_h2 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 41.7, 23.1, -7.3));
-        let v_h3 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 91.1, -17.3, 53.7));
-        // Latitude bias: hurricanes form in tropical/sub-tropical bands on
-        // Earth (10–30° from equator), almost never on the equator itself or
-        // near the poles. Map hash through that band, randomly mirrored to
-        // the north or south.
-        let band_lat = (0.18 + v_h2 * 0.30) * select(-1.0, 1.0, v_h3 > 0.5);
-        let lat_c = band_lat * 3.14159265;
-        let lon_c = v_h1 * 6.2831853;
-        let cos_lat = cos(lat_c);
-        let v_dir = vec3<f32>(cos_lat * cos(lon_c), sin(lat_c), cos_lat * sin(lon_c));
-        // Squared angular distance — tight gaussian falloff so the vortex
-        // is a localised hot spot, not a planet-wide rotation.
-        let cos_d = clamp(dot(dir, v_dir), -1.0, 1.0);
-        let ang2 = 2.0 * (1.0 - cos_d);
-        let strength = mix(0.6, 1.1, v_h3);
-        let falloff = exp(-ang2 * 90.0) * strength;
-        // Tangent direction at `dir`, pointing around the vortex centre.
-        // Cross of dir with the projection of v_dir onto the tangent plane
-        // gives a clean rotational vector that flips hemispheres correctly
-        // (Coriolis-style — north of equator goes counter-clockwise, south
-        // goes clockwise — by virtue of the cross product sign).
-        let to_v = v_dir - dir * cos_d;
-        let tan_v = cross(dir, to_v);
-        vortex_disp = vortex_disp + tan_v * falloff * 0.060;
+    if (quality > 0.85) {
+        for (var vi: i32 = 0; vi < 3; vi = vi + 1) {
+            let v_h1 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 17.3, 5.7, 91.0));
+            let v_h2 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 41.7, 23.1, -7.3));
+            let v_h3 = hash3_s(u.seed_block.xyz + vec3<f32>(f32(vi) * 91.1, -17.3, 53.7));
+            // Latitude bias: hurricanes form in tropical/sub-tropical bands on
+            // Earth (10–30° from equator), almost never on the equator itself or
+            // near the poles. Map hash through that band, randomly mirrored to
+            // the north or south.
+            let band_lat = (0.18 + v_h2 * 0.30) * select(-1.0, 1.0, v_h3 > 0.5);
+            let lat_c = band_lat * 3.14159265;
+            let lon_c = v_h1 * 6.2831853;
+            let cos_lat = cos(lat_c);
+            let v_dir = vec3<f32>(cos_lat * cos(lon_c), sin(lat_c), cos_lat * sin(lon_c));
+            // Squared angular distance — tight gaussian falloff so the vortex
+            // is a localised hot spot, not a planet-wide rotation.
+            let cos_d = clamp(dot(dir, v_dir), -1.0, 1.0);
+            let ang2 = 2.0 * (1.0 - cos_d);
+            let strength = mix(0.6, 1.1, v_h3);
+            let falloff = exp(-ang2 * 90.0) * strength;
+            // Tangent direction at `dir`, pointing around the vortex centre.
+            // Cross of dir with the projection of v_dir onto the tangent plane
+            // gives a clean rotational vector that flips hemispheres correctly
+            // (Coriolis-style — north of equator goes counter-clockwise, south
+            // goes clockwise — by virtue of the cross product sign).
+            let to_v = v_dir - dir * cos_d;
+            let tan_v = cross(dir, to_v);
+            vortex_disp = vortex_disp + tan_v * falloff * 0.060;
+        }
     }
 
     // -- Main cumulus deck (lowest visible layer) --
@@ -643,11 +648,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Cast a soft shadow from clouds onto the surface by sampling the cloud
     // field offset toward the sun in local frame. Reuse the same warp so the
     // shadow tracks the actual cloud shape rather than the unwarped field.
-    let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec + vortex_disp;
-    let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
-    let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
-    let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
-    let shadow_factor    = 1.0 - cloud_shadow * 0.65;
+    var shadow_factor = 1.0;
+    if (quality > 0.45) {
+        let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec + vortex_disp;
+        let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+        let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
+        let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
+        shadow_factor = 1.0 - cloud_shadow * 0.65;
+    }
 
     // ---------- Lighting ----------
     let ambient   = u.atmosphere_color.rgb * 0.06 + vec3<f32>(0.015);
@@ -730,15 +738,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // toward the sun, with diminishing weight. Stronger near-tap reads as
     // the immediate shadow side, far-tap as the bulk above. Together they
     // give the deck the chunky cumulus volume that one-sample shadow misses.
-    let near_dir = normalize(dir + sun_dir_local * 0.018) + cloud_warp + swirl_vec + vortex_disp;
-    let far_dir  = normalize(dir + sun_dir_local * 0.045) + cloud_warp + swirl_vec + vortex_disp;
-    let near_p = near_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
-    let far_p  = far_dir  * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
-    let near_smooth  = fbm(near_p, 4) * 0.5 + 0.5;
-    let near_ridge   = ridged_fbm(near_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 2);
-    let near_d = smoothstep(cloud_low, cloud_high, near_smooth * 0.55 + near_ridge * 0.45);
-    let far_d  = smoothstep(cloud_low, cloud_high, fbm(far_p, 3) * 0.5 + 0.5);
-    let cloud_self_shadow = 1.0 - clamp(near_d * 0.55 + far_d * 0.35, 0.0, 0.85);
+    var cloud_self_shadow = 1.0;
+    if (quality > 0.55) {
+        let near_dir = normalize(dir + sun_dir_local * 0.018) + cloud_warp + swirl_vec + vortex_disp;
+        let far_dir  = normalize(dir + sun_dir_local * 0.045) + cloud_warp + swirl_vec + vortex_disp;
+        let near_p = near_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+        let far_p  = far_dir  * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+        let near_smooth  = fbm(near_p, 4) * 0.5 + 0.5;
+        let near_ridge   = ridged_fbm(near_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 2);
+        let near_d = smoothstep(cloud_low, cloud_high, near_smooth * 0.55 + near_ridge * 0.45);
+        let far_d  = smoothstep(cloud_low, cloud_high, fbm(far_p, 3) * 0.5 + 0.5);
+        cloud_self_shadow = 1.0 - clamp(near_d * 0.55 + far_d * 0.35, 0.0, 0.85);
+    }
 
     // Silver lining: mid-density edges read brighter than the dense centre.
     let lining = smoothstep(0.10, 0.40, cloud_density)
@@ -765,7 +776,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // View-based parallax offset puts it 2-3% of planet radius "above" the
     // main deck — at oblique view angles (near the limb) the layers visibly
     // separate, which sells the 3D depth.
-    if (atm_d > 0.15 && coverage > 0.04) {
+    if (quality > 0.65 && atm_d > 0.15 && coverage > 0.04) {
         let mid_band = vec3<f32>(band_x * 0.85, 1.0, band_x * 0.85);
         let mid_parallax = view_dir_local * 0.025;
         let mid_dir = normalize(dir + mid_parallax) + cloud_warp * 0.7;
@@ -786,7 +797,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Thin streaky high layer with stronger east-west compression and a more
     // aggressive parallax offset (further from the surface than the mid layer).
     // Only meaningful on worlds with enough atmosphere.
-    if (atm_d > 0.20 && coverage > 0.05) {
+    if (quality > 0.85 && atm_d > 0.20 && coverage > 0.05) {
         let cirrus_band = vec3<f32>(band_x * 0.55, 1.0, band_x * 0.55);
         let cirrus_parallax = view_dir_local * 0.055;
         let cirrus_dir = normalize(dir + cirrus_parallax);
@@ -807,7 +818,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // rather than uniformly. Visible only on land, on the dark hemisphere,
     // not buried under cloud cover.
     let population = u.world_features.y;
-    if (population > 0.02 && above_water) {
+    if (quality > 0.45 && population > 0.02 && above_water) {
         // Slight coast bias: brighter near shoreline (real cities cluster there),
         // but inland cities should still glow at high pop.
         let coast_bias = 0.45 + 0.55 * (1.0 - smoothstep(0.04, 0.35, above_amt));

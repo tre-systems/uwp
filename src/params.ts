@@ -22,6 +22,7 @@ export interface Params {
   vegetation_richness: number
   atm_banding: number
   planet_radius: number
+  render_quality: number
 }
 
 export const defaultParams: Params = {
@@ -46,6 +47,7 @@ export const defaultParams: Params = {
   vegetation_richness: 0.65,
   atm_banding: 0.0,
   planet_radius: 1.0,
+  render_quality: 1.0,
 }
 
 export function randomizeParams(current: Params, random: () => number = Math.random): Params {

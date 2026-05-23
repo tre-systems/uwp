@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": "24.16.0",
+    "npm": "11.13.0"
+  },
   "scripts": {
     "build:wasm": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --release",
     "build:wasm:dev": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --dev",
