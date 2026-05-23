@@ -83,4 +83,12 @@ impl Planet {
         serde_wasm_bindgen::to_value(self.inner.system())
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
+
+    /// Reroll one planet's surface seed in place. Orbit, body class, mass
+    /// etc. stay the same; the procedural surface (and moon list when the
+    /// system snapshot is re-read) regenerate from the new seed.
+    #[wasm_bindgen(js_name = rerollPlanet)]
+    pub fn reroll_planet(&mut self, idx: u32, new_seed: u32) {
+        self.inner.reroll_planet(idx, new_seed);
+    }
 }

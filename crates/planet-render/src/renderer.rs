@@ -612,6 +612,19 @@ impl Renderer {
         &self.system
     }
 
+    /// Reroll a single planet's surface seed in place — orbit, body class,
+    /// mass etc. stay the same; the procedural surface (and moon list) are
+    /// regenerated from the new seed. No-op if `idx` is out of range.
+    pub fn reroll_planet(&mut self, idx: u32, new_seed: u32) {
+        let i = idx as usize;
+        if i >= self.system.planets.len() {
+            return;
+        }
+        self.system.planets[i].seed = new_seed;
+        // Surface noise driven by the seed; the rendered planet will look
+        // different on the next frame without re-running the whole generator.
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == self.config.width && height == self.config.height {
             return;

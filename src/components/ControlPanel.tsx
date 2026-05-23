@@ -108,6 +108,7 @@ function SystemEditor({ system, disabled }: { system: any; disabled: boolean }) 
               <th>Mass</th>
               <th>T<sub>eq</sub></th>
               <th>Moons</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -121,6 +122,20 @@ function SystemEditor({ system, disabled }: { system: any; disabled: boolean }) 
                   : p.mass_earth.toFixed(0)} M⊕</td>
                 <td>{p.temperature_k.toFixed(0)} K</td>
                 <td>{p.moons.length || '—'}</td>
+                <td>
+                  <button
+                    class="sys-reroll"
+                    disabled={disabled}
+                    title={`Reroll planet ${i + 1}`}
+                    onClick={() => {
+                      const w = window as any
+                      const newSeed = Math.floor(Math.random() * 0xffffffff)
+                      w.uwp?.rerollPlanet?.(i, newSeed)
+                      // Force the panel + render to pick up the new state.
+                      currentSystem.value = w.uwp?.getSystem?.() ?? null
+                    }}
+                  >🎲</button>
+                </td>
               </tr>
             ))}
           </tbody>

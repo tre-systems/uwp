@@ -179,6 +179,25 @@ html, body, #app {
   padding: 2px 0;
 }
 
+.sys-reroll {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  padding: 1px 5px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.sys-reroll:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: #fff;
+}
+.sys-reroll:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .panel-header {
   display: flex;
   flex-direction: column;

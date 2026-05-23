@@ -354,24 +354,59 @@ astrophysics — no game tables.
 Fullscreen-triangle raymarcher. For each pixel:
 - Background stars sampled on the celestial sphere via (lon, lat) from
   the view ray — same recipe as `background.wgsl`.
-- For each planet, ray-sphere test with the planet at its current orbit
-  position; lit by the star at origin.
-- Star at origin: ray-sphere test, then **Eddington limb darkening**
-  I(μ) = I₀ (2 + 3μ)/5 plus granulation noise. Intensity scales with
-  stellar luminosity.
-- Corona: gaussian outside-the-disc falloff in cosine space — peaks at
-  the limb, falls off fast. Tight by design so it doesn't wash the
-  scene.
 - Orbit rings: ray-plane intersection in the equatorial plane; the
   nearest orbit radius within a small band gets a faint tint matched to
   that planet's body colour (visual association between planet and its
   orbit line).
+- Asteroid belts: mottled dust band in the equatorial plane between
+  inner_au and outer_au — fbm + hash spec to read as scattered debris
+  rather than a solid ring.
+- For each planet, ray-sphere test with the planet at its current orbit
+  position; lit by the star(s) at origin. The hit's normal is rotated
+  by the planet's per-seed axial tilt, then fed to a **body-class
+  procedural surface**:
+    - Gas giants — latitudinal bands warped longitudinally by fbm, plus
+      a great-red-spot-style storm at a per-seed lat/lon.
+    - Ice giants — methane blue with subtle bands + high cirrus streaks.
+    - Terrestrial — fbm continents/oceans, polar ice caps, thin cirrus.
+    - SuperEarth — larger continents, rust/yellow biased.
+    - Rocky — highland/maria stratification (Moon/Mercury look).
+    - Frozen — icy with dark crack lineae (Europa).
+    - Inferno — molten glowing patches through dark crust (Venus / lava
+      world).
+    - MiniNeptune — gas-giant bands washed by thick haze.
+  Lighting: small ambient + Lambert with the star at origin as the
+  light source; gas/ice giants get elevated ambient so cloud bands
+  stay readable on the dark hemisphere. Warm terminator tint on
+  terrestrial classes.
+- Moons rendered as small lit spheres around their host planet; icy
+  moons get a bright blue-white tint, rocky get Moon-grey.
+- Primary star (and optional binary companion) — ray-sphere test plus
+  Eddington limb darkening I(μ) = I₀ (2 + 3μ)/5, fbm granulation.
+  Intensity scales with stellar luminosity, colour from blackbody at
+  the effective temperature.
+- Corona: gaussian outside-the-disc falloff in cosine space — peaks at
+  the limb, falls off fast. **Only rendered when no other body occludes
+  the view ray** (so a planet in front of the star eclipses both the
+  star disc AND its corona, producing real-looking solar-eclipse
+  silhouettes).
+- Per-planet orbital advance: mean motion ω ∝ a^-1.5 (Kepler 3rd law).
 - Display sizing: star scales with system width (so M-dwarf compact
   systems and G-star wide systems both render readably); planet display
   radii are body-class-modified and capped below the star size so a gas
   giant in transit can't eclipse the star.
-- Per-planet orbital advance: mean motion ω ∝ a^-1.5 (Kepler 3rd law),
-  time-scaled so an Earth-AU orbit completes in ~30 s of wall time.
+
+### Binary stars
+
+`sample_companion()` rolls a binary companion based on observed-binary-
+fraction probabilities per spectral class (O: 65 %, A/F: 50 %, G: 42 %,
+K: 36 %, M: 25 %). The companion's mass is the primary's mass × q with
+q uniform in [0.2, 1.0] (mass-ratio distribution for solar-type
+binaries). Companion stellar parameters are derived from this mass with
+the same physics as the primary. Separation log-uniform 5–100 AU; the
+companion orbits the system centre at Kepler-3rd rate. In the shader
+the companion is rendered as a second emissive sphere with its own
+corona.
 
 ## Param surface
 

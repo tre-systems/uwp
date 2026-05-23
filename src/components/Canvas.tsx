@@ -109,6 +109,7 @@ export function Canvas() {
           setMode: (m: 'detail' | 'system') => { viewMode.value = m },
           setSeed: (s: number) => planet?.setSystemSeed(s),
           getSystem: () => planet?.getSystem(),
+          rerollPlanet: (idx: number, seed: number) => planet?.rerollPlanet(idx, seed),
         }
         let lastRenderMs = 0
         const minFrameMs = profile.targetFps >= 59 ? 0 : 1000 / profile.targetFps
