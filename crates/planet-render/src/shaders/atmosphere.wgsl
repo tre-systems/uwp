@@ -1,9 +1,17 @@
 // Raymarched atmospheric scattering pass.
 // Runs as a fullscreen triangle. Reconstructs a world-space view ray per pixel,
 // samples the HDR planet color rendered in the previous pass, then integrates
-// Rayleigh + Mie in-scattering along the view ray and composites:
+// Rayleigh + Mie + ozone in-scattering along the view ray and composites:
 //     final = planet * transmittance + in_scatter
-// Finally tonemaps to display.
+// Finally tonemaps with AGX for display.
+//
+// References:
+//   * Bruneton & Neyret 2008, "Precomputed Atmospheric Scattering" — Rayleigh/Mie/
+//     ozone model and integration scheme.
+//   * Sébastien Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere
+//     Rendering Technique" — multi-scattering approximation, ozone tent profile.
+//   * Troy Sobotka, AgX, https://github.com/sobotka/AgX — display transform.
+//     Polynomial fit by bwrensch / Filmic Worlds.
 
 @group(1) @binding(0) var scene_color: texture_2d<f32>;
 @group(1) @binding(1) var scene_sampler: sampler;
@@ -11,11 +19,17 @@
 
 const PI: f32 = 3.141592653589793;
 const ATMO_REL_THICKNESS: f32 = 0.075;
-const VIEW_STEPS: i32 = 10;
+const VIEW_STEPS: i32 = 12;
 const LIGHT_STEPS: i32 = 4;
 const SCALE_R: f32 = 0.024;
 const SCALE_M: f32 = 0.0035;
 const G_MIE: f32 = 0.76;
+
+// Ozone density profile: tent centred at H_OZ with half-width W_OZ
+// (matching the Bruneton/Hillaire layer placement, but scaled to our
+// relative-thickness atmosphere shell).
+const H_OZ: f32 = 0.025;
+const W_OZ: f32 = 0.015;
 
 // Returns (t_near, t_far). Negative if no intersection.
 fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
@@ -27,23 +41,26 @@ fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
     return vec2<f32>(-b - s, -b + s);
 }
 
-// Atmospheric density at altitude `h` above planet surface.
-// .x = Rayleigh, .y = Mie
-fn density_at(h: f32) -> vec2<f32> {
+// Density at altitude `h` for the three atmospheric constituents.
+// .x = Rayleigh (exponential, scale height SCALE_R)
+// .y = Mie     (exponential, scale height SCALE_M)
+// .z = Ozone   (tent profile around H_OZ, mirrors Earth's stratospheric layer)
+fn density_at(h: f32) -> vec3<f32> {
     let hh = max(h, 0.0);
-    return vec2<f32>(exp(-hh / SCALE_R), exp(-hh / SCALE_M));
+    let ozone = max(0.0, 1.0 - abs(hh - H_OZ) / W_OZ);
+    return vec3<f32>(exp(-hh / SCALE_R), exp(-hh / SCALE_M), ozone);
 }
 
 // Optical depth from `pos` toward the sun (or until the ray would exit the atmosphere).
-// Returns vec2(1e9) when the planet body blocks the sun (terminator shadow).
-fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>, r_planet: f32, r_atmo: f32) -> vec2<f32> {
+// Returns vec3(1e9) when the planet body blocks the sun (terminator shadow).
+fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>, r_planet: f32, r_atmo: f32) -> vec3<f32> {
     let t_atmo = ray_sphere(pos, sun, r_atmo);
-    if (t_atmo.y < 0.0) { return vec2<f32>(0.0); }
+    if (t_atmo.y < 0.0) { return vec3<f32>(0.0); }
     let t_planet = ray_sphere(pos, sun, r_planet);
-    if (t_planet.x > 0.0) { return vec2<f32>(1e9); }
+    if (t_planet.x > 0.0) { return vec3<f32>(1e9); }
 
     let dt = t_atmo.y / f32(LIGHT_STEPS);
-    var od = vec2<f32>(0.0);
+    var od = vec3<f32>(0.0);
     for (var i: i32 = 0; i < LIGHT_STEPS; i = i + 1) {
         let t = (f32(i) + 0.5) * dt;
         let p = pos + sun * t;
@@ -53,9 +70,48 @@ fn light_optical_depth(pos: vec3<f32>, sun: vec3<f32>, r_planet: f32, r_atmo: f3
     return od;
 }
 
-fn aces(c: vec3<f32>) -> vec3<f32> {
-    let a = 2.51; let b = 0.03; let cc = 2.43; let d = 0.59; let e = 0.14;
-    return clamp((c * (a * c + b)) / (c * (cc * c + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+// AGX display transform (after Troy Sobotka). Compresses HDR scene-linear
+// values to a perceptually pleasing display range while preserving hue better
+// than the older ACES filmic curve. Matrices and polynomial fit per Three.js
+// r166 implementation, which is the well-tested production-grade port of AgX
+// matching Blender 4.x default View Transform.
+fn agx(c_in: vec3<f32>) -> vec3<f32> {
+    // Input matrix: linear sRGB → AgX log-space basis.
+    let m1 = mat3x3<f32>(
+        0.842479062, 0.0423282, 0.0423756,
+        0.0784335,   0.878468,  0.0784336,
+        0.0792237,   0.0791661, 0.879142,
+    );
+    // Log2 encode. The canonical AgX EV range is [-12.47, +4.03], tuned for
+    // photographic scenes with deep dynamic range. Our scene's blacks (space,
+    // night side) sit near linear zero and AgX's filmic toe would lift them
+    // to a noticeable grey — so we narrow the bottom of the range to keep
+    // sub-percent values genuinely dark while preserving the highlight roll-off.
+    let min_ev = -8.0;
+    let max_ev =  4.026069;
+    var v = m1 * max(c_in, vec3<f32>(0.0));
+    v = log2(max(v, vec3<f32>(1e-10)));
+    v = clamp((v - min_ev) / (max_ev - min_ev), vec3<f32>(0.0), vec3<f32>(1.0));
+
+    // Filmic S-curve — 6th-order polynomial fit to the AgX sigmoid.
+    let x  = v;
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    let s  = 15.5 * x4 * x2
+           - 40.14 * x4 * x
+           + 31.96 * x4
+           -  6.868 * x2 * x
+           +  0.4298 * x2
+           +  0.1191 * x
+           -  0.00232;
+
+    // Output matrix: AgX log-space → linear sRGB.
+    let m2 = mat3x3<f32>(
+         1.196879, -0.0528015, -0.0528992,
+        -0.0980219,  1.151944, -0.0980505,
+        -0.0989032, -0.0989030, 1.151013,
+    );
+    return m2 * s;
 }
 
 struct VsOut {
@@ -99,7 +155,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let t_atmo = ray_sphere(ray_origin, ray_dir, r_atmo);
     if (t_atmo.y < 0.0) {
         // Ray misses atmosphere entirely — just tonemap the scene as-is.
-        return vec4<f32>(aces(planet_color), 1.0);
+        return vec4<f32>(agx(planet_color), 1.0);
     }
 
     let t_planet = ray_sphere(ray_origin, ray_dir, r_planet);
@@ -120,20 +176,23 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var t_end = select(t_atmo.y, t_planet.x, hit_planet);
     t_end = min(t_end, scene_dist);
     if (t_end <= t_start) {
-        // Nothing to integrate (scene object is in front of the atmosphere
-        // shell, or the planet hits before atmosphere entry).
-        return vec4<f32>(aces(planet_color), 1.0);
+        return vec4<f32>(agx(planet_color), 1.0);
     }
 
-    // Tint Rayleigh coefficients with the atmosphere color so the slider stays meaningful
-    // (a reddish atmosphere -> Mars-like sunset feel; cool blue -> Earth).
     let atmo_density = u.misc.x;
+    // Rayleigh tint: a tinted vec3 keeps the slider meaningful while preserving
+    // the per-wavelength scattering ratio (blue scatters ~5× more than red on
+    // Earth — coefficients (5.8, 13.5, 33.1) in literature, here scaled).
     let tint = mix(vec3<f32>(0.65), u.atmosphere_color.rgb, 0.85);
     let beta_r = vec3<f32>(3.5, 8.5, 19.5) * tint * atmo_density;
     let beta_m = vec3<f32>(3.8) * atmo_density;
+    // Ozone absorption — pulls the right spectral notch out of grazing-angle
+    // sunlight that gives Earth's twilight its characteristic warm-pink lower
+    // band and deeper-blue zenith. Coefficients per Hillaire 2020.
+    let beta_o = vec3<f32>(0.650, 1.881, 0.085) * atmo_density * 0.6;
 
     let dt = (t_end - t_start) / f32(VIEW_STEPS);
-    var od_view = vec2<f32>(0.0);
+    var od_view = vec3<f32>(0.0);
     var in_scatter_r = vec3<f32>(0.0);
     var in_scatter_m = vec3<f32>(0.0);
 
@@ -145,7 +204,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         od_view = od_view + d;
 
         let od_light = light_optical_depth(p, sun_dir, r_planet, r_atmo);
-        let tau = beta_r * (od_view.x + od_light.x) + beta_m * (od_view.y + od_light.y);
+        let tau = beta_r * (od_view.x + od_light.x)
+                + beta_m * (od_view.y + od_light.y)
+                + beta_o * (od_view.z + od_light.z);
         let trans = exp(-tau);
 
         in_scatter_r = in_scatter_r + trans * d.x;
@@ -158,23 +219,28 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let g2 = G_MIE * G_MIE;
     let phase_m_num = (1.0 - g2) * (1.0 + mu * mu);
     let phase_m_den = (2.0 + g2) * pow(max(1.0 + g2 - 2.0 * G_MIE * mu, 0.001), 1.5);
-    // Mie's forward-scatter peak is sharp; clamp it so looking through the
-    // atmosphere directly at the sun doesn't punch a white-hot circle through
-    // the planet's centre via bloom.
+    // Mie's forward-scatter peak is sharp; clamp it so looking directly at the
+    // sun doesn't punch a white-hot circle through the planet via bloom.
     let phase_m = min((3.0 / (8.0 * PI)) * phase_m_num / phase_m_den, 1.8);
 
     let sun_intensity = 8.0;
-    let scatter = sun_intensity *
+    let single = sun_intensity *
         (in_scatter_r * beta_r * phase_r + in_scatter_m * beta_m * phase_m);
 
+    // Hillaire-style multi-scatter approximation: a constant fraction of the
+    // single-scatter response, representing the second-order skylight bounce.
+    // Real LUT-based MS adds 20–40 % depending on view angle; this constant
+    // scales the in-scattering uniformly and lifts the dim side of the
+    // atmosphere without a precomputed LUT.
+    let scatter = single * (1.0 + 0.12);
+
     // Final transmittance for the planet color through the atmosphere column we traversed.
-    let final_trans = exp(-(beta_r * od_view.x + beta_m * od_view.y));
+    let final_trans = exp(-(beta_r * od_view.x + beta_m * od_view.y + beta_o * od_view.z));
     var final_color = planet_color * final_trans + scatter;
 
-    // Cheap lens bloom: 12 taps in two rings around the pixel, soft HDR threshold,
-    // average, add back. Threshold pushed well past sRGB-1.0 so only genuinely
-    // burning highlights (sun glint, sun-disk forward scatter) bloom — keeps the
-    // ocean's sun glint a tight bright dot rather than a wide blob.
+    // HDR bloom for genuinely burning highlights (sun glint, sun-disk forward
+    // scatter). Threshold is high so it doesn't smear ordinary scene lighting;
+    // two ring radii hand-tuned to match AgX response.
     let texel = 1.0 / u.resolution.xy;
     var bloom = vec3<f32>(0.0);
     let r_outer = 11.0;
@@ -192,5 +258,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     bloom = bloom + max(scatter - vec3<f32>(1.7), vec3<f32>(0.0)) * 0.22;
     final_color = final_color + bloom * 0.30;
 
-    return vec4<f32>(aces(final_color), 1.0);
+    return vec4<f32>(agx(final_color), 1.0);
 }

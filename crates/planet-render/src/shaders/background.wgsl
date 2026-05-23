@@ -1,9 +1,14 @@
-// Procedural starfield + faint nebula gradient, plus raymarched moons,
+// Procedural starfield + faint Milky Way band, plus raymarched moons,
 // rings and satellites that sit in space around the planet. Each hit
 // writes per-pixel depth so the planet mesh (drawn after) occludes the
 // far half of a ring, hides moons behind it, etc.
+//
+// The starfield samples the celestial sphere via (lon, lat) — so stars
+// stay anchored to the sky and visibly rotate as the camera orbits the
+// planet, rather than being painted onto the screen.
 
 const TAU: f32 = 6.2831853;
+const PI: f32 = 3.1415926535;
 
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -30,6 +35,12 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
 
 fn hash11(x: f32) -> f32 {
     return fract(sin(x * 12.9898 + 78.233) * 43758.5453);
+}
+
+fn hash21(p: vec2<f32>) -> f32 {
+    var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
+    p3 = p3 + dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
 }
 
 fn hash31(p: vec3<f32>) -> f32 {
@@ -72,24 +83,114 @@ fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
     return sum / norm;
 }
 
-fn hash21(p: vec2<f32>) -> f32 {
-    var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
-    p3 = p3 + dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
+// ---------- Stellar colour ----------
+// Map a temperature index t in [0, 1] to an RGB tint that roughly approximates
+// the blackbody locus over the stellar B-V range (M-class red at 0, hot blue
+// O-class at 1). Used so the starfield isn't pure white — real long-exposure
+// star photographs show clear colour variation.
+fn star_color(t: f32) -> vec3<f32> {
+    // Three reference colours along the locus.
+    let red  = vec3<f32>(1.0, 0.55, 0.32);   // ~3000 K, M-class
+    let sun  = vec3<f32>(1.0, 0.93, 0.85);   // ~5800 K, G-class
+    let blue = vec3<f32>(0.78, 0.85, 1.0);   // ~12000 K, B-class
+    return mix(mix(red, sun, smoothstep(0.0, 0.55, t)),
+               blue,
+               smoothstep(0.55, 1.0, t));
 }
 
-fn star_layer(uv: vec2<f32>, scale: f32, threshold: f32) -> f32 {
-    let g = floor(uv * scale);
-    let c = fract(uv * scale);
-    let r1 = hash21(g);
-    let r2 = hash21(g + vec2<f32>(17.31, 41.7));
-    let r3 = hash21(g + vec2<f32>(53.9, 19.2));
-    let star_pos = vec2<f32>(r2, r3);
-    let d = distance(c, star_pos);
-    let star_size = mix(0.03, 0.10, r1);
-    let bright = smoothstep(star_size, 0.0, d);
-    let mask = smoothstep(threshold, threshold + 0.02, r1);
-    return bright * mask * mix(0.5, 1.4, hash21(g + vec2<f32>(89.0, 0.7)));
+// Map a view direction to a (lon, lat)-based sky UV. Both components are
+// scaled so each cell of star_layer covers a visually similar angular
+// resolution across the sphere (lat is doubled vs lon because lat sweeps π
+// while lon sweeps 2π).
+fn sky_uv(d: vec3<f32>) -> vec2<f32> {
+    let lon = atan2(d.z, d.x) / TAU;                // [-0.5, 0.5]
+    let lat = asin(clamp(d.y, -1.0, 1.0)) / PI;     // [-0.5, 0.5]
+    return vec2<f32>(lon * 4.0, lat * 2.0);
+}
+
+// Returns RGB contribution from a single star layer at sky uv. `scale` is
+// cells per unit; `density` is the fraction of cells that host a star;
+// `mag_bias` boosts brighter populations (0 = average; positive = magnitude
+// concentrated toward bright; negative = mostly dim).
+//
+// Per-cell hash drives: star position inside the cell, brightness (log
+// distribution), colour temperature, and twinkle phase. Profile is a tight
+// gaussian for the core plus a faint exponential halo for the brightest
+// stars — closer to a real telescope PSF than the smoothstep disc the
+// previous implementation used.
+fn star_layer(uv: vec2<f32>, scale: f32, density: f32, mag_bias: f32, time: f32) -> vec3<f32> {
+    let cell = floor(uv * scale);
+    let local = fract(uv * scale);
+
+    let h_present = hash21(cell);
+    if (h_present > density) { return vec3<f32>(0.0); }
+
+    // Star position inside the cell (avoid the very edges so neighbour cells
+    // don't double-up at boundaries).
+    let h_x = hash21(cell + vec2<f32>(17.31, 41.7));
+    let h_y = hash21(cell + vec2<f32>(53.9, 19.2));
+    let star_pos = vec2<f32>(0.15 + 0.7 * h_x, 0.15 + 0.7 * h_y);
+    let d = distance(local, star_pos);
+
+    // Log-normal-ish magnitude distribution: most stars are dim, a tiny
+    // fraction are bright. `mag_bias` shifts the centre of the distribution.
+    let h_mag = hash21(cell + vec2<f32>(89.0, 0.7));
+    let mag = pow(h_mag, 6.0) * 0.85 + 0.10 + mag_bias;
+
+    // Tight gaussian core. sigma in cell units — kept small so stars read as
+    // pixel-scale points rather than blobs.
+    let sigma = 0.012;
+    let core = exp(-d * d / (2.0 * sigma * sigma));
+
+    // Halo only matters for bright stars. Falls off much faster than a real
+    // diffraction halo so dim stars don't bleed into each other.
+    let halo_sigma = 0.045;
+    let halo = exp(-d * d / (2.0 * halo_sigma * halo_sigma))
+             * smoothstep(0.55, 0.95, mag) * 0.35;
+
+    // Scintillation — small intensity wobble. Per-star phase prevents the
+    // whole sky from breathing in unison.
+    let phase = hash21(cell + vec2<f32>(7.7, 3.1)) * TAU;
+    let twinkle = 0.85 + 0.15 * sin(time * 1.3 + phase);
+
+    // Colour temperature: a slight bias toward sun-like (most main-sequence
+    // stars in the visible sky are FGK class). Pure end-points are rare.
+    let t_raw = hash21(cell + vec2<f32>(127.4, 311.7));
+    let temp_idx = mix(0.30, 0.85, smoothstep(0.0, 1.0, t_raw));
+    let tint = star_color(temp_idx);
+
+    // Multiplier boosts the dimmer half of the population above the AgX toe
+    // so the dim layer doesn't disappear in tonemap. The bright population's
+    // gaussian core already saturates so this only lifts dim values.
+    return tint * (core + halo) * mag * twinkle * 1.8;
+}
+
+// Milky Way band: a wide dim noise-modulated stripe across the celestial
+// sphere. Tilted ~32° from the equator so it sits at a more natural angle
+// than a great-circle through the planet's axis. The colour follows the
+// classic pinkish-warm/blue-cool emission seen in long-exposure astrophotos.
+fn milky_way(ray: vec3<f32>) -> vec3<f32> {
+    // Rotate the ray so the galactic plane lies at a chosen inclination.
+    let c = 0.848; let s = 0.530;  // 32° tilt
+    let ry = vec3<f32>(ray.x * c - ray.y * s, ray.x * s + ray.y * c, ray.z);
+    // Distance from the band's midline (sin-of-latitude in tilted frame).
+    let band = exp(-ry.y * ry.y * 22.0);
+
+    // Density variation along the band: dark dust lanes interleaved with
+    // bright clouds.
+    let cloud = fbm3(ry * 5.5 + vec3<f32>(11.3, 7.7, 5.1), 4);
+    let dust  = fbm3(ry * 14.0 + vec3<f32>(91.0, 41.3, 17.7), 3);
+    let bright = smoothstep(0.30, 0.85, cloud) * (0.55 + 0.45 * (1.0 - smoothstep(0.30, 0.65, dust)));
+
+    // Warm core (hydrogen H-alpha pink) blending out into cool blue scattered
+    // dust at the band edges.
+    let warm = vec3<f32>(0.65, 0.42, 0.50);
+    let cool = vec3<f32>(0.28, 0.36, 0.55);
+    let tint = mix(cool, warm, smoothstep(0.4, 0.95, cloud));
+
+    // Multiplier kept low so the band reads as a faint structural hint, not a
+    // bright stripe — AGX's midtone response would otherwise dominate stars.
+    return tint * band * bright * 0.018;
 }
 
 // Ray–sphere intersection: returns the nearest positive t, or -1 on miss.
@@ -109,8 +210,6 @@ fn ray_sphere_t(orig: vec3<f32>, dir: vec3<f32>, centre: vec3<f32>, radius: f32)
 // Compute orbital position. Each moon index gets its own orbital shell
 // (1.7, 2.7, 3.8 base radii), with per-moon random jitter inside the shell —
 // so multiple moons don't pile up at the same distance from the planet.
-// The outer shells sit beyond the default-camera frustum so those moons go
-// off-screen between orbital passes; zoom out to see them.
 fn orbit_pos(slot: i32, idx: f32, base_r: f32, time: f32) -> vec3<f32> {
     let r_h = hash11(idx * 7.13);
     let inc_h = hash11(idx * 13.31 + 4.7);
@@ -128,23 +227,6 @@ fn orbit_pos(slot: i32, idx: f32, base_r: f32, time: f32) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> BgOut {
-    let aspect = u.resolution.z;
-    let uv = vec2<f32>(in.ndc.x * aspect, in.ndc.y);
-
-    // ---------- Background gradient + stars ----------
-    let glow = smoothstep(2.2, 0.0, length(uv - vec2<f32>(-0.3, 0.2)));
-    let base = mix(
-        vec3<f32>(0.005, 0.006, 0.012),
-        u.atmosphere_color.rgb * 0.07,
-        glow * 0.6
-    );
-    var stars = 0.0;
-    stars = stars + star_layer(uv, 35.0,  0.985);
-    stars = stars + star_layer(uv, 90.0,  0.992) * 0.7;
-    stars = stars + star_layer(uv, 220.0, 0.996) * 0.45;
-    let twinkle = 0.9 + 0.1 * sin(u.misc.y * 1.3 + uv.x * 30.0 + uv.y * 20.0);
-    var bg_color = base + vec3<f32>(stars) * twinkle;
-
     // ---------- View ray ----------
     let ndc_near = vec4<f32>(in.ndc.x, in.ndc.y, 0.0, 1.0);
     let ndc_far  = vec4<f32>(in.ndc.x, in.ndc.y, 1.0, 1.0);
@@ -158,6 +240,20 @@ fn fs_main(in: VsOut) -> BgOut {
     let sun_dir = normalize(u.sun_dir.xyz);
     let planet_radius = u.resolution.w;
     let time = u.misc.y;
+
+    // ---------- Background gradient + stars (anchored to celestial sphere) ----------
+    let sky = sky_uv(ray_dir);
+    var stars = vec3<f32>(0.0);
+    // Three star populations: rare bright (giants), common mid, dense dim.
+    stars = stars + star_layer(sky, 28.0,  0.060,  0.25, time);
+    stars = stars + star_layer(sky, 72.0,  0.030, -0.05, time) * 0.85;
+    stars = stars + star_layer(sky, 180.0, 0.014, -0.18, time) * 0.65;
+
+    // Faint deep-space gradient — sub-percent linear values so the background
+    // tonemaps to genuine black, only barely lifted by the atmosphere tint.
+    let base_sky = vec3<f32>(0.0008, 0.0010, 0.0018)
+                 + u.atmosphere_color.rgb * 0.0015;
+    var bg_color = base_sky + milky_way(ray_dir) + stars;
 
     var best_t = 1e9;
     var best_color = vec3<f32>(0.0);
