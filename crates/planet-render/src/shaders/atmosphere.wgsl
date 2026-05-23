@@ -239,24 +239,29 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var final_color = planet_color * final_trans + scatter;
 
     // HDR bloom for genuinely burning highlights (sun glint, sun-disk forward
-    // scatter). Threshold is high so it doesn't smear ordinary scene lighting;
-    // two ring radii hand-tuned to match AgX response.
+    // scatter, the brightest stars, dense city-light cores). Two ring radii
+    // — inner ring weighted higher gives a tighter primary halo, outer ring
+    // gives a softer extended glow. Threshold tuned with AgX in mind: well
+    // above sRGB-1.0 so ordinary lit scene doesn't bloom, but low enough
+    // that ocean glint and city cores reliably register.
     let texel = 1.0 / u.resolution.xy;
     var bloom = vec3<f32>(0.0);
-    let r_outer = 11.0;
+    let r_outer = 13.0;
     let r_inner = 5.0;
+    let thr_inner = vec3<f32>(1.05);
+    let thr_outer = vec3<f32>(1.30);
     for (var i: i32 = 0; i < 12; i = i + 1) {
         let a = f32(i) * 0.5235988;  // 2π / 12
         let off = vec2<f32>(cos(a), sin(a));
         let s1 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_inner * texel, 0.0).rgb;
         let s2 = textureSampleLevel(scene_color, scene_sampler, uv + off * r_outer * texel, 0.0).rgb;
         bloom = bloom
-            + max(s1 - vec3<f32>(1.25), vec3<f32>(0.0)) * 0.65
-            + max(s2 - vec3<f32>(1.25), vec3<f32>(0.0)) * 0.35;
+            + max(s1 - thr_inner, vec3<f32>(0.0)) * 0.70
+            + max(s2 - thr_outer, vec3<f32>(0.0)) * 0.30;
     }
     bloom = bloom / 12.0;
-    bloom = bloom + max(scatter - vec3<f32>(1.7), vec3<f32>(0.0)) * 0.22;
-    final_color = final_color + bloom * 0.30;
+    bloom = bloom + max(scatter - vec3<f32>(1.5), vec3<f32>(0.0)) * 0.25;
+    final_color = final_color + bloom * 0.35;
 
     return vec4<f32>(agx(final_color), 1.0);
 }

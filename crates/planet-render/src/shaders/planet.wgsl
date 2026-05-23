@@ -575,6 +575,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n_dot_l_s = n_dot_l * shadow_factor;
     var lit = surface * (ambient + n_dot_l_s);
 
+    // Snow / ice subsurface scattering. Fresh snow's ice crystals are mildly
+    // translucent; photons penetrate a few mm before scattering out, with
+    // red absorbed preferentially. The visible effect is a cool blue cast in
+    // self-shadowed regions (the famous "blue snow" in glacier crevasses
+    // and on shadowed cumulus). Approximated by adding a low-amplitude
+    // bluish term scaled by snow density and 1 − n·l.
+    let snow_sss_tint = vec3<f32>(0.78, 0.88, 1.05);
+    lit = lit + snow_sss_tint * snow * (1.0 - n_dot_l) * 0.11;
+
     // Ocean: Schlick Fresnel sky reflection + anisotropic GGX sun glint.
     //
     // The previous Blinn-Phong specular packed all energy into a tight point.
@@ -661,8 +670,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // top you see in real Earth-from-space cloud photos.
     let anvil = smoothstep(0.72, 0.95, cloud_density) * smoothstep(0.0, 0.30, n_dot_l);
 
+    // Sun-rim brightening — at grazing solar incidence (low-but-positive n·l)
+    // the cumulus edges scatter forward toward the camera, creating the
+    // bright golden-white rim you see at terminator clouds. Approximated by
+    // a sharp ramp of low n·l times the silver-lining edge mask.
+    let sun_rim = smoothstep(0.0, 0.20, n_dot_l) * (1.0 - smoothstep(0.20, 0.55, n_dot_l)) * lining;
+
     let cloud_lit = cloud_tint * (ambient + n_dot_l * 0.92 * cloud_self_shadow)
-                  * (1.0 + lining * 0.45 + anvil * 0.40);
+                  * (1.0 + lining * 0.45 + anvil * 0.40 + sun_rim * 0.65);
     lit = mix(lit, cloud_lit, cloud_density * 0.92);
 
     // -- Mid-altitude broken cumulus (NEW layer) --

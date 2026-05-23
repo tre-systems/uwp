@@ -148,6 +148,17 @@ fn star_layer(uv: vec2<f32>, scale: f32, density: f32, mag_bias: f32, time: f32)
     let halo = exp(-d * d / (2.0 * halo_sigma * halo_sigma))
              * smoothstep(0.55, 0.95, mag) * 0.35;
 
+    // Four-point diffraction spike on the very brightest stars only. The
+    // cross-shape reads like an unresolved point source captured by a
+    // telescope (or by long-exposure astrophotography), which is the visual
+    // grammar a human associates with "bright star" rather than "white dot".
+    let spike_mask = smoothstep(0.85, 1.05, mag);
+    let dx = local.x - star_pos.x;
+    let dy = local.y - star_pos.y;
+    let spike_h = exp(-dy * dy * 3500.0) * exp(-abs(dx) * 9.0);
+    let spike_v = exp(-dx * dx * 3500.0) * exp(-abs(dy) * 9.0);
+    let spike = (spike_h + spike_v) * spike_mask * 0.45;
+
     // Scintillation — small intensity wobble. Per-star phase prevents the
     // whole sky from breathing in unison.
     let phase = hash21(cell + vec2<f32>(7.7, 3.1)) * TAU;
@@ -162,7 +173,7 @@ fn star_layer(uv: vec2<f32>, scale: f32, density: f32, mag_bias: f32, time: f32)
     // Multiplier boosts the dimmer half of the population above the AgX toe
     // so the dim layer doesn't disappear in tonemap. The bright population's
     // gaussian core already saturates so this only lifts dim values.
-    return tint * (core + halo) * mag * twinkle * 1.8;
+    return tint * (core + halo + spike) * mag * twinkle * 1.8;
 }
 
 // Milky Way band: a wide dim noise-modulated stripe across the celestial
