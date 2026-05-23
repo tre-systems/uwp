@@ -153,6 +153,12 @@ In the fragment shader's land branch:
   ocean surface lives instead of reading as a mirror.
 - **Sea-ice cap.** Same lobe + finger noise as the land snow cap, so the
   two halves meet correctly at the coast.
+- **Snow / ice subsurface scattering.** Real ice crystals are mildly
+  translucent — photons penetrate a few mm and the red wavelengths get
+  absorbed faster, leaving a cool blue cast in shadow. Adds a bluish
+  emissive term scaled by snow density × (1 − n·l). The visible result
+  is the same blue-shadow look you see in glacier crevasses and the
+  undersides of dense cumulus.
 - **Schlick Fresnel sky reflection.** Limb of the ocean reflects sky.
   Strength capped so the limb doesn't become a bright ring.
 - **Anisotropic GGX sun glint** (Heitz 2014, *Understanding the
@@ -185,6 +191,10 @@ In the fragment shader's land branch:
   40 % intensity to the densest cumulus tops — flat bright cumulonimbus
   anvils as seen from above.
 - **Silver lining.** Mid-density edges read brighter than the dense centre.
+- **Sun-rim brightening.** At grazing solar incidence (low-but-positive
+  n·l) cumulus edges forward-scatter toward the camera, creating the
+  bright golden-white rim that defines clouds at the terminator. Sharp
+  ramp on n·l × silver-lining mask.
 - **Cloud shadow on surface.** Same cloud field sampled offset toward the
   sun in local frame, multiplied into the surface diffuse term.
 - **Mid-altitude broken cumulus** layer. Smaller cells, different drift
@@ -204,6 +214,17 @@ In the fragment shader's land branch:
 - Warm terminator band: a tight smoothstep around n·l ∈ [0, 0.4] adds a
   pink-orange tint, giving the day-night boundary the long-path
   atmospheric warmth Earth-from-space photos show.
+
+### Aerial perspective on the surface
+
+`atmosphere.wgsl` already attenuates the planet through the column of air
+the view ray traverses, but at our ~7 % relative atmosphere thickness the
+column is short and the limb-darkening you see in every ISS photo
+doesn't show. `planet.wgsl` adds an explicit `(1 − n·v)³` ramp that mixes
+the lit surface toward the atmosphere colour at grazing view angles —
+atmosphere.wgsl then composites the mixed value correctly, so the
+continents at the limb visibly fade into the blue rim instead of holding
+sharp at the planet's edge.
 
 ### Atmospheric scattering
 
@@ -229,10 +250,13 @@ model along the view ray with **12 view steps** and **4 light steps**.
 
 ### Bloom
 
-12-tap two-ring sample of the HDR scene around each pixel, hard threshold
-at linear 1.25 (well above sRGB-1.0 so only truly burning highlights
-bloom: sun glint, sun-disk forward scatter, brightest cloud tops). Plus a
-small additive bloom of the scatter term itself for the sun-disk halo.
+12-tap two-ring sample of the HDR scene around each pixel. Inner ring
+(5 px radius, threshold linear 1.05, 70 % weight) gives a tight primary
+halo around moderately bright highlights — sun glint, brightest star
+spikes, dense city-light cores. Outer ring (13 px radius, threshold
+1.30, 30 % weight) gives a softer extended glow on the genuinely
+burning ones. Plus a small additive bloom of the in-scatter term itself
+for the sun-disk halo.
 
 ### AGX display transform
 
@@ -267,6 +291,12 @@ orbits the planet.
   (M-class red, G-class sun, B-class blue), biased toward sun-like —
   most main-sequence stars in any patch of sky are FGK.
 - **Twinkle** — small per-star phase-offset sine modulation of intensity.
+- **Diffraction spikes** on the very brightest stars only — four-point
+  cross via two perpendicular gaussian-modulated exponentials. Visual
+  grammar = an unresolved point source through telescope optics or
+  long-exposure astrophotography. Triggers on
+  `smoothstep(0.85, 1.05, mag)` so only the rare brightest cells
+  light up; the rest stay as clean pixel-scale points.
 
 ### Milky Way band
 
