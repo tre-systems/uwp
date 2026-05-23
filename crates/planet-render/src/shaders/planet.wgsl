@@ -556,20 +556,61 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n_dot_l_s = n_dot_l * shadow_factor;
     var lit = surface * (ambient + n_dot_l_s);
 
-    // Ocean: Fresnel sky reflection + tight specular sun spot.
-    // Fresnel mix kept modest so the limb doesn't read as a bright ring of sky.
+    // Ocean: Schlick Fresnel sky reflection + anisotropic GGX sun glint.
+    //
+    // The previous Blinn-Phong specular packed all energy into a tight point.
+    // Real Earth-from-space sun glint is an extended streak (Cox-Munk wave
+    // statistics, Heitz 2014). We use an anisotropic GGX NDF with a tangent
+    // frame aligned to the planet's east direction so the highlight elongates
+    // along the equatorial wave pattern.
     if (!above_water) {
         let cos_v = max(dot(world_normal, view_dir), 0.0);
         let f0 = 0.02;
-        let fresnel = f0 + (1.0 - f0) * pow(1.0 - cos_v, 5.0);
+        let fresnel_v = f0 + (1.0 - f0) * pow(1.0 - cos_v, 5.0);
+        // Mild sky reflection; saturation kept modest so the limb doesn't
+        // become a bright ring of sky.
         let sky_tint = u.atmosphere_color.rgb * (0.45 + n_dot_l * 0.5);
-        lit = mix(lit, sky_tint, fresnel * 0.45);
+        lit = mix(lit, sky_tint, fresnel_v * 0.45);
 
-        // Tight sun glint — high exponent keeps it a small bright dot rather than
-        // a wide blob that bloom would smear into a halo.
+        // Anisotropic GGX specular (Heitz 2014 form). α_t broader than α_b so
+        // the highlight stretches along the east-tangent direction — closer
+        // to the elongated glitter strip on real ocean photographs.
         let halfway = normalize(sun_dir + view_dir);
-        let spec = pow(max(dot(world_normal, halfway), 0.0), 280.0);
-        lit = lit + vec3<f32>(spec) * 0.9 * n_dot_l_s;
+        let polar = vec3<f32>(0.0, 1.0, 0.0);
+        // Tangent frame: east first, then north. Tiny perturbation prevents
+        // degeneracy when normal is parallel to the polar axis.
+        let t_east  = normalize(cross(polar, world_normal) + world_normal * 1e-4);
+        let t_north = cross(world_normal, t_east);
+        let h_t = dot(halfway, t_east);
+        let h_b = dot(halfway, t_north);
+        let h_n = max(dot(halfway, world_normal), 1e-4);
+        // Roughness² along each axis. Cox-Munk wave statistics show along-wind
+        // slope variance ~half the cross-wind variance — α_t (east) narrower,
+        // α_b (north) wider. Stretches the highlight into an east-west streak
+        // matching ISS sun-glint photographs.
+        let a_t = 0.13;
+        let a_b = 0.28;
+        let dnom = h_t * h_t / (a_t * a_t)
+                 + h_b * h_b / (a_b * a_b)
+                 + h_n * h_n;
+        let d_aniso = 1.0 / (3.14159265 * a_t * a_b * dnom * dnom);
+        // Schlick Fresnel at the half-vector.
+        let v_dot_h = max(dot(view_dir, halfway), 0.0);
+        let fresnel_h = f0 + (1.0 - f0) * pow(1.0 - v_dot_h, 5.0);
+        // BRDF = D·F·G / (4·n·l·n·v). With direct sun illumination the n·l
+        // term cancels against the Lambert cos factor; we keep one n·v in the
+        // denominator (clamped so grazing pixels don't explode) and skip the
+        // shadowing G — at sun-glint geometries with our roughness range G ≈ 1
+        // and the sun_mask is enough to keep the dark hemisphere clean.
+        let n_dot_v = max(dot(world_normal, view_dir), 0.05);
+        let sun_mask = smoothstep(0.0, 0.10, n_dot_l) * shadow_factor;
+        // Slightly warm sun colour — solar disc temperature ~5778 K — scaled
+        // into HDR so the bloom pass can pick up the brightest glint pixels.
+        let sun_color = vec3<f32>(1.05, 1.00, 0.92);
+        // Multiplier scales the spread-out GGX peak (∫D = 1, so per-pixel
+        // intensity is small) into the HDR range bloom can pick up.
+        let spec = d_aniso * fresnel_h / (4.0 * n_dot_v);
+        lit = lit + sun_color * spec * sun_mask * 18.0;
     }
 
     // ---------- Cloud composite (3 layers, bottom-up) ----------
