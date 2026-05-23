@@ -371,19 +371,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // bright grassland / dry savanna / outright desert. Driven by
         // world_features.z (wired from UWP atm + hydro). At richness 0
         // (Mars-like) the noise contributes nothing and the land stays its
-        // base palette.
+        // base palette. Colours kept modestly biased away from `land_color`
+        // — desaturating real Earth-from-orbit photos show vegetation as
+        // muted compared to ground-level greens.
         let veg_richness = u.world_features.z;
         if (veg_richness > 0.02) {
-            // Two noise scales — large continental zones + medium patches.
-            let zone_n = fbm(dir * 1.4 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 4);
-            let patch_n = fbm(dir * 3.8 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 3);
-            let combined = zone_n * 0.7 + patch_n * 0.3;  // ~[-1, 1]
-            // Dark conifer for low values, brighter grassland for mid, sand
-            // for high. Pushes more saturation than the user's land_color
-            // alone so continents read with clear regional differences.
-            let forest   = u.land_color.rgb * vec3<f32>(0.45, 0.62, 0.40);  // deep dark green
-            let grass    = u.land_color.rgb * vec3<f32>(1.25, 1.20, 0.95);  // brighter, slightly yellower
-            let savanna  = mix(u.land_color.rgb, u.sand_color.rgb, 0.75);
+            // Three noise scales — large continental zones, medium patches,
+            // fine grain. The triple-scale stack gives more organic
+            // transitions than 2-scale alone (less visible tile boundaries).
+            let zone_n  = fbm(dir * 1.4 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 5);
+            let patch_n = fbm(dir * 4.2 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 4);
+            let grain_n = fbm(dir * 13.0 + u.seed_block.xyz + vec3<f32>(-91.0, 31.0, 71.0), 3);
+            let combined = zone_n * 0.55 + patch_n * 0.30 + grain_n * 0.15;
+            // Dark conifer for low values, muted grassland for mid, savanna
+            // / dry highland for high. Less aggressive multipliers than the
+            // previous palette (which read cartoonish saturated green).
+            let forest   = u.land_color.rgb * vec3<f32>(0.55, 0.68, 0.50);
+            let grass    = u.land_color.rgb * vec3<f32>(1.10, 1.10, 0.90);
+            let savanna  = mix(u.land_color.rgb, u.sand_color.rgb, 0.70);
             var vegetated = mix(forest, grass, smoothstep(-0.55, 0.15, combined));
             vegetated = mix(vegetated, savanna, smoothstep(0.20, 0.65, combined));
             // Vegetation lives below the tree line and along the coast — above
@@ -745,6 +750,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // n_dot_l and fading it out as we get fully lit.
     let term_band = smoothstep(0.0, 0.18, n_dot_l) * (1.0 - smoothstep(0.18, 0.42, n_dot_l));
     lit = lit + vec3<f32>(1.0, 0.52, 0.22) * term_band * atmo_density * 0.18;
+
+    // Aerial perspective on the planet surface. The atmosphere pass already
+    // attenuates the planet through the column of air the view ray traverses
+    // — but in our scene that column is short (only the chord through a thin
+    // shell), so the limb doesn't pick up the visible blue haze you see on
+    // every ISS photo. We add an explicit tint here proportional to
+    // (1 − n·v): pixels seen at grazing angle gain a small amount of
+    // atmosphere colour, which atmosphere.wgsl then composites correctly.
+    let n_dot_v_surf = max(dot(world_normal, view_dir), 0.0);
+    let aerial = pow(1.0 - n_dot_v_surf, 3.0) * atmo_density * 0.35;
+    lit = mix(lit, u.atmosphere_color.rgb * (0.55 + n_dot_l * 0.45), aerial);
 
     return vec4<f32>(lit, 1.0);
 }
