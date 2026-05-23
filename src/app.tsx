@@ -21,10 +21,10 @@ export function App() {
       ) : null}
       <button
         class="view-toggle"
-        title={mode === 'detail' ? 'Switch to system view' : 'Switch to planet view'}
+        title={mode === 'detail' ? 'Switch to system overview' : 'Switch to the main world'}
         onClick={() => { viewMode.value = mode === 'detail' ? 'system' : 'detail' }}
       >
-        {mode === 'detail' ? '☉ System' : '◉ Planet'}
+        {mode === 'detail' ? '☉ System' : '◉ Main World'}
       </button>
       <ControlPanel />
     </div>

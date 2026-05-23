@@ -13,17 +13,20 @@ const TAU: f32 = 6.2831853;
 const PI:  f32 = 3.1415926535;
 const MAX_PLANETS: u32 = 16u;
 
-// Per-planet packed data. Each planet occupies two vec4 slots:
-//   slot 2i:   xyz = world position, w = display radius
-//   slot 2i+1: xyz = base colour,    w = orbital radius in scene units
-//                                       (informational; used for orbit ring)
+// Packed system data. Layout matches `SystemUniforms` in renderer.rs.
+//   planets[2i  ]: xyz = world position, w = display radius
+//   planets[2i+1]: xyz = base colour,    w = orbital radius (scene units)
+//   moons[i]     : xyz = world position, w = display radius (sign = icy flag)
+//   belts[i]     : x = inner_au, y = outer_au, z = density [0..1]
 struct SystemData {
-    // x = planet count, y = star display radius, z = star colour intensity,
-    // w = unused.
+    /// x = planet count, y = star display radius, z = star intensity,
+    /// w = moon count.
     info: vec4<f32>,
-    // xyz = star colour, w = star temperature (informational).
+    /// xyz = star colour, w = belt count.
     star_color: vec4<f32>,
     planets: array<vec4<f32>, 32>,
+    moons: array<vec4<f32>, 32>,
+    belts: array<vec4<f32>, 4>,
 };
 
 struct VsOut {
@@ -185,6 +188,39 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
+    // ---------- Asteroid belts ----------
+    // Render belts as a faintly mottled band in the y=0 plane between
+    // inner_au and outer_au. We add to `color` (the background) so belts
+    // sit behind planets/moons via the standard hit-test ordering.
+    let n_belts = i32(sys.star_color.w);
+    if (abs(denom) > 1e-5 && n_belts > 0) {
+        let t_plane2 = -dot(ray_origin, ring_n) / denom;
+        if (t_plane2 > 0.0) {
+            let p = ray_origin + ray_dir * t_plane2;
+            let r = length(p.xz);
+            for (var bi: i32 = 0; bi < 4; bi = bi + 1) {
+                if (bi >= n_belts) { break; }
+                let belt = sys.belts[u32(bi)];
+                let inner = belt.x;
+                let outer = belt.y;
+                let density = belt.z;
+                if (r >= inner && r <= outer) {
+                    // Mottled density via 2D hash on the hit point — gives a
+                    // grainy look without sampling actual particles.
+                    let cell = floor(p.xz * 8.0);
+                    let h = hash21(cell);
+                    let h2 = hash21(cell + vec2<f32>(13.0, 7.0));
+                    let speck = step(0.55, h) * (0.4 + h2 * 0.6);
+                    let edge_in  = smoothstep(inner, inner + (outer - inner) * 0.10, r);
+                    let edge_out = 1.0 - smoothstep(outer - (outer - inner) * 0.10, outer, r);
+                    let band = edge_in * edge_out;
+                    let dust = vec3<f32>(0.55, 0.48, 0.40);
+                    color = color + dust * (0.12 + speck * 0.35) * density * band;
+                }
+            }
+        }
+    }
+
     // ---------- Planets ----------
     for (var i: i32 = 0; i < i32(MAX_PLANETS); i = i + 1) {
         if (i >= n_planets) { break; }
@@ -197,13 +233,33 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (t > 0.0 && t < best_t) {
             let hit_pos = ray_origin + ray_dir * t;
             let n = normalize(hit_pos - p_pos);
-            // Sun direction from planet to star (origin).
             let sun_d = normalize(-p_pos);
             let nl = max(dot(n, sun_d), 0.0);
-            // Soft terminator + ambient — at system scale we want planets
-            // readable even on the night side, but with clear day/night.
             let shaded = p_col * (0.08 + nl * 0.95);
             hit_color = shaded;
+            best_t = t;
+            has_hit = true;
+        }
+    }
+
+    // ---------- Moons ----------
+    let n_moons = i32(sys.info.w);
+    for (var i: i32 = 0; i < 32; i = i + 1) {
+        if (i >= n_moons) { break; }
+        let m = sys.moons[u32(i)];
+        let m_pos = m.xyz;
+        let m_r = abs(m.w);
+        let icy = m.w > 0.0;
+        let t = ray_sphere(ray_origin, ray_dir, m_pos, m_r);
+        if (t > 0.0 && t < best_t) {
+            let hit_pos = ray_origin + ray_dir * t;
+            let n = normalize(hit_pos - m_pos);
+            let sun_d = normalize(-m_pos);
+            let nl = max(dot(n, sun_d), 0.0);
+            let base = select(vec3<f32>(0.62, 0.58, 0.54),
+                              vec3<f32>(0.92, 0.95, 1.00),
+                              icy);
+            hit_color = base * (0.10 + nl * 0.90);
             best_t = t;
             has_hit = true;
         }

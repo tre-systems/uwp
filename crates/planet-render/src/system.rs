@@ -1,21 +1,27 @@
 //! Physics-based solar system generator.
 //!
-//! Single source of truth for: what stars exist, what planets they host, where
-//! those planets sit, and what they're made of. Used by the system-overview
-//! render path to paint orbits + bodies; an individual planet's per-fragment
-//! params for the detail render are derived from its `Planet` here too.
+//! Two-layer model. The *structure* — how orbits are slotted around the
+//! star, where gas giants land, where asteroid belts form, how many moons
+//! a body has — borrows the schematic patterns from legacy 2d6's survey rules
+//! "Scouts" world generation rules (Bode-like orbit indexing, gas-giant
+//! count by zone, satellite tables) which line up well with real solar
+//! systems. The *physics* — stellar parameters, habitable zone, planet
+//! mass→radius, equilibrium temperature — uses modern observed astrophysics.
 //!
-//! References (no game tables, all observed-astrophysics):
-//!   * Stellar IMF: Chabrier 2003 (PASP), Salpeter 1955.
+//! References:
+//!   * Stellar IMF: Chabrier 2003 (PASP). We deliberately *bias* sampling
+//!     away from pure IMF (which is ~75 % M-dwarfs) and toward F/G/K so
+//!     each randomly-generated system reads as visually interesting and
+//!     has at least some prospect of a habitable world.
 //!   * Mass-luminosity / mass-radius main-sequence: Demircan & Kahraman 1991.
-//!   * Blackbody → sRGB: Mitchell Charity tabulation, polynomial fit.
 //!   * Habitable zone: Kopparapu et al. 2013 (ApJ 765:131), runaway-greenhouse
 //!     inner and maximum-greenhouse outer flux limits.
-//!   * Mass-radius for planets: Chen & Kipping 2017 (Forecaster, ApJ 834:17).
-//!   * Period-ratio spacing: Pu & Wu 2015, Kepler dichotomy population; median
-//!     ratio of adjacent-planet periods ≈ 1.5–2.
-//!   * Planet equilibrium temperature: standard radiative balance, Bond
-//!     albedo scaled by body class.
+//!   * Snow line: Hayashi 1981 / Lecar 2006 — T_eq < 170 K, scales with √L⊙.
+//!   * Planet mass-radius: Chen & Kipping 2017 (Forecaster, ApJ 834:17).
+//!   * Bode-like orbit positions: Blagg 1913, MacDonald 1996, Lynch 2003 —
+//!     real planetary systems show consistent ~1.4–1.7 period ratios.
+//!   * Moon count by body class: observed solar-system statistics
+//!     (gas giants 60+, ice giants 14-27, terrestrials 0-2).
 
 use serde::{Deserialize, Serialize};
 
@@ -42,22 +48,25 @@ pub struct Star {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BodyType {
-    /// Mercury / inner-Mars class. Mostly rock, thin atmosphere or none.
     Rocky,
-    /// Earth / Venus class. Substantial atmosphere, possible oceans.
     Terrestrial,
-    /// 1.5-4 R⊕, mass-radius slope still rocky. Probably no thick H/He envelope.
     SuperEarth,
-    /// 2-4 R⊕, hosts a thick H/He atmosphere. Often hot puffy planets.
     MiniNeptune,
-    /// Neptune/Uranus class — ice giant with thick atmosphere.
     IceGiant,
-    /// Jupiter/Saturn class — gas giant, H/He dominated.
     GasGiant,
-    /// Tidally-locked / runaway-greenhouse rocky world inside the habitable zone.
     Inferno,
-    /// Frozen rocky world beyond the outer habitable edge.
     Frozen,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Moon {
+    /// Orbit radius in planet radii. Larger gas giants have moons out to 100+ R.
+    pub orbit_radii: f32,
+    /// Radius in Earth-radii units (typically 0.1 – 0.4).
+    pub radius_earth: f32,
+    pub phase_rad: f32,
+    /// True = icy/bright surface; false = rocky/dark.
+    pub icy: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -68,16 +77,20 @@ pub struct Planet {
     pub mass_earth: f32,
     pub radius_earth: f32,
     pub body_type: BodyType,
-    /// Equilibrium temperature for Bond albedo ≈ 0.3 (Earth-like).
     pub temperature_k: f32,
-    /// Mean anomaly at t=0, radians.
     pub phase_rad: f32,
-    /// Rotation period in seconds (mostly informational; render code defaults
-    /// to its own auto-rotate).
     pub day_seconds: f32,
-    /// Seed for the detail-render procedural surface.
     pub seed: u32,
     pub in_habitable_zone: bool,
+    pub moons: Vec<Moon>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AsteroidBelt {
+    pub inner_au: f32,
+    pub outer_au: f32,
+    /// Visual density modulation [0, 1].
+    pub density: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -85,13 +98,15 @@ pub struct SolarSystem {
     pub seed: u32,
     pub star: Star,
     pub planets: Vec<Planet>,
+    pub belts: Vec<AsteroidBelt>,
     pub hz_inner_au: f32,
     pub hz_outer_au: f32,
+    pub snow_line_au: f32,
+    /// Index into `planets` of the most habitable body, or -1 if none qualify.
+    pub main_world: i32,
     pub age_gyr: f32,
 }
 
-/// Tiny seeded LCG. Deterministic per `seed`; not a great RNG but fine for
-/// procedural generation where we want byte-stable output across builds.
 struct Rng {
     state: u64,
 }
@@ -106,7 +121,6 @@ impl Rng {
     }
 
     fn next_u32(&mut self) -> u32 {
-        // SplitMix64 step — fast, good mixing, deterministic.
         self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
@@ -122,38 +136,48 @@ impl Rng {
         lo + self.f01() * (hi - lo)
     }
 
-    /// Normal-distribution sample via Box-Muller.
+    fn roll_d6(&mut self, n: usize) -> i32 {
+        let mut s = 0;
+        for _ in 0..n {
+            s += 1 + (self.f01() * 6.0).floor() as i32;
+        }
+        s
+    }
+
     fn normal(&mut self) -> f32 {
         let u1 = self.f01().max(1e-6);
         let u2 = self.f01();
         (-2.0_f32 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos()
     }
+
+    fn pick<'a, T: Copy>(&mut self, choices: &'a [T]) -> T {
+        let i = (self.f01() * choices.len() as f32) as usize;
+        choices[i.min(choices.len() - 1)]
+    }
 }
 
-/// Sample a stellar mass from the Chabrier 2003 IMF approximated as: most
-/// stars are M-dwarfs (~75 %), then K, G, F, A, B, O in decreasing fractions.
-/// We pick a class by CDF and then perturb mass within the class.
+/// Star sampling. Pure IMF would give ~75 % M-dwarfs and ~0.04 % G-stars,
+/// which makes most randomly-generated systems visually identical small
+/// red ones. Bias toward G/K/F so each system feels distinct.
 pub fn sample_star(rng: &mut Rng) -> Star {
     let r = rng.f01();
-    let (spectral, m_lo, m_hi) = if r < 0.0001 {
-        (SpectralClass::O, 16.0, 90.0)
-    } else if r < 0.0013 {
+    let (spectral, m_lo, m_hi) = if r < 0.005 {
+        (SpectralClass::O, 16.0, 60.0)
+    } else if r < 0.04 {
         (SpectralClass::B, 2.1, 16.0)
-    } else if r < 0.0063 {
+    } else if r < 0.13 {
         (SpectralClass::A, 1.4, 2.1)
-    } else if r < 0.0363 {
+    } else if r < 0.30 {
         (SpectralClass::F, 1.04, 1.4)
-    } else if r < 0.1063 {
+    } else if r < 0.55 {
         (SpectralClass::G, 0.80, 1.04)
-    } else if r < 0.2263 {
+    } else if r < 0.85 {
         (SpectralClass::K, 0.45, 0.80)
     } else {
-        (SpectralClass::M, 0.08, 0.45)
+        (SpectralClass::M, 0.10, 0.45)
     };
     let u = rng.f01();
     let mass = m_lo + u * (m_hi - m_lo);
-    // Mass-luminosity for main sequence — segmented power law approximating
-    // the L ∝ M^α relation across the HR diagram.
     let lum = if mass < 0.43 {
         0.23 * mass.powf(2.3)
     } else if mass < 2.0 {
@@ -163,13 +187,11 @@ pub fn sample_star(rng: &mut Rng) -> Star {
     } else {
         32000.0 * mass.powf(1.0)
     };
-    // Demircan & Kahraman mass-radius (main sequence).
     let radius = if mass < 1.66 {
         1.06 * mass.powf(0.945)
     } else {
         1.33 * mass.powf(0.555)
     };
-    // Stefan-Boltzmann: L = 4πR²σT⁴ → T = T⊙·(L/R²)^(1/4)
     let temp = 5778.0 * (lum / (radius * radius)).powf(0.25);
     let color = blackbody_color(temp);
     Star {
@@ -182,11 +204,8 @@ pub fn sample_star(rng: &mut Rng) -> Star {
     }
 }
 
-/// Mitchell Charity tabulated blackbody → sRGB via a fast cubic fit. Returns
-/// values mostly in [0, 1] but can exceed 1 for very bright blue stars.
 fn blackbody_color(temp_k: f32) -> [f32; 3] {
     let t = (temp_k / 100.0).clamp(10.0, 400.0);
-    // Approximation following Tanner Helland — segmented polynomial.
     let r = if t <= 66.0 {
         1.0
     } else {
@@ -209,8 +228,6 @@ fn blackbody_color(temp_k: f32) -> [f32; 3] {
     [r, g, b]
 }
 
-/// Kopparapu et al. 2013 conservative habitable-zone limits — runaway-greenhouse
-/// inner edge and maximum-greenhouse outer edge — scaled by sqrt(L/L⊙).
 pub fn habitable_zone(star: &Star) -> (f32, f32) {
     let l = star.luminosity_solar;
     let inner = (l / 1.107).sqrt();
@@ -218,36 +235,48 @@ pub fn habitable_zone(star: &Star) -> (f32, f32) {
     (inner, outer)
 }
 
-/// Chen & Kipping 2017 piecewise mass-radius relation, simplified.
-/// Mass in Earth masses → radius in Earth radii.
+/// Snow line — orbital distance at which water ice can condense in the
+/// proto-planetary disc, T_eq < ~170 K. Gas giants form here and outward
+/// because their cores accrete from ice + rock rather than rock alone.
+pub fn snow_line(star: &Star) -> f32 {
+    // T_eq ∝ L^¼ / √a, so T_eq = 170 K at a = (T_sun/170)² × √(L⊙) ≈ 2.7 √L⊙.
+    2.7 * star.luminosity_solar.sqrt()
+}
+
 fn mass_to_radius_earth(mass_earth: f32) -> f32 {
     if mass_earth < 2.04 {
-        // Terran world: R ∝ M^0.279
         1.008 * mass_earth.powf(0.279)
     } else if mass_earth < 132.0 {
-        // Neptunian: R ∝ M^0.589
         0.808 * mass_earth.powf(0.589)
     } else if mass_earth < 26600.0 {
-        // Jovian: R approximately constant, M^-0.044
         17.7 * mass_earth.powf(-0.044)
     } else {
-        // Stellar object: R ∝ M^0.881
         0.00321 * mass_earth.powf(0.881)
     }
 }
 
-/// Planet equilibrium temperature for incident-flux radiative balance.
-/// Bond albedo 0.3 for terrestrial worlds, scaled by body type.
 fn equilibrium_temp_k(star: &Star, a_au: f32, albedo: f32) -> f32 {
-    // T_eq = T⊙ · sqrt(R_star_solar / (2 a_au * AU_PER_R_SUN)) · (1 - A)^0.25
-    // Simplified using L_star_solar: T_eq ≈ 278.5 K · L_solar^0.25 / sqrt(a_au) · (1-A)^0.25
     278.5 * star.luminosity_solar.powf(0.25) / a_au.sqrt() * (1.0 - albedo).powf(0.25)
 }
 
-/// Classify a planet by mass + orbital position + stellar context.
-fn classify(mass_earth: f32, a_au: f32, hz: (f32, f32), star: &Star) -> BodyType {
+/// Bond albedo for each body class. Used for T_eq calculation.
+fn body_albedo(body: BodyType) -> f32 {
+    match body {
+        BodyType::Frozen => 0.55,
+        BodyType::IceGiant => 0.30,
+        BodyType::GasGiant => 0.34,
+        BodyType::MiniNeptune => 0.30,
+        BodyType::Terrestrial => 0.30,
+        BodyType::SuperEarth => 0.25,
+        BodyType::Inferno => 0.10,
+        BodyType::Rocky => 0.12,
+    }
+}
+
+/// Classify a body candidate from mass + orbital context.
+fn classify(mass_earth: f32, a_au: f32, hz: (f32, f32), snow: f32) -> BodyType {
     let inner_hot = a_au < hz.0 * 0.7;
-    let outer_cold = a_au > hz.1 * 1.3;
+    let outer_cold = a_au > snow * 1.4;
     if mass_earth > 50.0 {
         BodyType::GasGiant
     } else if mass_earth > 10.0 {
@@ -264,109 +293,268 @@ fn classify(mass_earth: f32, a_au: f32, hz: (f32, f32), star: &Star) -> BodyType
         } else if outer_cold {
             BodyType::Frozen
         } else {
-            // Inside HZ a 1 M⊕ world might be Earth-class; outside but close,
-            // still terrestrial.
-            let _ = star;
             BodyType::Terrestrial
         }
-    } else if mass_earth > 0.02 {
-        if outer_cold {
-            BodyType::Frozen
-        } else {
-            BodyType::Rocky
-        }
+    } else if outer_cold {
+        BodyType::Frozen
     } else {
-        // Asteroid-mass body — bin as Rocky for now.
         BodyType::Rocky
     }
 }
 
-/// Generate a system. The number of planets, their orbital spacing and mass
-/// distribution follow observed exoplanet statistics rather than game tables.
+/// Score each placed planet for "habitability" — used to pick the main world.
+/// In-HZ Earth-scale terrestrials win; gas giants and frozen worlds lose.
+fn habitability_score(p: &Planet) -> f32 {
+    if !p.in_habitable_zone {
+        return 0.0;
+    }
+    let class_score = match p.body_type {
+        BodyType::Terrestrial => 1.0,
+        BodyType::SuperEarth => 0.7,
+        BodyType::Rocky => 0.4,
+        _ => 0.0,
+    };
+    // Earth-mass peak.
+    let mass_score = 1.0 - ((p.mass_earth - 1.0).abs() / 5.0).min(1.0);
+    class_score * (0.5 + 0.5 * mass_score)
+}
+
+/// Per-body-class moon count, sampled to vaguely match Solar System values
+/// (Saturn 146, Jupiter 95, Uranus 28, Neptune 16, Earth 1, Mars 2, Venus 0).
+/// Capped well below true counts because system view can only fit so many.
+fn moon_count_for(rng: &mut Rng, body: BodyType) -> usize {
+    match body {
+        BodyType::GasGiant => (rng.roll_d6(2) - 1).clamp(0, 11) as usize,
+        BodyType::IceGiant => (rng.roll_d6(2) - 3).clamp(0, 9) as usize,
+        BodyType::MiniNeptune => (rng.roll_d6(1) - 2).clamp(0, 4) as usize,
+        BodyType::SuperEarth => (rng.roll_d6(1) - 4).clamp(0, 2) as usize,
+        BodyType::Terrestrial => (rng.roll_d6(1) - 4).clamp(0, 2) as usize,
+        BodyType::Frozen => (rng.roll_d6(1) - 5).clamp(0, 1) as usize,
+        BodyType::Rocky => (rng.roll_d6(1) - 5).clamp(0, 1) as usize,
+        BodyType::Inferno => 0,
+    }
+}
+
+fn generate_moons(rng: &mut Rng, planet: &Planet) -> Vec<Moon> {
+    let n = moon_count_for(rng, planet.body_type);
+    let mut moons = Vec::with_capacity(n);
+    // Innermost stable orbit ~2.5 planet radii (Roche limit-ish), outermost
+    // ~150 R for gas giants, less for smaller bodies.
+    let (r_min, r_max) = match planet.body_type {
+        BodyType::GasGiant => (2.5_f32, 180.0_f32),
+        BodyType::IceGiant => (2.5, 120.0),
+        BodyType::MiniNeptune => (2.0, 50.0),
+        _ => (2.0, 30.0),
+    };
+    // Cold outer planets in the system get icy moons by default; warm planets
+    // get rocky. (Realistic for water-ice condensation distance.)
+    let icy_dominant = planet.temperature_k < 200.0;
+    for _ in 0..n {
+        // Log-spaced placement so we get both close inner moons and far outer
+        // ones without piling up at the inner edge.
+        let t = rng.f01();
+        let r = r_min * (r_max / r_min).powf(t);
+        let radius = match planet.body_type {
+            BodyType::GasGiant | BodyType::IceGiant => rng.range(0.10, 0.40),
+            _ => rng.range(0.05, 0.25),
+        };
+        let icy = if icy_dominant { rng.f01() > 0.15 } else { rng.f01() > 0.55 };
+        moons.push(Moon {
+            orbit_radii: r,
+            radius_earth: radius,
+            phase_rad: rng.f01() * std::f32::consts::TAU,
+            icy,
+        });
+    }
+    // Sort by orbit so they stay visually ordered.
+    moons.sort_by(|a, b| a.orbit_radii.partial_cmp(&b.orbit_radii).unwrap());
+    moons
+}
+
+/// Build a Bode-like sequence of candidate orbit positions. We start near
+/// the inner edge (hot terrestrials live at ~0.1–0.4 AU) and step out
+/// geometrically with a period-ratio that varies slightly per slot.
+fn bode_orbits(rng: &mut Rng, star: &Star) -> Vec<f32> {
+    let mut out = Vec::with_capacity(14);
+    let mut a = (0.04 + rng.f01().powi(2) * 0.20) * star.mass_solar.powf(0.5);
+    while a < 80.0 {
+        out.push(a);
+        // Period ratio mean 1.85, σ 0.35 — Pu & Wu, clamped to Hill stability.
+        let pr = (1.85 + rng.normal() * 0.35).clamp(1.35, 3.5);
+        let ar = pr.powf(2.0 / 3.0);
+        a *= ar;
+    }
+    out
+}
+
+/// Roll for what goes in each Bode orbit slot. Outputs `OrbitContent` per
+/// slot — Empty, Planet (with target mass), GasGiant, or Belt.
+#[derive(Clone, Copy, Debug)]
+enum OrbitContent {
+    Empty,
+    Planet(f32), // log10 mass in Earth masses
+    GasGiant,
+    Belt,
+}
+
+fn roll_orbit_content(
+    rng: &mut Rng,
+    a_au: f32,
+    hz: (f32, f32),
+    snow: f32,
+    star: &Star,
+) -> OrbitContent {
+    let _ = star;
+    let inner_hot = a_au < hz.0 * 0.5;
+    let in_hz = a_au >= hz.0 && a_au <= hz.1;
+    let near_snow = a_au >= snow * 0.8 && a_au <= snow * 2.5;
+    let far_outer = a_au > snow * 2.5;
+
+    let r = rng.f01();
+    // Per-zone occupancy and class probabilities. Tuned so a typical system
+    // has 5–8 planets with 1–3 gas giants beyond the snow line and an
+    // asteroid belt or two.
+    if inner_hot {
+        // Most inner orbits are occupied by rocky/inferno worlds. Rare hot Jupiters.
+        if r < 0.10 {
+            return OrbitContent::Empty;
+        }
+        if r < 0.12 {
+            return OrbitContent::GasGiant; // hot Jupiter, very rare
+        }
+        OrbitContent::Planet(rng.range(-1.5, 0.8))
+    } else if in_hz {
+        // HZ orbits — high chance of terrestrial.
+        if r < 0.05 {
+            return OrbitContent::Empty;
+        }
+        if r < 0.10 {
+            return OrbitContent::Belt;
+        }
+        OrbitContent::Planet(rng.range(-1.0, 1.2))
+    } else if near_snow {
+        // Snow line region — peak gas giant formation, also occasional belts.
+        if r < 0.45 {
+            return OrbitContent::GasGiant;
+        }
+        if r < 0.60 {
+            return OrbitContent::Belt;
+        }
+        OrbitContent::Planet(rng.range(0.0, 2.0))
+    } else if far_outer {
+        // Outer system — gas + ice giants, occasional frozen rocky.
+        if r < 0.45 {
+            return OrbitContent::GasGiant;
+        }
+        if r < 0.60 {
+            return OrbitContent::Empty;
+        }
+        OrbitContent::Planet(rng.range(-1.0, 1.8))
+    } else {
+        // Cool zone between HZ outer and snow line — terrestrials, super-Earths.
+        if r < 0.18 {
+            return OrbitContent::Belt;
+        }
+        if r < 0.25 {
+            return OrbitContent::Empty;
+        }
+        OrbitContent::Planet(rng.range(-0.8, 1.5))
+    }
+}
+
 pub fn generate(seed: u32) -> SolarSystem {
     let mut rng = Rng::new(seed);
     let star = sample_star(&mut rng);
     let hz = habitable_zone(&star);
+    let snow = snow_line(&star);
 
-    // Number of planets — observed Kepler statistics show median ~3 detected,
-    // but ~5–8 actual after completeness correction. Bias slightly higher
-    // here so each system feels populated.
-    let n_planets = 4 + (rng.f01() * 5.0).floor() as usize;
+    let orbits = bode_orbits(&mut rng, &star);
+    let mut planets = Vec::new();
+    let mut belts = Vec::new();
 
-    // Inner edge of planetary system. Real systems have inner planets at
-    // 0.02–0.1 AU (hot rocky / hot Jupiter regimes); some start further out.
-    let mut a = 0.04 + rng.f01().powi(2) * 0.30;
-
-    let mut planets = Vec::with_capacity(n_planets);
-    for _ in 0..n_planets {
-        // Period ratio (P_{i+1} / P_i) drawn from observed distribution:
-        // mean ≈ 1.9, σ ≈ 0.5 (Pu & Wu 2015), clamped to dynamical stability.
-        let period_ratio = (1.6 + rng.normal() * 0.45).clamp(1.30, 4.0);
-        // Kepler 3rd: a ∝ P^(2/3).
-        let a_ratio = period_ratio.powf(2.0 / 3.0);
-
-        // Mass distribution from observed exoplanet population: log-uniform
-        // over rocky (0.05–10 M⊕) and giant (10–3000 M⊕) regimes, biased
-        // toward smaller planets (Kepler dichotomy).
-        let log_mass = if rng.f01() < 0.78 {
-            // Rocky / sub-Neptune dominated regime.
-            rng.range(-1.7, 1.4)
-        } else {
-            // Gas-giant tail.
-            rng.range(1.4, 3.4)
-        };
-        let mut mass_earth = 10.0_f32.powf(log_mass);
-
-        // Suppress hot Jupiters (a < 0.1 AU + giant mass) to be rarer than
-        // the bare distribution — observed rate ~1 % of stars.
-        if a < 0.1 && mass_earth > 50.0 && rng.f01() > 0.05 {
-            mass_earth = rng.range(0.5, 8.0);
-        }
-
-        let radius_earth = mass_to_radius_earth(mass_earth);
-        let body_type = classify(mass_earth, a, hz, &star);
-        // Body-class-specific Bond albedo (rough averages).
-        let albedo = match body_type {
-            BodyType::Frozen => 0.55,
-            BodyType::IceGiant => 0.30,
-            BodyType::GasGiant => 0.34,
-            BodyType::MiniNeptune => 0.30,
-            BodyType::Terrestrial => 0.30,
-            BodyType::SuperEarth => 0.25,
-            BodyType::Inferno => 0.10,
-            BodyType::Rocky => 0.12,
-        };
-        let temp = equilibrium_temp_k(&star, a, albedo);
-        let in_hz = a >= hz.0 && a <= hz.1;
-
-        planets.push(Planet {
-            orbit_au: a,
-            eccentricity: rng.f01().powi(3) * 0.25,
-            inclination_deg: rng.normal() * 2.5,
-            mass_earth,
-            radius_earth,
-            body_type,
-            temperature_k: temp,
-            phase_rad: rng.f01() * std::f32::consts::TAU,
-            day_seconds: 8.0 * 3600.0 + rng.f01() * 60.0 * 3600.0,
-            seed: rng.next_u32(),
-            in_habitable_zone: in_hz,
-        });
-
-        a *= a_ratio;
-        // Stop placing planets beyond ~80 AU — outer system would just be
-        // KBOs / dwarf planets, not visually interesting at the system scale.
-        if a > 80.0 {
-            break;
+    for &a in &orbits {
+        match roll_orbit_content(&mut rng, a, hz, snow, &star) {
+            OrbitContent::Empty => {}
+            OrbitContent::Belt => {
+                // Belt occupies the orbit's ±5–15% as inner→outer band.
+                let half_width = rng.range(0.05, 0.15) * a;
+                belts.push(AsteroidBelt {
+                    inner_au: (a - half_width).max(0.01),
+                    outer_au: a + half_width,
+                    density: rng.range(0.5, 1.0),
+                });
+            }
+            OrbitContent::GasGiant => {
+                // Gas giant masses range Saturn (95 M⊕) → super-Jupiter (~10 M_jup).
+                let mass = 10.0_f32.powf(rng.range(1.7, 3.4));
+                let radius = mass_to_radius_earth(mass);
+                let body = if a > snow * 1.5 && mass < 300.0 {
+                    BodyType::IceGiant
+                } else {
+                    BodyType::GasGiant
+                };
+                let temp = equilibrium_temp_k(&star, a, body_albedo(body));
+                let mut planet = Planet {
+                    orbit_au: a,
+                    eccentricity: rng.f01().powi(3) * 0.20,
+                    inclination_deg: rng.normal() * 1.5,
+                    mass_earth: mass,
+                    radius_earth: radius,
+                    body_type: body,
+                    temperature_k: temp,
+                    phase_rad: rng.f01() * std::f32::consts::TAU,
+                    day_seconds: rng.range(8.0, 30.0) * 3600.0,
+                    seed: rng.next_u32(),
+                    in_habitable_zone: a >= hz.0 && a <= hz.1,
+                    moons: Vec::new(),
+                };
+                planet.moons = generate_moons(&mut rng, &planet);
+                planets.push(planet);
+            }
+            OrbitContent::Planet(log_mass) => {
+                let mass = 10.0_f32.powf(log_mass);
+                let radius = mass_to_radius_earth(mass);
+                let body = classify(mass, a, hz, snow);
+                let temp = equilibrium_temp_k(&star, a, body_albedo(body));
+                let mut planet = Planet {
+                    orbit_au: a,
+                    eccentricity: rng.f01().powi(3) * 0.25,
+                    inclination_deg: rng.normal() * 2.5,
+                    mass_earth: mass,
+                    radius_earth: radius,
+                    body_type: body,
+                    temperature_k: temp,
+                    phase_rad: rng.f01() * std::f32::consts::TAU,
+                    day_seconds: rng.range(8.0, 60.0) * 3600.0,
+                    seed: rng.next_u32(),
+                    in_habitable_zone: a >= hz.0 && a <= hz.1,
+                    moons: Vec::new(),
+                };
+                planet.moons = generate_moons(&mut rng, &planet);
+                planets.push(planet);
+            }
         }
     }
+
+    // Identify the main world: highest habitability score, or -1 if none in HZ.
+    let main_world = planets
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (i, habitability_score(p)))
+        .filter(|(_, s)| *s > 0.0)
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(i, _)| i as i32)
+        .unwrap_or(-1);
 
     SolarSystem {
         seed,
         star,
         planets,
+        belts,
         hz_inner_au: hz.0,
         hz_outer_au: hz.1,
+        snow_line_au: snow,
+        main_world,
         age_gyr: rng.range(0.5, 10.0),
     }
 }
@@ -377,14 +565,11 @@ mod tests {
 
     #[test]
     fn solar_analog_lands_close_to_sol() {
-        // Stuff the RNG until we get a G-class star — verify the resulting
-        // physics are self-consistent.
         for seed in 0u32..1000 {
             let sys = generate(seed);
             if matches!(sys.star.spectral, SpectralClass::G) {
                 assert!(sys.star.mass_solar > 0.5 && sys.star.mass_solar < 1.5);
                 assert!(sys.star.luminosity_solar > 0.1 && sys.star.luminosity_solar < 5.0);
-                // Earth-like HZ should sit around 1 AU for G stars.
                 assert!(sys.hz_inner_au > 0.5 && sys.hz_inner_au < 1.5);
                 assert!(sys.hz_outer_au > 1.0 && sys.hz_outer_au < 3.5);
                 return;
@@ -395,8 +580,6 @@ mod tests {
 
     #[test]
     fn period_spacing_is_dynamically_stable() {
-        // Adjacent planet period ratios should never fall below ~1.3
-        // (Hill-stability rule of thumb).
         for seed in 0u32..50 {
             let sys = generate(seed);
             for w in sys.planets.windows(2) {
@@ -408,6 +591,53 @@ mod tests {
                     w[1].orbit_au
                 );
             }
+        }
+    }
+
+    #[test]
+    fn gas_giants_form_near_or_beyond_snow_line() {
+        // Across many systems, gas giants should overwhelmingly be at or
+        // beyond the snow line (where ice can condense in the disc).
+        let mut close = 0;
+        let mut far = 0;
+        for seed in 0u32..200 {
+            let sys = generate(seed);
+            for p in &sys.planets {
+                if matches!(p.body_type, BodyType::GasGiant | BodyType::IceGiant) {
+                    if p.orbit_au < sys.snow_line_au * 0.7 {
+                        close += 1;
+                    } else {
+                        far += 1;
+                    }
+                }
+            }
+        }
+        // Hot Jupiters should be a tiny minority (<10 %).
+        assert!(far > close * 9, "close={close} far={far}");
+    }
+
+    #[test]
+    fn gas_giants_get_more_moons_than_terrestrials() {
+        let mut gg_moons = 0;
+        let mut gg_count = 0;
+        let mut tr_moons = 0;
+        let mut tr_count = 0;
+        for seed in 0u32..200 {
+            let sys = generate(seed);
+            for p in &sys.planets {
+                if matches!(p.body_type, BodyType::GasGiant | BodyType::IceGiant) {
+                    gg_moons += p.moons.len();
+                    gg_count += 1;
+                } else if matches!(p.body_type, BodyType::Terrestrial | BodyType::SuperEarth) {
+                    tr_moons += p.moons.len();
+                    tr_count += 1;
+                }
+            }
+        }
+        if gg_count > 0 && tr_count > 0 {
+            let gg_avg = gg_moons as f32 / gg_count as f32;
+            let tr_avg = tr_moons as f32 / tr_count as f32;
+            assert!(gg_avg > tr_avg * 2.0, "gg_avg={gg_avg} tr_avg={tr_avg}");
         }
     }
 }

@@ -18,6 +18,8 @@ pub enum ViewMode {
 }
 
 const MAX_SYSTEM_PLANETS: usize = 16;
+const MAX_SYSTEM_MOONS: usize = 32;
+const MAX_SYSTEM_BELTS: usize = 4;
 const SCENE_UNITS_PER_AU: f32 = 1.0;
 
 const PLANET_RES: u32 = 200;
@@ -50,17 +52,24 @@ struct Uniforms {
 
 const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-/// Packed planet data for the system shader: two vec4s per planet.
-///   slot 2i  : xyz = world position, w = display radius
-///   slot 2i+1: xyz = base colour,    w = orbital radius (scene units)
+/// Packed system data for the system shader. Tightly packed for transfer
+/// efficiency — the shader unpacks back into its own struct view.
+///
+///   planets[2i  ]: xyz = world position, w = display radius
+///   planets[2i+1]: xyz = base colour,    w = orbital radius (scene units)
+///   moons[i]     : xyz = world position, w = display radius
+///   belts[i]     : x = inner_au, y = outer_au, z = density [0..1], w = unused
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
 struct SystemUniforms {
-    /// x = planet count, y = star display radius, z = star colour intensity, w = unused.
+    /// x = planet count, y = star display radius, z = star colour intensity,
+    /// w = moon count.
     info: [f32; 4],
-    /// xyz = star colour, w = star temperature.
+    /// xyz = star colour, w = belt count.
     star_color: [f32; 4],
     planets: [[f32; 4]; MAX_SYSTEM_PLANETS * 2],
+    moons: [[f32; 4]; MAX_SYSTEM_MOONS],
+    belts: [[f32; 4]; MAX_SYSTEM_BELTS],
 }
 
 pub struct Renderer {
@@ -974,41 +983,32 @@ fn schematic_color_for(body: BodyType, in_hz: bool) -> [f32; 3] {
 
 /// Build the system-view uniform buffer contents for the current system at a
 /// given time. Planet positions advance along circular orbits (Kepler 3rd
-/// law) so the system visibly evolves as time progresses.
+/// law); moons advance around their planet at correspondingly faster rates.
 fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     let mut out = SystemUniforms::default();
-    let n = sys.planets.len().min(MAX_SYSTEM_PLANETS);
+    let n_p = sys.planets.len().min(MAX_SYSTEM_PLANETS);
 
-    // Compute system scale = outermost orbit radius (or 1 if no planets).
-    let system_scale = sys
+    // System scale = outermost feature (orbit or belt) reach.
+    let outer_orbit = sys
         .planets
         .last()
         .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
         .unwrap_or(1.0);
+    let outer_belt = sys
+        .belts
+        .iter()
+        .map(|b| b.outer_au * SCENE_UNITS_PER_AU)
+        .fold(0.0_f32, f32::max);
+    let system_scale = outer_orbit.max(outer_belt).max(1.0);
 
-    // Star display size — fraction of the system scale so the star is always
-    // a clearly visible disc but smaller than the inner orbits would suggest
-    // at true scale (real Sun is ~0.005 AU). Modest extra growth with
-    // radius so M-dwarfs sit slightly smaller than G-stars and O-class
-    // stars sit visibly larger.
     let star_disp =
         (system_scale * 0.045 * (sys.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
-    // Intensity scales with luminosity, soft-capped so even O-class stars
-    // don't blow out the bloom completely.
     let intensity = 1.4 + sys.star.luminosity_solar.powf(0.2);
 
-    out.info = [n as f32, star_disp, intensity, 0.0];
-    out.star_color = [
-        sys.star.color[0],
-        sys.star.color[1],
-        sys.star.color[2],
-        sys.star.temperature_k,
-    ];
-
-    for (i, planet) in sys.planets.iter().take(n).enumerate() {
-        // Mean motion ∝ a^-1.5 (Kepler 3rd law). Time-scale tuned so an
-        // Earth-AU orbit completes in ~30 s of wall clock, giving a visibly
-        // moving system without being frantic.
+    // First write all planet positions, recording them so moons can offset.
+    let mut planet_positions = [[0.0f32; 3]; MAX_SYSTEM_PLANETS];
+    let mut planet_disp_r = [0.0f32; MAX_SYSTEM_PLANETS];
+    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
         let omega = 0.20 / planet.orbit_au.powf(1.5);
         let theta = planet.phase_rad + time * omega;
         let r = planet.orbit_au * SCENE_UNITS_PER_AU;
@@ -1017,7 +1017,64 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
         let col = schematic_color_for(planet.body_type, planet.in_habitable_zone);
         out.planets[i * 2] = [pos[0], pos[1], pos[2], disp_r];
         out.planets[i * 2 + 1] = [col[0], col[1], col[2], r];
+        planet_positions[i] = pos;
+        planet_disp_r[i] = disp_r;
     }
+
+    // Pack moons. Distribute across planets in proportion to each planet's
+    // moon count, capping at MAX_SYSTEM_MOONS total. We render each moon as
+    // a small dot positioned around its host planet, scaled so the orbit
+    // ring is just outside the planet's display radius.
+    let mut moon_idx = 0usize;
+    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
+        let host_pos = planet_positions[i];
+        let host_r = planet_disp_r[i];
+        // Cap moons rendered per planet at 6 so the dots don't pile up.
+        for moon in planet.moons.iter().take(6) {
+            if moon_idx >= MAX_SYSTEM_MOONS {
+                break;
+            }
+            // Moon orbit display radius — outside the planet disc, scales
+            // with the moon's orbital ring (compressed for visibility).
+            let orbit_r = host_r * (1.6 + (moon.orbit_radii / 12.0).min(4.0));
+            // Spin moons quickly (visible motion at default time-scale).
+            let omega = 0.6 / (moon.orbit_radii).powf(1.5);
+            let theta = moon.phase_rad + time * omega;
+            let pos = [
+                host_pos[0] + orbit_r * theta.cos(),
+                host_pos[1],
+                host_pos[2] + orbit_r * theta.sin(),
+            ];
+            let disp_r = (host_r * 0.18 * moon.radius_earth.powf(0.5)).max(0.003);
+            // Encode icy vs rocky as sign of w; magnitude = display radius.
+            // Shader reads abs(w) as radius, sign as icy flag.
+            let w = if moon.icy { disp_r } else { -disp_r };
+            out.moons[moon_idx] = [pos[0], pos[1], pos[2], w];
+            moon_idx += 1;
+        }
+        if moon_idx >= MAX_SYSTEM_MOONS {
+            break;
+        }
+    }
+
+    // Pack belts.
+    let n_b = sys.belts.len().min(MAX_SYSTEM_BELTS);
+    for (i, belt) in sys.belts.iter().take(n_b).enumerate() {
+        out.belts[i] = [
+            belt.inner_au * SCENE_UNITS_PER_AU,
+            belt.outer_au * SCENE_UNITS_PER_AU,
+            belt.density,
+            0.0,
+        ];
+    }
+
+    out.info = [n_p as f32, star_disp, intensity, moon_idx as f32];
+    out.star_color = [
+        sys.star.color[0],
+        sys.star.color[1],
+        sys.star.color[2],
+        n_b as f32,
+    ];
     out
 }
 
