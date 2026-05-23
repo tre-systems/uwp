@@ -1,8 +1,11 @@
 // System-overview render — fullscreen triangle that paints the entire scene:
 // background stars, the central star (raymarched emissive sphere with limb
-// darkening and corona), the orbital paths of each planet (raymarched faint
-// rings in the star's equatorial plane), and the planets themselves
-// (raymarched spheres at their current orbital position).
+// darkening + corona), optional binary companion star, the orbital paths of
+// each planet (raymarched faint rings in the system's equatorial plane),
+// asteroid belts (mottled dust in the same plane), the planets themselves
+// (raymarched spheres with body-class procedural surfaces — gas-giant
+// bands, terrestrial continents, icy crackings, etc.), and per-planet moon
+// dots.
 //
 // This shader is the *only* draw call in system view. The detail-render
 // planet/atmosphere pipelines are skipped.
@@ -13,20 +16,36 @@ const TAU: f32 = 6.2831853;
 const PI:  f32 = 3.1415926535;
 const MAX_PLANETS: u32 = 16u;
 
+// Body-class IDs (must match BodyType enum order in system.rs).
+const BT_ROCKY: f32       = 0.0;
+const BT_TERRESTRIAL: f32 = 1.0;
+const BT_SUPEREARTH: f32  = 2.0;
+const BT_MININEPTUNE: f32 = 3.0;
+const BT_ICEGIANT: f32    = 4.0;
+const BT_GASGIANT: f32    = 5.0;
+const BT_INFERNO: f32     = 6.0;
+const BT_FROZEN: f32      = 7.0;
+
 // Packed system data. Layout matches `SystemUniforms` in renderer.rs.
-//   planets[2i  ]: xyz = world position, w = display radius
-//   planets[2i+1]: xyz = base colour,    w = orbital radius (scene units)
-//   moons[i]     : xyz = world position, w = display radius (sign = icy flag)
-//   belts[i]     : x = inner_au, y = outer_au, z = density [0..1]
+//   planets[2i  ]: xyz = world position,   w = display radius
+//   planets[2i+1]: xyz = base palette tint, w = orbital radius
+//   planet_meta[i]: x = body_type, y = seed, z = axial tilt (rad), w = ring_outer (0 if none)
+//   moons[i]      : xyz = world position,  w = display radius (sign = icy flag)
+//   belts[i]      : x = inner_au, y = outer_au, z = density, w = unused
+//   companion     : xyz = position, w = display radius (0 = no companion)
+//   companion_color: xyz = colour, w = intensity
 struct SystemData {
-    /// x = planet count, y = star display radius, z = star intensity,
+    /// x = planet count, y = primary-star display radius, z = primary intensity,
     /// w = moon count.
     info: vec4<f32>,
-    /// xyz = star colour, w = belt count.
+    /// xyz = primary-star colour, w = belt count.
     star_color: vec4<f32>,
     planets: array<vec4<f32>, 32>,
+    planet_meta: array<vec4<f32>, 16>,
     moons: array<vec4<f32>, 32>,
     belts: array<vec4<f32>, 4>,
+    companion: vec4<f32>,
+    companion_color: vec4<f32>,
 };
 
 struct VsOut {
@@ -53,6 +72,45 @@ fn hash21(p: vec2<f32>) -> f32 {
     p3 = p3 + dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
+fn hash31(p: vec3<f32>) -> f32 {
+    return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+
+// Smooth value noise — trilinear interp over hash31 lattice. Output [0, 1].
+fn value_noise3(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = p - i;
+    let s = f * f * (3.0 - 2.0 * f);
+    let n000 = hash31(i + vec3<f32>(0.0, 0.0, 0.0));
+    let n100 = hash31(i + vec3<f32>(1.0, 0.0, 0.0));
+    let n010 = hash31(i + vec3<f32>(0.0, 1.0, 0.0));
+    let n110 = hash31(i + vec3<f32>(1.0, 1.0, 0.0));
+    let n001 = hash31(i + vec3<f32>(0.0, 0.0, 1.0));
+    let n101 = hash31(i + vec3<f32>(1.0, 0.0, 1.0));
+    let n011 = hash31(i + vec3<f32>(0.0, 1.0, 1.0));
+    let n111 = hash31(i + vec3<f32>(1.0, 1.0, 1.0));
+    let nx00 = mix(n000, n100, s.x);
+    let nx10 = mix(n010, n110, s.x);
+    let nx01 = mix(n001, n101, s.x);
+    let nx11 = mix(n011, n111, s.x);
+    let nxy0 = mix(nx00, nx10, s.y);
+    let nxy1 = mix(nx01, nx11, s.y);
+    return mix(nxy0, nxy1, s.z);
+}
+
+fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
+    var p = p_in;
+    var sum = 0.0;
+    var amp = 0.5;
+    var norm = 0.0;
+    for (var i: i32 = 0; i < octaves; i = i + 1) {
+        sum = sum + amp * value_noise3(p);
+        norm = norm + amp;
+        amp = amp * 0.5;
+        p = p * 2.07;
+    }
+    return sum / norm;
+}
 
 fn star_color_temp(t: f32) -> vec3<f32> {
     let red  = vec3<f32>(1.0, 0.55, 0.32);
@@ -68,8 +126,6 @@ fn sky_uv(d: vec3<f32>) -> vec2<f32> {
     return vec2<f32>(lon * 4.0, lat * 2.0);
 }
 
-// Pixel-scale gaussian-PSF star — same recipe as background.wgsl, kept here
-// so this shader runs standalone.
 fn star_point(uv: vec2<f32>, scale: f32, density: f32, mag_bias: f32) -> vec3<f32> {
     let cell = floor(uv * scale);
     let local = fract(uv * scale);
@@ -88,7 +144,6 @@ fn star_point(uv: vec2<f32>, scale: f32, density: f32, mag_bias: f32) -> vec3<f3
     return tint * (core + halo) * mag * 1.6;
 }
 
-// Ray-sphere: nearest positive t or -1.
 fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, centre: vec3<f32>, radius: f32) -> f32 {
     let oc = orig - centre;
     let b = dot(oc, dir);
@@ -101,7 +156,6 @@ fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, centre: vec3<f32>, radius: f32) -
     return -b + s;
 }
 
-// AgX display transform (matches atmosphere.wgsl).
 fn agx(c_in: vec3<f32>) -> vec3<f32> {
     let m1 = mat3x3<f32>(
         0.842479062, 0.0423282, 0.0423756,
@@ -131,6 +185,206 @@ fn agx(c_in: vec3<f32>) -> vec3<f32> {
     return m2 * s;
 }
 
+// ---------- Procedural surfaces per body class ----------
+// Each body type renders with a recognisable look: gas-giant bands, ice-giant
+// methane blue, terrestrial continents+oceans, rocky cratering, frozen ice
+// cracks, etc. Surfaces are sampled on the unit normal of the hit point.
+
+fn gas_giant_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    let lat = n.y;
+    // Latitudinal bands — combine low-freq dominant bands with higher-freq
+    // turbulence and a thin jet stream pattern.
+    let major = sin(lat * (8.0 + seed * 5.0) + seed * 6.28) * 0.5 + 0.5;
+    let minor = sin(lat * 28.0 + seed * 3.7) * 0.5 + 0.5;
+    let zone = mix(major, minor, 0.3);
+    // Domain-warp the band noise with longitude turbulence so the bands swirl
+    // rather than reading as clean parallels.
+    let lon = atan2(n.z, n.x) / TAU;
+    let warp = fbm3(vec3<f32>(lon * 6.0, lat * 4.0, seed) + seed, 3);
+    let band = clamp(zone + (warp - 0.5) * 0.18, 0.0, 1.0);
+    // Dark belts vs light zones — alternating colour temperature.
+    let dark  = base * vec3<f32>(0.72, 0.66, 0.55);
+    let light = base * vec3<f32>(1.12, 1.05, 0.92);
+    var c = mix(dark, light, band);
+    // Storm spot — single great-red-spot-style oval at a mid-latitude.
+    let s_lat = (hash11(seed * 7.1) - 0.5) * 0.7;
+    let s_lon = hash11(seed * 11.3);
+    let d_lat = lat - s_lat;
+    let d_lon = fract(lon - s_lon + 0.5) - 0.5;
+    let d2 = d_lat * d_lat * 8.0 + d_lon * d_lon * 5.0;
+    let storm = exp(-d2 * 12.0);
+    let storm_col = mix(vec3<f32>(0.92, 0.42, 0.30),
+                        vec3<f32>(0.85, 0.85, 0.92),
+                        step(0.5, hash11(seed * 19.7)));
+    c = mix(c, storm_col, storm * 0.55);
+    return c;
+}
+
+fn ice_giant_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    let lat = n.y;
+    let lon = atan2(n.z, n.x) / TAU;
+    // Mostly smooth methane-blue with subtle bands and a few high cloud streaks.
+    let band = sin(lat * 5.0 + seed * 3.0) * 0.06;
+    let streak = fbm3(vec3<f32>(lon * 12.0, lat * 4.0, seed * 2.0), 3) * 0.10;
+    let c = base + vec3<f32>(band * 0.4, band, band * 1.2) + vec3<f32>(streak * 0.7);
+    return c;
+}
+
+fn terrestrial_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    // Continent vs ocean field, with polar ice caps. Aimed at the system-view
+    // scale where the planet is only a small disc — we don't need detail
+    // beyond about 20 cells per hemisphere.
+    let seed_off = vec3<f32>(seed * 13.7, seed * 5.3, seed * 17.1);
+    let h = fbm3(n * 2.3 + seed_off, 4);
+    let land = smoothstep(0.48, 0.55, h);
+    // Continent shading uses the user-chosen base tint to keep the system
+    // view colour-coherent with the eventual detail render.
+    let ocean = vec3<f32>(0.10, 0.28, 0.55);
+    let land_a = base * vec3<f32>(0.85, 1.05, 0.75);
+    let land_b = base * vec3<f32>(1.10, 0.95, 0.65);
+    let h2 = fbm3(n * 5.0 + seed_off + vec3<f32>(91.0, 31.0, -41.0), 3);
+    let land_mix = mix(land_a, land_b, h2);
+    var surface = mix(ocean, land_mix, land);
+    // Cloud streaks — thin high cirrus across the whole planet.
+    let cloud = smoothstep(0.55, 0.78, fbm3(n * 6.0 + seed_off, 3));
+    surface = mix(surface, vec3<f32>(0.95), cloud * 0.45);
+    // Polar caps.
+    let polar = smoothstep(0.72, 0.92, abs(n.y));
+    surface = mix(surface, vec3<f32>(0.95, 0.96, 1.0), polar);
+    return surface;
+}
+
+fn super_earth_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    // Larger continents, less ocean — more rust/yellow tint than blue Earth.
+    let seed_off = vec3<f32>(seed * 9.1, seed * 3.7, seed * 11.3);
+    let h = fbm3(n * 2.0 + seed_off, 4);
+    let land = smoothstep(0.40, 0.55, h);
+    let ocean = base * vec3<f32>(0.40, 0.55, 0.70);
+    let land_c = base * vec3<f32>(1.15, 0.95, 0.70);
+    var surface = mix(ocean, land_c, land);
+    let polar = smoothstep(0.78, 0.95, abs(n.y));
+    surface = mix(surface, vec3<f32>(0.90, 0.92, 0.96), polar * 0.6);
+    return surface;
+}
+
+fn rocky_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    // Mars / Mercury class — dusty rock with darker mare and visible
+    // crater-like patches at this zoom.
+    let seed_off = vec3<f32>(seed * 7.7, seed * 2.3, seed * 15.5);
+    let h_low = fbm3(n * 2.0 + seed_off, 4);
+    let h_high = fbm3(n * 10.0 + seed_off, 3);
+    // Three-band shading: highland (bright), maria (dark), regolith dust.
+    let bright = base * vec3<f32>(1.20, 1.05, 0.95);
+    let dark = base * vec3<f32>(0.50, 0.42, 0.35);
+    var surface = mix(dark, bright, smoothstep(0.40, 0.62, h_low));
+    surface = surface * (0.85 + h_high * 0.30);
+    return surface;
+}
+
+fn frozen_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    // Europa / Pluto class — icy with surface cracks and dark dirt.
+    let seed_off = vec3<f32>(seed * 13.7, seed * 5.3, seed * 17.1);
+    let h = fbm3(n * 4.0 + seed_off, 4);
+    // Mostly white ice tinted with the base palette; dark cracks via thresholded fbm.
+    let ice = mix(vec3<f32>(0.92, 0.95, 1.0), base * 1.10, 0.35);
+    let crack = smoothstep(0.55, 0.65, h);
+    let crack_color = vec3<f32>(0.45, 0.40, 0.35);
+    var surface = mix(ice, crack_color, crack * 0.6);
+    // Subtle large-scale tint variation.
+    let tint = fbm3(n * 1.5 + seed_off, 3);
+    surface = surface * (0.92 + tint * 0.16);
+    return surface;
+}
+
+fn inferno_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    // Venus / lava world — hot, glowing patches.
+    let seed_off = vec3<f32>(seed * 4.9, seed * 1.7, seed * 23.1);
+    let h = fbm3(n * 5.0 + seed_off, 4);
+    let lava = vec3<f32>(2.0, 0.65, 0.15);
+    let crust = base * vec3<f32>(0.85, 0.55, 0.40);
+    let molten = smoothstep(0.58, 0.78, h);
+    var surface = mix(crust, lava, molten * 0.7);
+    return surface;
+}
+
+fn mini_neptune_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    // Like a smaller gas giant but with thicker haze that washes out features.
+    let g = gas_giant_surface(n, base, seed);
+    return mix(g, base * 1.05, 0.55);
+}
+
+// Dispatch by body type.
+fn planet_surface(body_type: f32, n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
+    if (body_type < 0.5)  { return rocky_surface(n, base, seed); }
+    if (body_type < 1.5)  { return terrestrial_surface(n, base, seed); }
+    if (body_type < 2.5)  { return super_earth_surface(n, base, seed); }
+    if (body_type < 3.5)  { return mini_neptune_surface(n, base, seed); }
+    if (body_type < 4.5)  { return ice_giant_surface(n, base, seed); }
+    if (body_type < 5.5)  { return gas_giant_surface(n, base, seed); }
+    if (body_type < 6.5)  { return inferno_surface(n, base, seed); }
+    return frozen_surface(n, base, seed);
+}
+
+// ---------- Star rendering ----------
+struct StarHit {
+    color: vec3<f32>,
+    t: f32,
+    hit: bool,
+};
+
+fn render_star(
+    orig: vec3<f32>,
+    dir: vec3<f32>,
+    centre: vec3<f32>,
+    radius: f32,
+    base: vec3<f32>,
+    intensity: f32,
+    best_t: f32,
+) -> StarHit {
+    var h: StarHit;
+    h.hit = false;
+    h.t = 1e9;
+    h.color = vec3<f32>(0.0);
+    let t = ray_sphere(orig, dir, centre, radius);
+    if (t > 0.0 && t < best_t) {
+        let hit_pos = orig + dir * t;
+        let n = normalize(hit_pos - centre);
+        // Eddington limb darkening: I(μ) = I₀ (2 + 3μ)/5.
+        let mu = max(dot(n, -dir), 0.0);
+        let limb = (2.0 + 3.0 * mu) / 5.0;
+        // Granulation — fbm on the surface for a textured photosphere; cell
+        // size scales inverse to radius so a tiny star still shows texture.
+        let grain = 0.86 + fbm3(n * 18.0, 3) * 0.28;
+        // Subtle reddened limb on cooler stars (just darken the limb).
+        h.color = base * limb * grain * intensity;
+        h.t = t;
+        h.hit = true;
+    }
+    return h;
+}
+
+fn render_corona(
+    orig: vec3<f32>,
+    dir: vec3<f32>,
+    centre: vec3<f32>,
+    radius: f32,
+    base: vec3<f32>,
+    intensity: f32,
+) -> vec3<f32> {
+    let to_star = centre - orig;
+    let star_dist = length(to_star);
+    if (star_dist < 1e-3) { return vec3<f32>(0.0); }
+    let star_dir_w = to_star / star_dist;
+    let cos_align = max(dot(dir, star_dir_w), 0.0);
+    let ang_disc = atan2(radius, max(star_dist - radius, 1e-3));
+    let cos_disc = cos(ang_disc);
+    let outside = max(cos_disc - cos_align, 0.0);
+    let outside_norm = outside / max(1.0 - cos_disc, 1e-3);
+    let corona = exp(-outside_norm * 4.0) * 0.55
+               + exp(-outside_norm * 20.0) * 0.35;
+    return base * corona * intensity * 0.40;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Reconstruct view ray.
@@ -156,7 +410,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var has_hit = false;
 
     // ---------- Orbit rings ----------
-    // Render each orbit as a thin ring lying in the y=0 plane.
     let n_planets = i32(sys.info.x);
     let ring_n = vec3<f32>(0.0, 1.0, 0.0);
     let denom = dot(ray_dir, ring_n);
@@ -165,8 +418,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (t_plane > 0.0) {
             let p = ray_origin + ray_dir * t_plane;
             let r = length(p.xz);
-            // Find the nearest orbit radius to this hit point and check if
-            // we're within the ring band.
             var nearest_diff = 1e9;
             var orbit_tint = vec3<f32>(0.5, 0.6, 0.9);
             for (var i: i32 = 0; i < i32(MAX_PLANETS); i = i + 1) {
@@ -176,12 +427,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 let diff = abs(r - orbit_r);
                 if (diff < band_width && diff < nearest_diff) {
                     nearest_diff = diff;
-                    // Tint orbit by planet body colour for visual association.
                     orbit_tint = sys.planets[u32(i) * 2u + 1u].xyz * 0.55 + vec3<f32>(0.25);
                 }
             }
             if (nearest_diff < 1e8) {
-                // Fall off with distance to keep distant orbits readable.
                 let dist_falloff = 1.0 / (1.0 + t_plane * 0.005);
                 color = color + orbit_tint * 0.18 * dist_falloff;
             }
@@ -189,9 +438,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     // ---------- Asteroid belts ----------
-    // Render belts as a faintly mottled band in the y=0 plane between
-    // inner_au and outer_au. We add to `color` (the background) so belts
-    // sit behind planets/moons via the standard hit-test ordering.
     let n_belts = i32(sys.star_color.w);
     if (abs(denom) > 1e-5 && n_belts > 0) {
         let t_plane2 = -dot(ray_origin, ring_n) / denom;
@@ -205,17 +451,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 let outer = belt.y;
                 let density = belt.z;
                 if (r >= inner && r <= outer) {
-                    // Mottled density via 2D hash on the hit point — gives a
-                    // grainy look without sampling actual particles.
-                    let cell = floor(p.xz * 8.0);
-                    let h = hash21(cell);
-                    let h2 = hash21(cell + vec2<f32>(13.0, 7.0));
-                    let speck = step(0.55, h) * (0.4 + h2 * 0.6);
+                    // Higher-frequency granular pattern via fbm on the hit
+                    // point — reads as scattered dust rather than a solid band.
+                    let n_lo = fbm3(vec3<f32>(p.x * 4.0, p.z * 4.0, 0.0), 3);
+                    let n_hi = hash21(floor(p.xz * 18.0));
+                    let n_hi2 = hash21(floor(p.xz * 18.0) + vec2<f32>(31.0, 17.0));
+                    let speck = step(0.55, n_hi) * (0.4 + n_hi2 * 0.6);
                     let edge_in  = smoothstep(inner, inner + (outer - inner) * 0.10, r);
                     let edge_out = 1.0 - smoothstep(outer - (outer - inner) * 0.10, outer, r);
                     let band = edge_in * edge_out;
                     let dust = vec3<f32>(0.55, 0.48, 0.40);
-                    color = color + dust * (0.12 + speck * 0.35) * density * band;
+                    color = color
+                          + dust * (n_lo * 0.10 + speck * 0.40) * density * band;
                 }
             }
         }
@@ -226,17 +473,40 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (i >= n_planets) { break; }
         let slot_a = sys.planets[u32(i) * 2u + 0u];
         let slot_b = sys.planets[u32(i) * 2u + 1u];
+        let pmeta  = sys.planet_meta[u32(i)];
         let p_pos = slot_a.xyz;
         let p_r   = slot_a.w;
         let p_col = slot_b.xyz;
+        let body_type = pmeta.x;
+        let p_seed = pmeta.y;
         let t = ray_sphere(ray_origin, ray_dir, p_pos, p_r);
         if (t > 0.0 && t < best_t) {
             let hit_pos = ray_origin + ray_dir * t;
-            let n = normalize(hit_pos - p_pos);
+            let n_world = normalize(hit_pos - p_pos);
+            // Apply axial tilt — rotate the sample normal around the X axis
+            // so each planet has its own pole orientation.
+            let tilt = pmeta.z;
+            let cs = cos(tilt);
+            let sn = sin(tilt);
+            let n = vec3<f32>(n_world.x,
+                              cs * n_world.y - sn * n_world.z,
+                              sn * n_world.y + cs * n_world.z);
+            let surface = planet_surface(body_type, n, p_col, p_seed);
             let sun_d = normalize(-p_pos);
-            let nl = max(dot(n, sun_d), 0.0);
-            let shaded = p_col * (0.08 + nl * 0.95);
-            hit_color = shaded;
+            let nl = max(dot(n_world, sun_d), 0.0);
+            // Lighting: small ambient + Lambert. Slightly elevated ambient for
+            // gas/ice giants so the cloud bands are visible even on the dark
+            // hemisphere (multi-scatter through their thick atmospheres).
+            let amb = select(0.06, 0.16,
+                             body_type > 2.5 && body_type < 5.5);
+            let lit = surface * (amb + nl * 0.95);
+            // Soft terminator warming for terrestrials/inferno: a thin warm
+            // tint at the day-night boundary.
+            let term = smoothstep(0.0, 0.10, nl) * (1.0 - smoothstep(0.10, 0.28, nl));
+            let warm_planet = body_type > 0.5 && body_type < 2.5;
+            hit_color = lit + select(vec3<f32>(0.0),
+                                     vec3<f32>(0.35, 0.18, 0.08) * term,
+                                     warm_planet);
             best_t = t;
             has_hit = true;
         }
@@ -256,56 +526,65 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let n = normalize(hit_pos - m_pos);
             let sun_d = normalize(-m_pos);
             let nl = max(dot(n, sun_d), 0.0);
+            let mottle = 0.85 + hash31(n * 30.0) * 0.30;
             let base = select(vec3<f32>(0.62, 0.58, 0.54),
                               vec3<f32>(0.92, 0.95, 1.00),
                               icy);
-            hit_color = base * (0.10 + nl * 0.90);
+            hit_color = base * mottle * (0.10 + nl * 0.90);
             best_t = t;
             has_hit = true;
         }
     }
 
-    // ---------- Star ----------
-    let star_radius = sys.info.y;
-    let star_t = ray_sphere(ray_origin, ray_dir, vec3<f32>(0.0), star_radius);
-    if (star_t > 0.0 && star_t < best_t) {
-        let hit_pos = ray_origin + ray_dir * star_t;
-        let n = normalize(hit_pos);
-        // Limb darkening (Eddington approximation): I(μ) = I₀ (2 + 3μ) / 5.
-        let mu = max(dot(n, -ray_dir), 0.0);
-        let limb = (2.0 + 3.0 * mu) / 5.0;
-        // Granulation: tight noise on the surface for a textured photosphere.
-        let g = hash21(floor(n.xz * 80.0) + n.y * 20.0);
-        let grain = 0.92 + 0.08 * g;
-        let intensity = sys.info.z;
-        hit_color = sys.star_color.rgb * limb * grain * intensity;
-        best_t = star_t;
+    // ---------- Primary star ----------
+    let primary = render_star(
+        ray_origin, ray_dir,
+        vec3<f32>(0.0), sys.info.y,
+        sys.star_color.rgb, sys.info.z, best_t,
+    );
+    if (primary.hit) {
+        hit_color = primary.color;
+        best_t = primary.t;
         has_hit = true;
+    }
+
+    // ---------- Companion star (optional) ----------
+    let comp_r = sys.companion.w;
+    var companion_hit = false;
+    if (comp_r > 0.0) {
+        let companion = render_star(
+            ray_origin, ray_dir,
+            sys.companion.xyz, comp_r,
+            sys.companion_color.rgb, sys.companion_color.w, best_t,
+        );
+        if (companion.hit) {
+            hit_color = companion.color;
+            best_t = companion.t;
+            has_hit = true;
+            companion_hit = true;
+        }
     }
 
     if (has_hit) { color = hit_color; }
 
-    // Corona around the star — view-aligned halo that builds up as the ray
-    // gets close to the star's centre direction. Sharply masked at the
-    // angular radius of the star disc so it reads as a tight glow rather
-    // than a planet-swallowing wash.
-    let to_star = -ray_origin;
-    let star_dist = length(to_star);
-    if (star_dist > 1e-3 && star_t <= 0.0) {
-        let star_dir_w = to_star / star_dist;
-        let cos_align = max(dot(ray_dir, star_dir_w), 0.0);
-        // Angular radius of the star disc as seen from the camera.
-        let ang_disc = atan2(star_radius, max(star_dist - star_radius, 1e-3));
-        let cos_disc = cos(ang_disc);
-        // Outside-the-disc distance (in cosine space). Peaks at the limb
-        // (cos_align ≈ cos_disc) and falls off rapidly as the ray angles
-        // further from the star. Normalised by disc radius so the corona
-        // width scales with the star's apparent size.
-        let outside = max(cos_disc - cos_align, 0.0);
-        let outside_norm = outside / max(1.0 - cos_disc, 1e-3);
-        let corona = exp(-outside_norm * 4.0) * 0.55
-                   + exp(-outside_norm * 20.0) * 0.35;
-        color = color + sys.star_color.rgb * corona * sys.info.z * 0.40;
+    // ---------- Coronas ----------
+    // Each corona only renders for rays that don't already have a closer hit
+    // (planet, moon, the other star). This is the fix for "you can see the
+    // star through the planets": planets in front of a star now occlude its
+    // corona too, not just the disc.
+    if (!has_hit) {
+        color = color + render_corona(
+            ray_origin, ray_dir,
+            vec3<f32>(0.0), sys.info.y,
+            sys.star_color.rgb, sys.info.z,
+        );
+        if (comp_r > 0.0) {
+            color = color + render_corona(
+                ray_origin, ray_dir,
+                sys.companion.xyz, comp_r,
+                sys.companion_color.rgb, sys.companion_color.w,
+            );
+        }
     }
 
     return vec4<f32>(agx(color), 1.0);

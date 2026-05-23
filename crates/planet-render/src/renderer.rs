@@ -57,19 +57,25 @@ const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 ///
 ///   planets[2i  ]: xyz = world position, w = display radius
 ///   planets[2i+1]: xyz = base colour,    w = orbital radius (scene units)
-///   moons[i]     : xyz = world position, w = display radius
-///   belts[i]     : x = inner_au, y = outer_au, z = density [0..1], w = unused
+///   planet_meta[i]: x = body_type (shader id), y = seed, z = axial tilt, w = unused
+///   moons[i]      : xyz = world position, w = display radius (sign = icy flag)
+///   belts[i]      : x = inner_au, y = outer_au, z = density [0..1], w = unused
+///   companion     : xyz = world position, w = display radius (0 = no companion)
+///   companion_color: xyz = colour, w = intensity
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
 struct SystemUniforms {
-    /// x = planet count, y = star display radius, z = star colour intensity,
+    /// x = planet count, y = primary-star display radius, z = primary intensity,
     /// w = moon count.
     info: [f32; 4],
-    /// xyz = star colour, w = belt count.
+    /// xyz = primary-star colour, w = belt count.
     star_color: [f32; 4],
     planets: [[f32; 4]; MAX_SYSTEM_PLANETS * 2],
+    planet_meta: [[f32; 4]; MAX_SYSTEM_PLANETS],
     moons: [[f32; 4]; MAX_SYSTEM_MOONS],
     belts: [[f32; 4]; MAX_SYSTEM_BELTS],
+    companion: [f32; 4],
+    companion_color: [f32; 4],
 }
 
 pub struct Renderer {
@@ -1017,6 +1023,11 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
         let col = schematic_color_for(planet.body_type, planet.in_habitable_zone);
         out.planets[i * 2] = [pos[0], pos[1], pos[2], disp_r];
         out.planets[i * 2 + 1] = [col[0], col[1], col[2], r];
+        // Per-planet shader meta: body class, surface seed, axial tilt.
+        // Tilt drawn from the planet's own seed so it's stable across frames.
+        let tilt = ((planet.seed as f32 * 1.7e-5).sin() * 0.45) + 0.1;
+        let seed_f = ((planet.seed % 9973) as f32) / 9973.0 * 1000.0;
+        out.planet_meta[i] = [planet.body_type.as_shader_id(), seed_f, tilt, 0.0];
         planet_positions[i] = pos;
         planet_disp_r[i] = disp_r;
     }
@@ -1075,6 +1086,34 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
         sys.star.color[2],
         n_b as f32,
     ];
+
+    // Companion star. Orbits the system centre on its own (very slow) cycle —
+    // a real binary takes years to decades to swing around. Time-scaled to
+    // about 60 s for a 30-AU binary so the user sees visible motion.
+    if let Some(comp) = &sys.companion {
+        let omega = 0.05 / comp.separation_au.powf(1.5);
+        let theta = comp.phase_rad + time * omega;
+        let incl = comp.inclination_deg.to_radians();
+        let r = comp.separation_au * SCENE_UNITS_PER_AU;
+        let cp = theta.cos();
+        let sp = theta.sin();
+        let ci = incl.cos();
+        let si = incl.sin();
+        let pos = [r * cp, r * sp * si, r * sp * ci];
+        let disp_r =
+            (system_scale * 0.045 * (comp.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
+        let comp_intensity = 1.4 + comp.star.luminosity_solar.powf(0.2);
+        out.companion = [pos[0], pos[1], pos[2], disp_r];
+        out.companion_color = [
+            comp.star.color[0],
+            comp.star.color[1],
+            comp.star.color[2],
+            comp_intensity,
+        ];
+    } else {
+        out.companion = [0.0; 4];
+        out.companion_color = [0.0; 4];
+    }
     out
 }
 

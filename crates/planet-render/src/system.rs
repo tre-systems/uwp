@@ -58,6 +58,23 @@ pub enum BodyType {
     Frozen,
 }
 
+impl BodyType {
+    /// Numeric ID passed to the system shader; order must match the
+    /// BT_* constants in `shaders/system.wgsl`.
+    pub fn as_shader_id(self) -> f32 {
+        match self {
+            BodyType::Rocky => 0.0,
+            BodyType::Terrestrial => 1.0,
+            BodyType::SuperEarth => 2.0,
+            BodyType::MiniNeptune => 3.0,
+            BodyType::IceGiant => 4.0,
+            BodyType::GasGiant => 5.0,
+            BodyType::Inferno => 6.0,
+            BodyType::Frozen => 7.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Moon {
     /// Orbit radius in planet radii. Larger gas giants have moons out to 100+ R.
@@ -93,10 +110,28 @@ pub struct AsteroidBelt {
     pub density: f32,
 }
 
+/// Companion star in a binary/multi system. Real observed binary fraction is
+/// ~50 % for solar-type stars; we generate one ~40 % of the time so single
+/// systems remain common.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Companion {
+    pub star: Star,
+    /// Mean separation from the primary in AU.
+    pub separation_au: f32,
+    /// Initial orbital phase (radians) — the companion sweeps around the
+    /// common centre of mass at Kepler-3rd rate.
+    pub phase_rad: f32,
+    /// Inclination of the binary orbital plane from the planetary plane
+    /// (degrees). Most observed binaries are roughly co-planar, so we keep
+    /// this small.
+    pub inclination_deg: f32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SolarSystem {
     pub seed: u32,
     pub star: Star,
+    pub companion: Option<Companion>,
     pub planets: Vec<Planet>,
     pub belts: Vec<AsteroidBelt>,
     pub hz_inner_au: f32,
@@ -462,9 +497,81 @@ fn roll_orbit_content(
     }
 }
 
+/// Roll for a binary companion. Real observed binary fraction:
+///   O-class      ~70 %
+///   G-class      ~44 %
+///   M-class      ~25 %
+/// We use roughly these rates so binaries feel correctly rare on red-dwarfs
+/// and common on bright stars.
+pub fn sample_companion(rng: &mut Rng, primary: &Star) -> Option<Companion> {
+    let p_binary = match primary.spectral {
+        SpectralClass::O | SpectralClass::B => 0.65,
+        SpectralClass::A | SpectralClass::F => 0.50,
+        SpectralClass::G => 0.42,
+        SpectralClass::K => 0.36,
+        SpectralClass::M => 0.25,
+    };
+    if rng.f01() > p_binary {
+        return None;
+    }
+    // Companion mass distributed as a fraction of the primary (mass-ratio
+    // distribution observed roughly flat between 0.2 and 1.0 for solar-types).
+    let q = rng.range(0.2, 1.0);
+    let comp_mass = primary.mass_solar * q;
+    // Derive companion stellar parameters from this mass.
+    let lum = if comp_mass < 0.43 {
+        0.23 * comp_mass.powf(2.3)
+    } else if comp_mass < 2.0 {
+        comp_mass.powf(4.0)
+    } else if comp_mass < 20.0 {
+        1.4 * comp_mass.powf(3.5)
+    } else {
+        32000.0 * comp_mass.powf(1.0)
+    };
+    let radius = if comp_mass < 1.66 {
+        1.06 * comp_mass.powf(0.945)
+    } else {
+        1.33 * comp_mass.powf(0.555)
+    };
+    let temp = 5778.0 * (lum / (radius * radius)).powf(0.25);
+    let comp_spectral = if comp_mass > 16.0 {
+        SpectralClass::O
+    } else if comp_mass > 2.1 {
+        SpectralClass::B
+    } else if comp_mass > 1.4 {
+        SpectralClass::A
+    } else if comp_mass > 1.04 {
+        SpectralClass::F
+    } else if comp_mass > 0.80 {
+        SpectralClass::G
+    } else if comp_mass > 0.45 {
+        SpectralClass::K
+    } else {
+        SpectralClass::M
+    };
+    let comp_star = Star {
+        spectral: comp_spectral,
+        mass_solar: comp_mass,
+        radius_solar: radius,
+        luminosity_solar: lum,
+        temperature_k: temp,
+        color: blackbody_color(temp),
+    };
+    // Separation distribution: log-uniform from 5 to 100 AU (typical wide
+    // binaries; close binaries <1 AU make planet hosting unstable).
+    let separation_au = 10.0_f32.powf(rng.range(0.7, 2.0));
+    Some(Companion {
+        star: comp_star,
+        separation_au,
+        phase_rad: rng.f01() * std::f32::consts::TAU,
+        inclination_deg: rng.normal() * 8.0,
+    })
+}
+
 pub fn generate(seed: u32) -> SolarSystem {
     let mut rng = Rng::new(seed);
     let star = sample_star(&mut rng);
+    let companion = sample_companion(&mut rng, &star);
     let hz = habitable_zone(&star);
     let snow = snow_line(&star);
 
@@ -549,6 +656,7 @@ pub fn generate(seed: u32) -> SolarSystem {
     SolarSystem {
         seed,
         star,
+        companion,
         planets,
         belts,
         hz_inner_au: hz.0,
