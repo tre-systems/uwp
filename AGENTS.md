@@ -154,6 +154,23 @@ The requested refactor baseline is now in place:
 
 The remaining large items in this file are product roadmap work rather than cleanup debt: stronger Rust-side authored-world invariants, optional generated bindings, and the Rust compute roadmap below.
 
+## Rust Compute Baseline
+
+The first roadmap item now implemented is a Rust-side climate and habitability
+model in `crates/planet-render/src/domain/climate.rs`.
+
+- Each generated planet receives a serialized `ClimateSummary`.
+- The model runs a compact latitude-band energy-balance simulation with
+  greenhouse warming, water inventory, ice-albedo feedback, aridity, liquid
+  water fraction, and habitability scoring.
+- Main-world selection uses the Rust-computed climate habitability score
+  rather than a TypeScript or UWP-table heuristic.
+- The system panel exposes the selected main world's mean surface
+  temperature, liquid-water fraction, and habitability.
+
+This gives Rust ownership of a numerically testable simulation result and
+creates a natural landing zone for future climate/biome/tectonics work.
+
 ## Type And Contract Rules
 
 - Do not use `any` for serialized Rust data in product UI. Define TypeScript DTOs for `SolarSystem`, `Star`, `Planet`, `Moon`, belts, companions, and game-facing UWP projections.
@@ -194,7 +211,7 @@ These are the high-ROI Rust compute opportunities, roughly in priority order. Do
 
 1. **Procedural surface pre-bake.** Biggest win by a wide margin. `planet.wgsl` currently recomputes 7-octave FBM + plate-tectonics Voronoi + crater layers + biome blending per fragment per frame, which is wasteful — the surface doesn't change while you orbit. Bake six 2k×2k cube-map faces (heightmap + biome + feature mask) per seed in Rust with `rayon`. Shader becomes cheap texture lookups; per-pixel budget drops 5–10×, freeing space for finer detail, real river networks, or higher resolution at the same framerate. Natural pre-bake step for any modern planet renderer.
 
-2. **Climate / habitability simulation.** Coarse-grid energy-balance model (latitude bands × day-night × axial tilt × ocean heat capacity × atmospheric circulation) run once per system or when params change. Output a temperature and precipitation field that the surface shader samples to place biomes physically rather than from noise. Vastly more believable continents; sub-second compute on CPU.
+2. **Climate / habitability simulation.** Initial version implemented: a coarse latitude-band energy-balance model runs once per generated planet and feeds main-world selection. Next iterations should add seasonal axial-tilt sampling, precipitation bands, ocean heat capacity, and shader-facing biome fields.
 
 3. **Tectonics simulation.** Run plate motion + uplift + erosion for N timesteps to produce real continents, mountain belts, ocean basins. Replace the noise-derived continents with a physically-motivated heightmap. Heavy compute, exactly where Rust shines.
 

@@ -9,6 +9,7 @@ interface SystemEditorProps {
 export function SystemEditor({ system, disabled }: SystemEditorProps) {
   const star = system.star
   const comp = system.companion
+  const mainWorld = system.main_world >= 0 ? system.planets[system.main_world] : null
   return (
     <>
       <section>
@@ -35,6 +36,14 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
             <strong>Snow line:</strong> {system.snow_line_au.toFixed(2)} AU ·
             {' '}<strong>Age:</strong> {system.age_gyr.toFixed(1)} Gyr
           </div>
+          {mainWorld && (
+            <div>
+              <strong>Main world climate:</strong>{' '}
+              {mainWorld.climate.mean_surface_temp_k.toFixed(0)} K mean ·
+              {' '}water {(mainWorld.climate.liquid_water_fraction * 100).toFixed(0)}% ·
+              {' '}habitability {(mainWorld.climate.habitability * 100).toFixed(0)}%
+            </div>
+          )}
         </div>
 
         <div class="sys-actions">

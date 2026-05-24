@@ -7,12 +7,12 @@ import {
   type UwpDigits,
   uwpToCode,
 } from '../uwp'
-import { paramsPatchFromUwp } from '../uwpVisualMapping'
+import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
 import type { SolarSystem } from '../domain/system'
 
 export * from '../params'
 export * from '../domain/cepheus'
-export { paramsPatchFromUwp }
+export { paramsPatchFromUwp, paramsPatchFromUwpDigits }
 
 export type ViewMode = 'detail' | 'system'
 
@@ -90,7 +90,7 @@ export function applyUwp(code: string): boolean {
 
 export function setUwpField<K extends keyof UwpDigits>(field: K, value: UwpDigits[K]) {
   uwp.value = { ...uwp.value, [field]: value }
-  applyUwp(uwpToCode(uwp.value))
+  updateParams(paramsPatchFromUwpDigits(uwp.value))
 }
 
 export function setUwpFromCode(code: string): boolean {

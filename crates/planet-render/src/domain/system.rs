@@ -25,6 +25,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::climate::{self, ClimateSummary};
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SpectralClass {
     O,
@@ -100,6 +102,7 @@ pub struct Planet {
     pub seed: u32,
     pub in_habitable_zone: bool,
     pub moons: Vec<Moon>,
+    pub climate: ClimateSummary,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -333,20 +336,14 @@ fn classify(mass_earth: f32, a_au: f32, hz: (f32, f32), snow: f32) -> BodyType {
 }
 
 /// Score each placed planet for "habitability" — used to pick the main world.
-/// In-HZ Earth-scale terrestrials win; gas giants and frozen worlds lose.
+/// The score is computed by the Rust latitude-band climate model rather than
+/// from UWP table buckets.
 fn habitability_score(p: &Planet) -> f32 {
-    if !p.in_habitable_zone {
-        return 0.0;
+    if p.in_habitable_zone {
+        p.climate.habitability
+    } else {
+        0.0
     }
-    let class_score = match p.body_type {
-        BodyType::Terrestrial => 1.0,
-        BodyType::SuperEarth => 0.7,
-        BodyType::Rocky => 0.4,
-        _ => 0.0,
-    };
-    // Earth-mass peak.
-    let mass_score = 1.0 - ((p.mass_earth - 1.0).abs() / 5.0).min(1.0);
-    class_score * (0.5 + 0.5 * mass_score)
 }
 
 /// Per-body-class moon count, sampled to vaguely match Solar System values
@@ -688,8 +685,10 @@ pub fn generate(seed: u32) -> SolarSystem {
                     seed: rng.next_u32(),
                     in_habitable_zone: a >= hz.0 && a <= hz.1,
                     moons: Vec::new(),
+                    climate: ClimateSummary::dead(),
                 };
                 planet.moons = generate_moons(&mut rng, &planet);
+                planet.climate = climate::estimate(&planet);
                 planets.push(planet);
                 prev_was_giant = true;
             }
@@ -711,8 +710,10 @@ pub fn generate(seed: u32) -> SolarSystem {
                     seed: rng.next_u32(),
                     in_habitable_zone: a >= hz.0 && a <= hz.1,
                     moons: Vec::new(),
+                    climate: ClimateSummary::dead(),
                 };
                 planet.moons = generate_moons(&mut rng, &planet);
+                planet.climate = climate::estimate(&planet);
                 planets.push(planet);
                 prev_was_giant = false;
             }
@@ -734,8 +735,10 @@ pub fn generate(seed: u32) -> SolarSystem {
                     seed: rng.next_u32(),
                     in_habitable_zone: a >= hz.0 && a <= hz.1,
                     moons: Vec::new(),
+                    climate: ClimateSummary::dead(),
                 };
                 planet.moons = generate_moons(&mut rng, &planet);
+                planet.climate = climate::estimate(&planet);
                 planets.push(planet);
                 prev_was_giant = false;
             }
@@ -865,5 +868,25 @@ mod tests {
             let tr_avg = tr_moons as f32 / tr_count as f32;
             assert!(gg_avg > tr_avg * 2.0, "gg_avg={gg_avg} tr_avg={tr_avg}");
         }
+    }
+
+    #[test]
+    fn main_world_uses_climate_habitability_score() {
+        for seed in 0u32..200 {
+            let sys = generate(seed);
+            if sys.main_world < 0 {
+                continue;
+            }
+            let main = &sys.planets[sys.main_world as usize];
+            let best = sys
+                .planets
+                .iter()
+                .filter(|p| p.in_habitable_zone)
+                .map(|p| p.climate.habitability)
+                .fold(0.0_f32, f32::max);
+            assert_eq!(main.climate.habitability, best);
+            return;
+        }
+        panic!("no climate-selected main world in 200 seeds");
     }
 }

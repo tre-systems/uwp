@@ -39,6 +39,18 @@ export interface Planet {
   in_habitable_zone: boolean
   moons: Moon[]
   seed: number
+  climate: ClimateSummary
+}
+
+export interface ClimateSummary {
+  mean_surface_temp_k: number
+  min_surface_temp_k: number
+  max_surface_temp_k: number
+  greenhouse_k: number
+  liquid_water_fraction: number
+  ice_fraction: number
+  aridity: number
+  habitability: number
 }
 
 export interface AsteroidBelt {

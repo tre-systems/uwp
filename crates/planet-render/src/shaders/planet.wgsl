@@ -818,7 +818,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // rather than uniformly. Visible only on land, on the dark hemisphere,
     // not buried under cloud cover.
     let population = u.world_features.y;
-    if (quality > 0.45 && population > 0.02 && above_water) {
+    if (quality > 0.25 && population > 0.02 && above_water) {
         // Slight coast bias: brighter near shoreline (real cities cluster there),
         // but inland cities should still glow at high pop.
         let coast_bias = 0.45 + 0.55 * (1.0 - smoothstep(0.04, 0.35, above_amt));

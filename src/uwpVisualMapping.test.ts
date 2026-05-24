@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { paramsPatchFromUwp } from './uwpVisualMapping'
+import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from './uwpVisualMapping'
 
 describe('paramsPatchFromUwp', () => {
   it('maps an Earth-like UWP to habitable renderer params', () => {
@@ -36,6 +36,24 @@ describe('paramsPatchFromUwp', () => {
       cloud_coverage: 0.85,
       population_intensity: 0,
     })
+  })
+
+  it('uses continuous slider values for visual params while UWP codes stay rounded', () => {
+    const patch = paramsPatchFromUwpDigits({
+      starport: 'A',
+      size: 8.4,
+      atm: 6.2,
+      hydro: 7.5,
+      pop: 8.5,
+      gov: 7,
+      law: 4,
+      tech: 12.5,
+    })
+
+    expect(patch.sea_level).toBeCloseTo(0.725)
+    expect(patch.planet_radius).toBeCloseTo(1.05)
+    expect(patch.population_intensity).toBeCloseTo(0.5)
+    expect(patch.atmosphere_density).toBe(0.45)
   })
 
   it('returns null for invalid UWP input', () => {

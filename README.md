@@ -36,6 +36,7 @@ Live: <https://uwp.tre.systems>
 │  wasm_api.rs: typed browser boundary                           │
 │  gpu.rs: device, surface and render pipeline setup             │
 │  domain/system.rs: plausible stars, planets, belts             │
+│  domain/climate.rs: Rust latitude-band climate simulation      │
 │  scenes/system.rs: system uniform packing + camera fitting     │
 │  scenes/detail.rs: detail targets + detail render pass         │
 │                                                                │

@@ -1,5 +1,5 @@
 import type { Params, RGB } from './params'
-import { parseUwpDigits } from './uwp'
+import { parseUwpDigits, type UwpDigits } from './uwp'
 
 interface AtmoConfig {
   density: number
@@ -104,32 +104,46 @@ function atmoConfig(atm: number): AtmoConfig {
   }
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function roundedCode(value: number, min: number, max: number): number {
+  return Math.round(clamp(value, min, max))
+}
+
 export function paramsPatchFromUwp(code: string): Partial<Params> | null {
   const parsed = parseUwpDigits(code)
   if (!parsed) return null
-  const { size, atm, hydro, pop, tech } = parsed
-  const atmo = atmoConfig(atm)
-  const palette = paletteForUwp(atm, hydro)
+  return paramsPatchFromUwpDigits(parsed)
+}
 
-  const sea_level = 0.05 + (Math.min(hydro, 10) / 10) * 0.90
-  const atmCrater = atm <= 1 ? 1.0 : atm <= 3 ? 0.6 : atm <= 5 ? 0.25 : 0.0
-  const hydroCrater = hydro <= 1 ? 1.0 : hydro <= 3 ? 0.6 : 0.2
+export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
+  const { size, atm, hydro, pop, tech } = uwp
+  const atmCode = roundedCode(atm, 0, 15)
+  const hydroCode = roundedCode(hydro, 0, 10)
+  const atmo = atmoConfig(atmCode)
+  const palette = paletteForUwp(atmCode, hydroCode)
+
+  const sea_level = 0.05 + (clamp(hydro, 0, 10) / 10) * 0.90
+  const atmCrater = atmCode <= 1 ? 1.0 : atmCode <= 3 ? 0.6 : atmCode <= 5 ? 0.25 : 0.0
+  const hydroCrater = hydroCode <= 1 ? 1.0 : hydroCode <= 3 ? 0.6 : 0.2
   const crater_density = Math.min(1, atmCrater * hydroCrater)
-  const atmVeg = atm >= 4 && atm <= 9 ? 1.0 : atm === 3 || atm === 13 ? 0.4 : 0
+  const atmVeg = atmCode >= 4 && atmCode <= 9 ? 1.0 : atmCode === 3 || atmCode === 13 ? 0.4 : 0
   const hydroVeg = hydro >= 3 && hydro <= 8 ? 1.0 : hydro >= 2 ? 0.6 : 0.0
   const vegetation_richness = atmVeg * hydroVeg
-  const habitableAtm = atm >= 2 && atm <= 9 && atm !== 11 && atm !== 12
-  const tech_factor = Math.max(0, Math.min(1, (tech - 2) / 5))
+  const habitableAtm = atmCode >= 2 && atmCode <= 9 && atmCode !== 11 && atmCode !== 12
+  const tech_factor = clamp((tech - 2) / 5, 0, 1)
   const population_intensity = habitableAtm
-    ? (Math.max(0, pop - 5) / 7) * tech_factor
+    ? clamp((pop - 5) / 7, 0, 1) * tech_factor
     : 0
-  const planet_radius = Math.max(0.18, size / 8)
+  const planet_radius = Math.max(0.18, clamp(size, 0, 10) / 8)
   const atm_banding =
-    atm === 15 ? 1.0 :
-    atm === 11 || atm === 12 ? 0.75 :
-    atm >= 8 ? 0.55 :
-    atm >= 4 ? 0.50 :
-    atm >= 2 ? 0.30 :
+    atmCode === 15 ? 1.0 :
+    atmCode === 11 || atmCode === 12 ? 0.75 :
+    atmCode >= 8 ? 0.55 :
+    atmCode >= 4 ? 0.50 :
+    atmCode >= 2 ? 0.30 :
     0.0
 
   return {
