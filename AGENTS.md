@@ -198,11 +198,12 @@ Presentation layer work — `src/components/`, `src/styles.css`, `src/app.tsx`, 
 15. **Performance panel polish.** Coloured FPS pill, profile call-out, segmented quality control. → `ab4d689`
 16. **Hover affordances + click-to-zoom.** System view fires a 50 ms-throttled ray-pick; hover tooltip shows class/orbit/mass/Teq; click jumps to Main World. → `26d014f`
 17. **Hex inspector cards.** `SubsectorEditor` surfaces UWP, trade codes, travel zone, bases, and features for the selected hex. → `88b0928`
+18. **Export visuals.** `ExportPanel` ships two presets: a raw PNG frame and a 2D-composited planet card that overlays UWP + star metadata + trade-code chips beside the canvas snapshot. → `9042cdd`
+19. **Pronounceable names.** Deterministic CV-CV-CV name generator surfaces in the breadcrumb, system header, subsector hex detail, and hover tooltip so worlds read as "Aenis" rather than four-digit hex addresses. → `25001aa`
 
 ### Open
 
 1. **Surface hex inspector.** Once the Surface Map roadmap lands, reuse the inspector shape for per-hex terrain / settlement details.
-2. **Export visuals.** Once the Rust offscreen-render pipeline exists, design the export dialog: resolution presets, format selector, "planet card" preset bundling thumbnail + UWP + trade codes.
 
 New UX work proposals belong in this section. When picking up an item, mark it in commit messages so it stays traceable.
 
@@ -270,17 +271,17 @@ These are the high-ROI Rust compute opportunities, roughly in priority order. Do
 
 4. **Multi-scatter atmosphere LUT** (Bruneton & Neyret 2008 / Hillaire 2020). The full method precomputes a 4D scattering LUT once per atmosphere config. We currently raymarch single-scattering per fragment with a constant multi-scatter hack. Real LUT gives proper Earth-from-orbit blue rim, twilight bands, and is dramatically cheaper at render time. Rust precomputes on parameter change, stores into GPU textures.
 
-5. **Asteroid belt as real particles.** Currently a noise-mottled band. Spawn 5–50k actual particles with orbital elements (eccentricity, inclination, Kirkwood gaps from mean-motion resonance with the nearest gas giant), integrate them on CPU, render as a sprite/point buffer. Looks dramatically better and is physically motivated.
+5. **Asteroid belt as real particles.** *Partial → `0a4cf28`.* The shader now does a slab integration with two grain scales, azimuthal streaks following orbital direction, Kirkwood-style depletion gaps, and out-of-plane thickness. Full CPU particle simulation with per-rock orbital elements remains future work; the shader version reads as discrete particles instead of a smear.
 
 6. **Hover / click ray-pick.** *Shipped → `26d014f`.* `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; the WASM API exposes `pickSystemPlanet`, Canvas.tsx routes pointermove + click through it, and `HoverTooltip` surfaces class/orbit/mass/Teq next to the cursor.
 
-7. **N-body / Kepler propagator with binary perturbations.** Real Kepler propagator with binary-induced eccentricity oscillations and mean-motion resonance lockup. Replaces the current fixed circular ω. Few thousand ops per frame.
+7. **N-body / Kepler propagator with binary perturbations.** *Shipped → `4ae34ac`.* `scenes::system::planet_world_position` does Newton-iterated Kepler propagation (mean → eccentric → true anomaly) with seed-derived argument of periapsis, plus a `binary_kick` Kozai-Lidov approximation that pumps inner-planet eccentricity in time with the companion's orbital phase. Damped to keep orbits inside the spacing slot.
 
 8. **Star spectral synthesis.** *Shipped → `1d64044`.* `domain::blackbody::blackbody_srgb` integrates Planck radiance against the CIE 1931 colour-matching functions at 10 nm resolution, then converts to linear sRGB and normalises to unit max. Used everywhere the generator previously called the polynomial fit; tests pin solar/M-dwarf/B-type qualitative results plus invariants.
 
 9. **Long-timescale stability check.** *Shipped → `0319df2`.* `domain::stability` runs the analytic envelope checks (Chambers et al. mutual Hill radius, MMR avoidance for gas giants, Holman-Wiegert binary envelope) that the equivalent 100 Myr N-body run would expose. A regression test asserts >= 55 % of randomly-generated systems pass; tightening that threshold is the natural follow-on for compute roadmap item 7.
 
-10. **Image / animation export.** Offscreen rendering pipeline on the Rust side (offscreen target, animation timeline, PNG encode → JS) plus an export dialog in the UI (resolution presets, format options, download flow).
+10. **Image / animation export.** *Partial → `9042cdd`.* Frame-grab via `canvas.toBlob()` and a 2D-composited planet card (snapshot + UWP/star/trade-codes block) both download from the panel. Full Rust offscreen rendering (animation timeline, higher resolution than viewport, video) remains future work.
 
 When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
 
