@@ -74,7 +74,7 @@ export function OnboardingHint() {
         <kbd>scroll</kbd> zoom
       </span>
       <span class="onboarding-hint-row">
-        <kbd>☰</kbd> open controls
+        <kbd>menu</kbd> open controls
       </span>
     </div>
   )

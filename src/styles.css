@@ -732,6 +732,92 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .error-reload:hover { background: var(--color-accent-hover); }
 
+/* Glossary modal -----------------------------------------------------*/
+.glossary-trigger {
+  width: 26px;
+  padding: 0 !important;
+  font-weight: 700;
+  font-size: var(--type-base);
+}
+.glossary-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 4, 8, 0.7);
+  backdrop-filter: blur(4px) saturate(120%);
+  -webkit-backdrop-filter: blur(4px) saturate(120%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7);
+  z-index: 20;
+  animation: glossary-fade-in var(--motion-fast) var(--motion-ease);
+}
+.glossary-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1-solid);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+.glossary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-6) var(--space-7);
+  border-bottom: 1px solid var(--border-divider);
+}
+.glossary-header h2 {
+  margin: 0;
+  font-size: var(--type-xl);
+  color: var(--color-text-strong);
+}
+.glossary-close {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-panel);
+  background: var(--surface-2);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: var(--type-base);
+  transition: background var(--motion-fast);
+}
+.glossary-close:hover { background: var(--surface-2-hover); }
+.glossary-body {
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-7) var(--space-7);
+}
+.glossary-list {
+  margin: 0;
+  display: grid;
+  gap: var(--space-6);
+}
+.glossary-entry { margin: 0; }
+.glossary-entry dt {
+  font-size: var(--type-base);
+  font-weight: 600;
+  color: var(--color-accent);
+  letter-spacing: 0.4px;
+  margin-bottom: var(--space-2);
+}
+.glossary-entry dd {
+  margin: 0;
+  color: var(--color-text);
+  line-height: 1.55;
+  font-size: var(--type-body);
+}
+@keyframes glossary-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* Onboarding hint ----------------------------------------------------*/
 .onboarding-hint {
   position: fixed;

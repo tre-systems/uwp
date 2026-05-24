@@ -1,3 +1,4 @@
+import { useState } from 'preact/hooks'
 import {
   currentSystem,
   panelOpen,
@@ -13,6 +14,7 @@ import {
   uwpToCode,
   viewMode,
 } from '../appState'
+import { GlossaryModal } from './GlossaryModal'
 import { SocietyEditor } from './SocietyEditor'
 import { StarportEditor } from './StarportEditor'
 import { SystemEditor } from './SystemEditor'
@@ -33,6 +35,7 @@ export function ControlPanel() {
   const codeText = uwpToCode(u)
   const panelId = 'controls-panel'
   const controlsDisabled = !open
+  const [glossaryOpen, setGlossaryOpen] = useState(false)
 
   return (
     <>
@@ -57,6 +60,15 @@ export function ControlPanel() {
                 <button class="ghost" onClick={resetUwp} disabled={controlsDisabled}>Reset</button>
               </>
             )}
+            <button
+              class="ghost glossary-trigger"
+              onClick={() => setGlossaryOpen(true)}
+              disabled={controlsDisabled}
+              title="Cepheus / legacy 2d6 glossary"
+              aria-label="Open glossary"
+            >
+              ?
+            </button>
           </div>
         </header>
 
@@ -87,6 +99,7 @@ export function ControlPanel() {
           <span>Drag to orbit · scroll to zoom</span>
         </footer>
       </aside>
+      <GlossaryModal open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
     </>
   )
 }
