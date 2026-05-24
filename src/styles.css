@@ -1198,6 +1198,12 @@ label.color input[type="color"]::-webkit-color-swatch {
   font-family: var(--font-mono);
   font-size: var(--type-sm);
 }
+.hover-tooltip-class {
+  margin-bottom: 4px;
+  color: var(--text-dim);
+  font-size: var(--type-sm);
+  letter-spacing: 0.3px;
+}
 .hover-tooltip-meta {
   display: flex;
   gap: 6px;

@@ -14,6 +14,7 @@ import {
   type SubsectorHex,
 } from '../domain/subsector'
 import { deriveTradeCodes, tradeCodeName } from '../domain/cepheus'
+import { systemName } from '../domain/names'
 
 interface SubsectorEditorProps {
   disabled: boolean
@@ -104,9 +105,10 @@ function HexDetailSection({ hex }: { hex: SubsectorHex }) {
   if (hex.bases.scout) baseList.push('Scout')
   if (hex.bases.research) baseList.push('Research')
   if (hex.bases.Aid) baseList.push('Aid')
+  const name = systemName(hex.system_seed)
   return (
     <section>
-      <h2>Hex {hexLabel(hex.coord)}</h2>
+      <h2>{name} · {hexLabel(hex.coord)}</h2>
       <dl class="sys-meta">
         <div class="sys-meta-row">
           <dt>UWP</dt>

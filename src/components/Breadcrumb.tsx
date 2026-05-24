@@ -8,6 +8,7 @@ import {
   viewMode,
 } from '../appState'
 import { hexLabel } from '../domain/subsector'
+import { hexName, systemName } from '../domain/names'
 
 // Persistent top-of-canvas indicator showing where the user is in the
 // Subsector / System / Main World hierarchy. Each crumb is clickable
@@ -35,7 +36,8 @@ export function Breadcrumb() {
 
   const subsectorLabel = sub ? `Subsector ${seed.toString(16).toUpperCase().padStart(4, '0').slice(-6)}` : 'Subsector'
   const hexLabelText = sel ? hexLabel(sel) : null
-  const systemLabel = sys ? `System ${sys.seed.toString(16).toUpperCase().slice(-4)}` : 'System'
+  const hexNameText = sel ? hexName(seed, sel.col, sel.row) : null
+  const systemLabel = sys ? systemName(sys.seed) : 'System'
   const mainLabel = 'Main World'
 
   // Build the trail. Crumbs after the current mode are dimmed, but
@@ -47,9 +49,9 @@ export function Breadcrumb() {
       onClick: () => setViewMode('subsector'),
     },
   ]
-  if (hexLabelText) {
+  if (hexLabelText && hexNameText) {
     crumbs.push({
-      label: `Hex ${hexLabelText}`,
+      label: `${hexNameText} · ${hexLabelText}`,
       active: false,
       onClick: () => setViewMode('subsector'),
       muted: true,

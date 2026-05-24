@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact'
 import { rerollPlanet, rerollSystemSeed, uwp } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
+import { systemName } from '../domain/names'
 import { BodyTypeIcon, bodyTypeLabel } from './Icon'
 
 interface SystemEditorProps {
@@ -17,10 +18,11 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
   // represent the user-edited main world. Once the renderer-side main-world
   // reconciliation lands these will track the generated world automatically.
   const tradeCodes = deriveTradeCodes(uwp.value)
+  const name = systemName(system.seed)
   return (
     <>
       <section>
-        <h2>System</h2>
+        <h2>System · {name}</h2>
         <dl class="sys-meta">
           <MetaRow label="Primary">
             {star.spectral}-class · {star.mass_solar.toFixed(2)} M⊙ ·

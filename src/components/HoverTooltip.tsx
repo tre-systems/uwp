@@ -1,4 +1,5 @@
 import { currentSystem, hoverTarget, viewMode } from '../appState'
+import { systemName } from '../domain/names'
 import { BodyTypeIcon, bodyTypeLabel } from './Icon'
 
 // Floating chip rendered near the cursor when the system-view ray-pick
@@ -27,9 +28,10 @@ export function HoverTooltip() {
     >
       <div class="hover-tooltip-head">
         <BodyTypeIcon body={planet.body_type} title={bodyTypeLabel(planet.body_type)} />
-        <strong>{bodyTypeLabel(planet.body_type)}</strong>
+        <strong>{systemName(planet.seed)}</strong>
         <span class="hover-tooltip-idx">#{target.index + 1}</span>
       </div>
+      <div class="hover-tooltip-class">{bodyTypeLabel(planet.body_type)}</div>
       <div class="hover-tooltip-meta">
         <span>{orbit} AU</span>
         <span>·</span>
