@@ -64,6 +64,8 @@ The **state ownership boundary** should keep moving toward Rust without moving t
 
 Wins from this: Rust enforces invariants (no impossible UWP states, no orphaned `PlanetParams`), the JS panel becomes a pure view layer, type safety improves without losing iteration speed, and the FFI cost stays in the right places (interaction-time, not frame-time).
 
+**Outstanding boundary work.** `wasm_api::set_params` still accepts a whole `PlanetParams` deserialised from JS, so JS still holds a writable canonical copy. This is the last place the state-ownership boundary leaks. Once enough Rust-side invariants exist to make per-field validation worth it (for example "sea level cannot exceed hydrographic ceiling"), split this into narrow typed setters (`setSeaLevel`, `setSeed`, `setAtmosphereDensity`, …) so JS can only request mutations Rust agrees with.
+
 ## Target Refactor Design
 
 Refactor toward an architecture where the app is a system generator with a renderer attached, not a renderer that happens to expose some game data.
@@ -154,6 +156,22 @@ The requested refactor baseline is now in place:
 
 The remaining large items in this file are product roadmap work rather than cleanup debt: stronger Rust-side authored-world invariants, optional generated bindings, and the Rust compute roadmap below.
 
+## Cleanup Backlog
+
+Small follow-ups identified in review that the main refactor pass left behind. None are blockers; they're the next layer of the same architectural intent and should be picked up before any large new feature lands.
+
+1. **Lift detail-scene state out of `renderer.rs`.** The `Uniforms` struct, `build_uniforms`, `seed_to_tilt`, `seed_offsets`, `vec3_to_v4`, and the detail-mode camera clamp in `set_view_mode` are all detail-scene concerns currently sitting in the coordinator. Move them into `scenes/detail.rs` as `DetailUniforms` + `detail::uniforms_for(&PlanetParams, &Camera, time)` so `renderer.rs` becomes a pure scene dispatcher (~250 lines instead of ~500). Mirror the boundary `scenes/system.rs` already keeps.
+
+2. **Move system uniform buffer creation into `scenes/system.rs`.** Lines 138–165 of `renderer.rs` build the `system_uniform_buffer`, `system_uniform_layout`, and `system_bind_group` inline. Wrap them in `scenes::system::create_resources(&device) -> SystemResources { buffer, layout, bind_group }` so each scene owns its full GPU resource set, matching the `gpu::create_pipelines` factory shape.
+
+3. **Add a detail uniform layout test.** `scenes/system.rs` has `system_uniform_contract_stays_shader_aligned`; the detail `Uniforms` struct has no equivalent. Add a matching size/alignment test so detail shader contract drift is caught as a Rust unit-test failure rather than at WebGPU validation time. This is the concrete shape AGENTS.md refactor step 8 asks for.
+
+4. **Climate recompute on planet mutation.** `ClimateSummary` is currently computed once during `generate()` and stored on the planet. `Renderer::reroll_planet` rewrites the seed but does not refresh the climate snapshot, so the panel shows stale habitability for rerolled bodies. Re-run `climate::estimate` inside `reroll_planet` and in any future per-planet setter that changes mass/orbit/body-type/temperature.
+
+5. **Dirty-flag the detail uniform rebuild.** `build_uniforms` reconstructs the entire detail `Uniforms` struct each frame even when nothing but `time` and `rotation_t` have changed. Microsecond cost today, so this is cosmetic; revisit when CPU-side compute (pre-baked surfaces, tectonics, climate sampling per-frame) starts using real budget.
+
+The State Ownership note above covers the largest remaining boundary leak (`setParams` whole-struct transfer) — pick that up at the same time as the per-planet setter work in item 4 to avoid touching the FFI surface twice.
+
 ## Rust Compute Baseline
 
 The first roadmap item now implemented is a Rust-side climate and habitability
@@ -211,7 +229,7 @@ These are the high-ROI Rust compute opportunities, roughly in priority order. Do
 
 1. **Procedural surface pre-bake.** Biggest win by a wide margin. `planet.wgsl` currently recomputes 7-octave FBM + plate-tectonics Voronoi + crater layers + biome blending per fragment per frame, which is wasteful — the surface doesn't change while you orbit. Bake six 2k×2k cube-map faces (heightmap + biome + feature mask) per seed in Rust with `rayon`. Shader becomes cheap texture lookups; per-pixel budget drops 5–10×, freeing space for finer detail, real river networks, or higher resolution at the same framerate. Natural pre-bake step for any modern planet renderer.
 
-2. **Climate / habitability simulation.** Initial version implemented: a coarse latitude-band energy-balance model runs once per generated planet and feeds main-world selection. Next iterations should add seasonal axial-tilt sampling, precipitation bands, ocean heat capacity, and shader-facing biome fields.
+2. **Climate / habitability simulation.** Initial version implemented: a coarse latitude-band energy-balance model runs once per generated planet and feeds main-world selection. Cleanup-backlog item 4 covers re-running it on `reroll_planet` and future per-planet setters so the panel never shows stale habitability. Next functional iterations: seasonal axial-tilt sampling (sample insolation at multiple obliquity-modulated points around the orbit, average), precipitation bands (latitude-dependent Hadley / Ferrel / polar cells), ocean heat capacity (sea-fraction-weighted thermal inertia so temperate worlds stop reaching equilibrium in a single iteration), and a shader-facing biome field uploaded as a small texture so `planet.wgsl` can colour continents physically instead of from fbm.
 
 3. **Tectonics simulation.** Run plate motion + uplift + erosion for N timesteps to produce real continents, mountain belts, ocean basins. Replace the noise-derived continents with a physically-motivated heightmap. Heavy compute, exactly where Rust shines.
 
@@ -231,17 +249,115 @@ These are the high-ROI Rust compute opportunities, roughly in priority order. Do
 
 When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
 
+## Subsector Roadmap
+
+A subsector is the Cepheus Engine sector-map unit: an 8-column × 10-row hex grid of star systems, with bases, trade codes, gas-giant presence, asteroid belts, travel zones, and inter-system jump routes attached to each occupied hex. Reference: <https://www.orffenspace.com/cepheus-srd/book3/worlds.html>.
+
+This is the next major product feature. The goal is that a user can land on a generated subsector, browse the hex grid, click any occupied hex to drill into that system's overview (existing System view), and from there into its main world (existing Detail view). UWP codes, trade codes, bases, and travel zones surface as Cepheus-compatible game data at every level.
+
+### Target Boundaries
+
+The subsector layer must respect the architecture already established. No new direct-DOM/`window` shortcuts; everything flows through `appState` actions and the renderer client.
+
+- **Domain (Rust):** `crates/planet-render/src/domain/subsector.rs` owns subsector generation, hex addressing, jump-route resolution, and Cepheus rules (bases, travel zones). It depends on `domain::system` and `domain::climate`; the rest of the crate does not depend on it.
+- **Domain (TS):** `src/domain/subsector/` mirrors the serialized Rust structs as TS DTOs (`Subsector`, `SubsectorHex`, `Bases`, `TravelZone`, `JumpRoute`). Trade-code derivation already lives in `src/domain/cepheus/tradeCodes.ts` and is reused as-is — the subsector hex carries trade codes computed from its main world's UWP.
+- **App state:** new signals `currentSubsector`, `selectedHex` plus actions `rerollSubsector(seed)` and `selectHex(coord)`. Selecting a hex is what loads its system seed into the existing system-state machinery.
+- **Renderer client:** gains `setSubsectorSeed(seed)` and `getSubsector()` wrappers around new wasm-api methods. The Map view will not initially go through the WebGPU canvas — the canvas stays for system/detail views, the subsector is a sibling DOM/SVG view.
+- **UI:** new `SubsectorMap.tsx` component does SVG hex grid rendering and hex picking. `app.tsx` toggles between Subsector / System / Main World view modes. The view toggle becomes a three-way control.
+
+### Cepheus Rules To Implement
+
+From the SRD Book 3 / Worlds page, in priority order:
+
+1. **System presence per hex.** Roll 1D ≥ 4 (about 50 %). Density is mainsector-dependent; expose as a configurable density factor in the generator so we can do sparse rim/dense core variants.
+2. **Main-world UWP.** Each occupied hex picks a system seed; the system is generated lazily by `domain::system`, the main world is the climate-habitability-winner (existing), and its UWP is projected from continuous physical/social values (existing `mainWorld::model`).
+3. **Gas giant present.** Already known per-system (`SolarSystem.planets.iter().any(|p| p.body_type == GasGiant)`). Carry through to the subsector hex flag.
+4. **Asteroid belt present.** Same — `SolarSystem.belts.is_empty()`.
+5. **Bases.** Naval / Scout / Research / Aid membership rolled per Cepheus tables, modified by starport class. Pack into a `Bases` bitset on each hex.
+6. **Trade codes.** Derived from the main world's UWP via the existing `tradeCodes.ts` rules. Cached on the hex for fast map rendering.
+7. **Travel zone.** Amber / Red / Green derived from population, law level, government, and a small random "incident" factor. Cepheus is loose here — keep it rule-driven but allow Referee override.
+8. **Allegiance.** Each subsector belongs to one or two factions. Per-hex allegiance derived from polity boundaries; initial implementation: single allegiance per subsector with neutral / contested hexes.
+9. **Jump routes.** Compute connectivity at jump-1 and jump-2 (radius 1 and 2 hexes, axial coordinates). A route exists between two systems if both have qualifying starports (typically C+). Expose as a vec of `(from, to, jump_n)` for SVG-line rendering.
+
+The full Cepheus subsector includes more (worlds in the same hex, gas-giant-only refuelling, jumpline maps, sector-level political maps). The above is enough for v1; the rest belong in a v2 increment after the data model and UI are stable.
+
+### Architecture Sketch
+
+```text
+crates/planet-render/src/domain/
+├── system.rs        ← already: SolarSystem, Planet, Moon, AsteroidBelt
+├── climate.rs       ← already: ClimateSummary per planet
+└── subsector.rs     ← new:  Subsector, SubsectorHex, Bases, JumpRoute
+
+src/domain/
+├── system/          ← already: SolarSystem DTOs
+├── cepheus/         ← already: TradeCode derivation, UWP parsing
+├── mainWorld/       ← already: continuous-to-UWP projection
+└── subsector/       ← new:  Subsector DTOs mirroring Rust
+
+src/components/
+├── SystemEditor.tsx     ← already: system panel
+├── SubsectorEditor.tsx  ← new:  subsector summary + density + seed
+├── SubsectorMap.tsx     ← new:  SVG hex grid + picking
+└── ...
+
+src/appState/
+└── index.ts             ← extend: currentSubsector, selectedHex, rerollSubsector, selectHex
+```
+
+### Phases
+
+Tackle in this order; each phase is independently shippable and small enough to fit one PR.
+
+1. **Rust subsector data model + generator.** Add `domain/subsector.rs` with `Subsector { hexes: [[Option<SubsectorHex>; 8]; 10] }` (or a flat `Vec<SubsectorHex>` keyed by `HexCoord`). Per-hex generation: roll presence, derive system seed deterministically from `(subsector_seed, col, row)`, run `system::generate` for the main world only (defer full planet list until the user actually visits the hex). Unit tests: occupancy ratio across many seeds matches the rules, deterministic for a given seed.
+
+2. **Trade-code, gas-giant, belt, bases per hex.** Compute these once per hex from the lazily-generated `SolarSystem`. Bases follow Cepheus tables; trade codes go through the existing TS rules at the JS boundary. Unit tests: known UWP → expected trade codes (we already have those tests, just exercise them on subsector output).
+
+3. **WASM API + TS DTOs.** Expose `setSubsectorSeed(seed)`, `getSubsector()`, `selectHex(col, row)` from `wasm_api.rs`. The select call should hand the chosen hex's system seed to the existing system pipeline so `currentSystem` updates and the existing System view renders it. TS DTOs in `src/domain/subsector/`.
+
+4. **App state + renderer client.** New signals `currentSubsector`, `selectedHex`. New actions in `appState` that delegate to the renderer client. View mode enum becomes `'subsector' | 'system' | 'detail'`. Three-state toggle button instead of two.
+
+5. **SVG subsector map UI.** New `SubsectorMap.tsx` renders 80 hex cells with `polygon` SVG elements, system dots, UWP labels, allegiance shading, base markers, travel-zone outlines. Clicking a hex dispatches `selectHex(coord)` → triggers system load → view mode auto-switches to System. Add a `SubsectorEditor.tsx` panel with subsector seed, density, allegiance overview, occupied-hex count.
+
+6. **Jump routes overlay.** Compute jump-1 / jump-2 connectivity in Rust; render as SVG `line` elements on the map with class-based colouring (green = main route, yellow = jump-2). Adds a "show routes" toggle in the editor.
+
+7. **Navigation polish.** Breadcrumb-style header ("Spinward Marches / Hex 0304 / Main World") so the user always knows which level they're at. Back buttons / keyboard shortcuts (`Esc` to pop up a level).
+
+8. **Optional: WebGPU subsector renderer.** Port the SVG view to a WGSL fullscreen-triangle scene (`scenes/subsector.rs` + `subsector.wgsl`) so the map shares the starfield backdrop and AGX tonemap with the existing system/detail views. Only worth doing once the SVG version has stable UX; the data model and picking logic are the hard part and stay in TS/Rust either way.
+
+9. **Trade codes column in the system panel.** Once subsectors are in, the system editor should surface trade codes on the main world row so the Cepheus game data is visible without bouncing back to the subsector view.
+
+### Phase 1 Acceptance Criteria
+
+For the first phase to be "done":
+
+- `domain::subsector::generate(seed)` returns a `Subsector` with deterministic content for a given seed.
+- Occupancy ratio across 1000 seeds is within 5 % of the configured density (default 50 %).
+- Each occupied hex has a generated `MainWorldSummary` with a valid UWP.
+- A Rust test verifies trade-code derivation against a handful of known UWPs.
+- No UI work; this phase lives entirely behind the WASM boundary.
+
+### Notes For The Implementing Agent
+
+- **Re-use, don't fork.** Trade codes are already implemented (`tradeCodes.ts`); the subsector hex carries a `MainWorldSummary` derived through the existing `mainWorld::model` pipeline. Don't duplicate UWP / climate / system logic.
+- **Determinism.** A given `subsector_seed` must always produce the same grid. Per-hex sub-seed = `hash(subsector_seed, col, row)` so individual hexes can be regenerated without disturbing their neighbours.
+- **Lazy generation.** Generating 80 full `SolarSystem`s up front is wasteful — most hexes are empty, and the user only drills into one or two. Generate the main-world summary eagerly; defer full planet/moon generation until the user selects the hex.
+- **Don't break the existing renderer.** The subsector view is an SVG sibling of the WebGPU canvas, not a replacement. The canvas stays mounted; the subsector view is layered on top or shown in a different DOM region. This avoids redoing renderer lifecycle for a 2D map.
+- **State ownership stays Rust-owned.** Per the State Ownership note above: Rust holds the canonical `Subsector`, JS snapshots it. The picking logic *can* live in TS (hex math is cheap and not a state question), but the chosen hex must be re-validated against the Rust state when it requests the system.
+
 ## Verification
 
 Before committing meaningful changes, run the relevant subset:
 
 ```bash
-npm test
-npm run typecheck
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-npm run build
+npm run verify:fast
 ```
+
+The Husky pre-commit hook runs `npm run verify:fast`, which covers TS unit
+tests, Rust formatting, and native Rust checking. Before pushing, run the full
+gate with `npm run verify`; the Husky pre-push hook runs the same command and
+mirrors CI: tests, typecheck, audit, native+wasm Rust checks, Rust tests,
+native+wasm clippy with warnings denied, and the production build.
 
 If a check cannot be run, say so explicitly. Warnings in Rust should be treated as design feedback, not background noise.
 
