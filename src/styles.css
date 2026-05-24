@@ -977,6 +977,31 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke: rgba(255, 110, 110, 0.85);
 }
 
+.jump-route {
+  fill: none;
+  stroke-linecap: round;
+}
+.jump-route-1 {
+  stroke: rgba(110, 220, 150, 0.65);
+  stroke-width: 1.4;
+}
+.jump-route-2 {
+  stroke: rgba(255, 200, 110, 0.4);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+.toggle-label input[type="checkbox"] {
+  accent-color: var(--color-accent);
+}
+
 .hex-system-dot {
   fill: var(--color-text-strong);
   filter: drop-shadow(0 0 4px rgba(255, 220, 160, 0.55));

@@ -38,11 +38,18 @@ export interface SubsectorHex {
   name: string | null
 }
 
+export interface JumpRoute {
+  from: HexCoord
+  to: HexCoord
+  jump: 1 | 2
+}
+
 export interface Subsector {
   seed: number
   density: number
   allegiance: string
   hexes: SubsectorHex[]
+  jump_routes: JumpRoute[]
 }
 
 export function hexLabel(coord: HexCoord): string {

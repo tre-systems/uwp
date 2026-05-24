@@ -2,7 +2,9 @@ import {
   currentSubsector,
   rerollSubsectorSeed,
   selectedHex,
+  setShowJumpRoutes,
   setSubsectorDensity,
+  showJumpRoutes,
   subsectorDensity,
   subsectorSeed,
 } from '../appState'
@@ -22,7 +24,9 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const density = subsectorDensity.value
   const seed = subsectorSeed.value
   const sel = selectedHex.value
+  const routesVisible = showJumpRoutes.value
   const occupied = sub?.hexes.length ?? 0
+  const routesCount = sub?.jump_routes.length ?? 0
   const total = 8 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
@@ -55,6 +59,20 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
                 aria-label="Subsector density"
               />
               <span class="sys-unit">{Math.round(density * 100)}%</span>
+            </dd>
+          </div>
+          <div class="sys-meta-row">
+            <dt>Jump routes</dt>
+            <dd>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={routesVisible}
+                  disabled={disabled}
+                  onChange={(e) => setShowJumpRoutes((e.currentTarget as HTMLInputElement).checked)}
+                />
+                <span>{routesCount} link{routesCount === 1 ? '' : 's'}</span>
+              </label>
             </dd>
           </div>
         </dl>

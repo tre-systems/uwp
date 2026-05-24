@@ -54,6 +54,7 @@ export const subsectorSeed = signal<number>(0xC0FFEE)
 export const subsectorDensity = signal<number>(0.5)
 export const currentSubsector = signal<Subsector | null>(null)
 export const selectedHex = signal<HexCoord | null>(null)
+export const showJumpRoutes = signal<boolean>(true)
 export const renderQualityMode = signal<RenderQualityMode>('auto')
 export const renderPerformance = signal<RenderPerformanceSnapshot>({
   mode: 'auto',
@@ -139,6 +140,10 @@ export function rerollSubsectorSeed() {
 
 export function setSelectedHex(coord: HexCoord | null) {
   selectedHex.value = coord
+}
+
+export function setShowJumpRoutes(visible: boolean) {
+  showJumpRoutes.value = visible
 }
 
 /**

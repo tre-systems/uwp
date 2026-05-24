@@ -119,6 +119,17 @@ pub struct Subsector {
     /// Single allegiance per subsector for v1.
     pub allegiance: String,
     pub hexes: Vec<SubsectorHex>,
+    pub jump_routes: Vec<JumpRoute>,
+}
+
+/// A jump-1 or jump-2 connection between two occupied hexes. Edges are
+/// undirected; we emit (a, b) with `a < b` for canonical ordering.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JumpRoute {
+    pub from: HexCoord,
+    pub to: HexCoord,
+    /// 1 = jump-1 link, 2 = jump-2 link.
+    pub jump: u8,
 }
 
 impl Subsector {
@@ -192,12 +203,59 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         }
     }
 
+    let jump_routes = compute_jump_routes(&hexes);
+
     Subsector {
         seed,
         density,
         allegiance: "Independent".to_string(),
         hexes,
+        jump_routes,
     }
+}
+
+/// Compute jump-1 and jump-2 connectivity between occupied hexes.
+/// A route exists if both endpoints host a starport of class C or better
+/// (Cepheus convention - lower-class ports lack refined fuel).
+fn compute_jump_routes(hexes: &[SubsectorHex]) -> Vec<JumpRoute> {
+    let mut routes = Vec::new();
+    let qualifies = |port: char| matches!(port, 'A' | 'B' | 'C');
+    let occupied: Vec<&SubsectorHex> = hexes.iter().filter(|h| qualifies(h.uwp.starport)).collect();
+    for (i, a) in occupied.iter().enumerate() {
+        for b in occupied.iter().skip(i + 1) {
+            let d = hex_distance(a.coord, b.coord);
+            if d == 1 || d == 2 {
+                routes.push(JumpRoute {
+                    from: a.coord,
+                    to: b.coord,
+                    jump: d as u8,
+                });
+            }
+        }
+    }
+    routes
+}
+
+/// Hex-grid distance using the "doubled-coordinate" trick for a
+/// pointy-top hex layout where odd columns shift down by half a row.
+/// This matches the on-screen geometry, which is what users will
+/// reason about when they look at the SVG.
+fn hex_distance(a: HexCoord, b: HexCoord) -> i32 {
+    let (ax, ay) = axial_from_offset(a);
+    let (bx, by) = axial_from_offset(b);
+    let dx = ax - bx;
+    let dy = ay - by;
+    let dz = -dx - dy;
+    (dx.abs() + dy.abs() + dz.abs()) / 2
+}
+
+fn axial_from_offset(coord: HexCoord) -> (i32, i32) {
+    // odd-q offset → axial: q = col, r = row - (col - (col&1)) / 2
+    let col = coord.col as i32;
+    let row = coord.row as i32;
+    let q = col;
+    let r = row - (col - (col & 1)) / 2;
+    (q, r)
 }
 
 fn build_hex(coord: HexCoord, system_seed: u32, system: &SolarSystem, rng: &mut Rng) -> SubsectorHex {
@@ -461,6 +519,32 @@ mod tests {
         let sub = generate(1, 1.0);
         let total = (SUBSECTOR_COLS as usize) * (SUBSECTOR_ROWS as usize);
         assert_eq!(sub.hexes.len(), total);
+    }
+
+    #[test]
+    fn hex_distance_neighbours() {
+        // Adjacent in same column.
+        assert_eq!(hex_distance(HexCoord::new(3, 5), HexCoord::new(3, 6)), 1);
+        // Adjacent across a column (odd-q layout neighbour set).
+        assert_eq!(hex_distance(HexCoord::new(3, 5), HexCoord::new(4, 5)), 1);
+        assert_eq!(hex_distance(HexCoord::new(4, 5), HexCoord::new(5, 5)), 1);
+        // Two hexes apart in same column.
+        assert_eq!(hex_distance(HexCoord::new(3, 5), HexCoord::new(3, 7)), 2);
+    }
+
+    #[test]
+    fn jump_routes_link_only_qualifying_ports() {
+        // Force a dense grid so we definitely have neighbours.
+        let sub = generate(99, 1.0);
+        for r in &sub.jump_routes {
+            let a = sub.hex_at(r.from).expect("from coord present");
+            let b = sub.hex_at(r.to).expect("to coord present");
+            assert!(matches!(a.uwp.starport, 'A' | 'B' | 'C'));
+            assert!(matches!(b.uwp.starport, 'A' | 'B' | 'C'));
+            assert!(r.jump == 1 || r.jump == 2);
+            let d = hex_distance(r.from, r.to);
+            assert_eq!(d as u8, r.jump);
+        }
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import {
   selectedHex,
   selectHex,
+  showJumpRoutes,
 } from '../appState'
 import {
   hexLabel,
@@ -68,6 +69,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
     )
   }
   const sel = selectedHex.value
+  const routesVisible = showJumpRoutes.value
   const hexByCoord = new Map<string, SubsectorHex>()
   for (const h of subsector.hexes) {
     hexByCoord.set(`${h.coord.col},${h.coord.row}`, h)
@@ -85,6 +87,24 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
             <path d="M0 0l6 6M-1 5l2 2M5 -1l2 2" stroke="rgba(255,255,255,0.04)" stroke-width="0.6" />
           </pattern>
         </defs>
+        {routesVisible && (
+          <g class="jump-routes" aria-hidden="true">
+            {subsector.jump_routes.map((route) => {
+              const a = hexCenter(route.from.col, route.from.row)
+              const b = hexCenter(route.to.col, route.to.row)
+              return (
+                <line
+                  key={`${route.from.col},${route.from.row}-${route.to.col},${route.to.row}-${route.jump}`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  class={route.jump === 1 ? 'jump-route jump-route-1' : 'jump-route jump-route-2'}
+                />
+              )
+            })}
+          </g>
+        )}
         {Array.from({ length: COLS }, (_, i) => i + 1).flatMap((col) =>
           Array.from({ length: ROWS }, (_, j) => j + 1).map((row) => {
             const key = `${col},${row}`
