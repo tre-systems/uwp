@@ -329,6 +329,46 @@ fn habitability_score(p: &Planet) -> f32 {
     }
 }
 
+/// Pick the planet that should anchor the system's UWP / surface map / etc.
+/// Always returns a valid index when there are planets, so the JS layer
+/// never has to disable downstream features for lack of a focal body.
+fn pick_main_world(planets: &[Planet]) -> i32 {
+    if planets.is_empty() {
+        return -1;
+    }
+    // 1) Best climate habitability inside the habitable zone.
+    if let Some((i, _)) = planets
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (i, habitability_score(p)))
+        .filter(|(_, s)| *s > 0.0)
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+    {
+        return i as i32;
+    }
+    // 2) Largest rocky / terrestrial / super-Earth - the most plausible
+    //    "settled" world even when habitability scored zero.
+    if let Some((i, _)) = planets
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            matches!(
+                p.body_type,
+                BodyType::Rocky | BodyType::Terrestrial | BodyType::SuperEarth
+            )
+        })
+        .max_by(|a, b| {
+            a.1.radius_earth
+                .partial_cmp(&b.1.radius_earth)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    {
+        return i as i32;
+    }
+    // 3) First planet of any class so the UI always has a target.
+    0
+}
+
 pub(crate) fn recompute_planet_climate(planet: &mut Planet) {
     planet.climate = climate::estimate(planet);
 }
@@ -732,15 +772,14 @@ pub fn generate(seed: u32) -> SolarSystem {
         }
     }
 
-    // Identify the main world: highest habitability score, or -1 if none in HZ.
-    let main_world = planets
-        .iter()
-        .enumerate()
-        .map(|(i, p)| (i, habitability_score(p)))
-        .filter(|(_, s)| *s > 0.0)
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .map(|(i, _)| i as i32)
-        .unwrap_or(-1);
+    // Identify the main world. Preference order:
+    //   1. Highest climate habitability score.
+    //   2. Largest rocky / terrestrial / super-Earth class (settler fallback
+    //      - even a marginal world stays inhabited via tech, so the game
+    //      data needs a target).
+    //   3. First planet of any kind, so the system always has a focal body
+    //      the UI can render and the Surface map can hex-grid.
+    let main_world = pick_main_world(&planets);
 
     SolarSystem {
         seed,

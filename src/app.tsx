@@ -13,6 +13,7 @@ import {
   currentSubsector,
   currentSurfaceMap,
   errorMessage,
+  panelOpen,
   rendererStatus,
   viewMode,
 } from './appState'
@@ -23,17 +24,18 @@ export function App() {
   const mode = viewMode.value
   const subsector = currentSubsector.value
   const surfaceMap = currentSurfaceMap.value
+  const overlayClass = panelOpen.value ? 'subsector-overlay panel-open' : 'subsector-overlay'
 
   return (
     <div class="app">
       <Canvas />
       {mode === 'subsector' && (
-        <div class="subsector-overlay" role="region" aria-label="Subsector view">
+        <div class={overlayClass} role="region" aria-label="Subsector view">
           <SubsectorMap subsector={subsector} />
         </div>
       )}
       {mode === 'surface' && (
-        <div class="subsector-overlay" role="region" aria-label="Surface view">
+        <div class={overlayClass} role="region" aria-label="Surface view">
           <SurfaceMap map={surfaceMap} />
         </div>
       )}
