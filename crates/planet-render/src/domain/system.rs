@@ -25,6 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::blackbody::blackbody_srgb;
 use super::climate::{self, ClimateSummary};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -237,28 +238,10 @@ fn sample_star(rng: &mut Rng) -> Star {
     }
 }
 
+/// Star colour derived from a Planck blackbody integrated against the
+/// CIE 1931 2° colour-matching functions. See `super::blackbody`.
 fn blackbody_color(temp_k: f32) -> [f32; 3] {
-    let t = (temp_k / 100.0).clamp(10.0, 400.0);
-    let r = if t <= 66.0 {
-        1.0
-    } else {
-        (329.698_73 * (t - 60.0).powf(-0.133_204_76) / 255.0).clamp(0.0, 1.2)
-    };
-    let g = if t <= 66.0 {
-        (99.470_8 * t.ln() - 161.119_57) / 255.0
-    } else {
-        288.122_16 * (t - 60.0).powf(-0.075_514_846) / 255.0
-    }
-    .clamp(0.0, 1.1);
-    let b = if t >= 66.0 {
-        1.0
-    } else if t < 19.0 {
-        0.0
-    } else {
-        (138.517_73 * (t - 10.0).ln() - 305.044_8) / 255.0
-    }
-    .clamp(0.0, 1.0);
-    [r, g, b]
+    blackbody_srgb(temp_k)
 }
 
 pub fn habitable_zone(star: &Star) -> (f32, f32) {
