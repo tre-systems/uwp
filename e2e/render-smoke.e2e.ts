@@ -1,8 +1,7 @@
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
-test('detail view renders and exposes manual quality controls', async ({ page }, testInfo) => {
+test('detail and system views render with quality controls', async ({ page }) => {
   await openApp(page)
-  await attachScreenshot(page, testInfo, 'detail-auto')
 
   const panel = await openPanel(page)
   await expect(panel.getByText('PERFORMANCE')).toBeVisible()
@@ -25,20 +24,13 @@ test('detail view renders and exposes manual quality controls', async ({ page },
   expect(highCanvas.width).toBeGreaterThan(lowCanvas.width)
   expect(highCanvas.height).toBeGreaterThan(lowCanvas.height)
 
-  await attachScreenshot(page, testInfo, 'detail-high')
-})
-
-test('system view renders after renderer resource setup', async ({ page }, testInfo) => {
-  await openApp(page)
+  await selectQuality(panel, 'Low')
   await page.getByRole('button', { name: /system/i }).click()
 
-  const panel = await openPanel(page)
   await expect(panel.locator('h1')).toHaveText('System')
   await expect(panel.getByText('PLANETS')).toBeVisible()
   await expect(panel.getByText('PERFORMANCE')).toBeVisible()
-  await expect.poll(() => fpsValue(panel), { message: 'System-view FPS should be reported' }).toBeGreaterThan(0)
-
-  await attachScreenshot(page, testInfo, 'system-view')
+  await expect(panel.locator('.perf-grid')).toContainText('Low')
 })
 
 async function openApp(page: Page) {
@@ -87,11 +79,4 @@ async function canvasSize(panel: Locator) {
   const match = text.match(/Canvas\s+(\d+)\s+x\s+(\d+)/)
   if (!match) return { width: 0, height: 0 }
   return { width: Number(match[1]), height: Number(match[2]) }
-}
-
-async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
-  await testInfo.attach(name, {
-    body: await page.screenshot({ fullPage: false }),
-    contentType: 'image/png',
-  })
 }

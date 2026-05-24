@@ -1,7 +1,7 @@
 import type { JSX } from 'preact'
 import type { BodyType } from '../domain/system'
 
-// Single icon kit for the panel — keep these simple geometric SVGs that use
+// Single icon kit for the panel - keep these simple geometric SVGs that use
 // `currentColor` so they inherit chip/row color, and a 16x16 viewBox so they
 // align with adjacent monospace digits.
 
@@ -169,11 +169,11 @@ export function StarportIcon({ code, ...rest }: IconBaseProps & { code: string }
 
 export function starportLabel(code: string): string {
   switch (code) {
-    case 'A': return 'Class A — Excellent (shipyard, refined fuel)'
-    case 'B': return 'Class B — Good (shipyard for small craft, refined fuel)'
-    case 'C': return 'Class C — Routine (unrefined fuel, minor repairs)'
-    case 'D': return 'Class D — Poor (unrefined fuel only)'
-    case 'E': return 'Class E — Frontier (landing area, no facilities)'
+    case 'A': return 'Class A - Excellent (shipyard, refined fuel)'
+    case 'B': return 'Class B - Good (shipyard for small craft, refined fuel)'
+    case 'C': return 'Class C - Routine (unrefined fuel, minor repairs)'
+    case 'D': return 'Class D - Poor (unrefined fuel only)'
+    case 'E': return 'Class E - Frontier (landing area, no facilities)'
     case 'X': return 'No starport (interdicted or unsurveyed)'
     default: return 'Starport'
   }

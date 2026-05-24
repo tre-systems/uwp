@@ -35,6 +35,13 @@ export interface RendererControls {
   setParams(params: Params): void
 }
 
+// Lifecycle of the renderer pipeline. `idle` is the very first frame before
+// the canvas mounts, `loading` covers WASM + GPU pipeline init, `ready` once
+// the first frame has rendered, and `unsupported` / `error` for terminal
+// failures we want to present as a card rather than a toast.
+export type RendererStatus = 'idle' | 'loading' | 'ready' | 'unsupported' | 'error'
+
+export const rendererStatus = signal<RendererStatus>('idle')
 export const errorMessage = signal<string | null>(null)
 export const panelOpen = signal(false)
 export const uwp = signal<UwpDigits>({ ...defaultUwp })
@@ -62,6 +69,10 @@ export function registerRendererControls(controls: RendererControls | null) {
 
 export function setErrorMessage(message: string | null) {
   errorMessage.value = message
+}
+
+export function setRendererStatus(status: RendererStatus) {
+  rendererStatus.value = status
 }
 
 export function setPanelOpen(open: boolean) {

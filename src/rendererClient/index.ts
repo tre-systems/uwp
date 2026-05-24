@@ -5,6 +5,7 @@ import {
   renderQualityMode,
   registerRendererControls,
   setErrorMessage,
+  setRendererStatus,
   setParamsSnapshot,
   setRenderPerformanceSnapshot,
   setSystemSeed,
@@ -74,8 +75,11 @@ export class RendererClient {
 
     try {
       if (!('gpu' in navigator)) {
-        throw new Error('navigator.gpu is undefined - WebGPU not available')
+        setRendererStatus('unsupported')
+        setErrorMessage('navigator.gpu is undefined - WebGPU not available')
+        return
       }
+      setRendererStatus('loading')
       await ensureWasm()
       if (this.cancelled) return
       this.sizeCanvas()
@@ -93,8 +97,10 @@ export class RendererClient {
       this.installControls()
       this.publishPerformanceSnapshot(0, 0)
       this.startFrameLoop()
+      setRendererStatus('ready')
     } catch (err) {
       console.error(err)
+      setRendererStatus('error')
       setErrorMessage(err instanceof Error ? err.message : String(err))
     }
   }
