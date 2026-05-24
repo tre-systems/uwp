@@ -1,5 +1,6 @@
 import {
   currentSurfaceMap,
+  openRegionView,
   selectAndFocusSurfaceHex,
   selectedSurfaceHex,
 } from '../appState'
@@ -189,6 +190,7 @@ function SurfaceHexCell({ hex, cx, cy, selected, isStarport, settlement, isCoast
       role="button"
       aria-label={label}
       onClick={() => selectAndFocusSurfaceHex(coord)}
+      onDblClick={() => openRegionView(coord)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()

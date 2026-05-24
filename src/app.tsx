@@ -5,6 +5,7 @@ import { LoadingOverlay } from './components/LoadingOverlay'
 import { ErrorOverlay } from './components/ErrorOverlay'
 import { HoverTooltip } from './components/HoverTooltip'
 import { OnboardingHint } from './components/OnboardingHint'
+import { RegionView } from './components/RegionView'
 import { SubsectorMap } from './components/SubsectorMap'
 import { SurfaceMap } from './components/SurfaceMap'
 import { ViewModeToggle } from './components/ViewModeToggle'
@@ -47,6 +48,7 @@ export function App() {
       <Breadcrumb />
       <ViewModeToggle />
       <ControlPanel />
+      <RegionView />
       {status === 'ready' && <OnboardingHint />}
     </div>
   )

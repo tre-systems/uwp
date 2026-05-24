@@ -904,6 +904,80 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .error-reload:hover { background: var(--color-accent-hover); }
 
+/* Region view modal --------------------------------------------------*/
+.region-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 4, 8, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+  animation: glossary-fade-in var(--motion-medium) var(--motion-ease);
+  overflow: auto;
+  padding: var(--space-7);
+}
+.region-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  align-items: center;
+  width: min(960px, 100%);
+  background: var(--surface-1-solid);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-panel);
+  padding: var(--space-6) var(--space-7) var(--space-7);
+}
+.region-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--space-6);
+}
+.region-header h2 {
+  margin: 0;
+  font-size: var(--type-xl);
+  color: var(--color-text-strong);
+  letter-spacing: 0.3px;
+}
+.region-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: var(--type-body);
+}
+.region-close {
+  margin-left: auto;
+}
+.region-canvas-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.region-canvas {
+  display: block;
+  border-radius: var(--radius-lg);
+  background: #02040a;
+}
+.region-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 11px;
+  color: #ffffff;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.9),
+    0 -1px 0 rgba(0, 0, 0, 0.9),
+    1px 0 0 rgba(0, 0, 0, 0.9),
+    -1px 0 0 rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.8);
+}
+.region-label-starport { color: #ffe680; font-weight: 700; }
+.region-label-tier-3 { font-size: 14px; font-weight: 700; letter-spacing: 0.4px; }
+.region-label-tier-2 { font-size: 12px; font-weight: 600; }
+
 /* Glossary modal -----------------------------------------------------*/
 .glossary-trigger {
   /* Hard size so it never stretches to flex:1 when it's alone in the

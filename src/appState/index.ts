@@ -78,6 +78,10 @@ export const showJumpRoutes = signal<boolean>(true)
 export const hoverTarget = signal<HoverTarget | null>(null)
 export const currentSurfaceMap = signal<SurfaceMap | null>(null)
 export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
+/** When non-null, the RegionView modal renders the procedural landscape
+ *  inside this surface hex. Set via openRegionView; cleared by Escape /
+ *  backdrop / explicit close. */
+export const regionHex = signal<SurfaceHexCoord | null>(null)
 export const renderQualityMode = signal<RenderQualityMode>('auto')
 export const renderPerformance = signal<RenderPerformanceSnapshot>({
   mode: 'auto',
@@ -213,6 +217,15 @@ export function selectAndFocusSurfaceHex(coord: SurfaceHexCoord): void {
   const hex = map.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
   if (!hex) return
   pointAtSurface(hex.latitude_deg, hex.longitude_deg)
+}
+
+/** Open the procedural Region detail modal for a surface hex. */
+export function openRegionView(coord: SurfaceHexCoord): void {
+  regionHex.value = coord
+}
+
+export function closeRegionView(): void {
+  regionHex.value = null
 }
 
 /**

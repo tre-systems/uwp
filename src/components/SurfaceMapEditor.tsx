@@ -1,5 +1,6 @@
 import {
   currentSurfaceMap,
+  openRegionView,
   pointAtSurface,
   selectedSurfaceHex,
   setSelectedSurfaceHex,
@@ -106,7 +107,8 @@ function SurfaceHexDetail({ hex, starportSelected }: { hex: SurfaceHex; starport
         )}
       </dl>
       <div class="sys-actions">
-        <button onClick={showOnGlobe}>Show on globe</button>
+        <button onClick={() => openRegionView(hex.coord)}>Open region view</button>
+        <button class="ghost" onClick={showOnGlobe}>Show on globe</button>
       </div>
     </section>
   )
