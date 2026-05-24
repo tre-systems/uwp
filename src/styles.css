@@ -1079,4 +1079,46 @@ label.color input[type="color"]::-webkit-color-swatch {
     width: 44px;
     height: 44px;
   }
+  .view-toggle {
+    top: 12px;
+    right: 64px;
+    height: 44px;
+    padding: 0 12px;
+    font-size: var(--type-body);
+  }
+  .glossary-modal {
+    width: 100%;
+    max-height: calc(100vh - 32px);
+    border-radius: var(--radius-xl);
+  }
+  .glossary-backdrop { padding: var(--space-4); }
+  .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
+  .sys-table th, .sys-table td { padding-top: var(--space-4); padding-bottom: var(--space-4); }
+  .sys-reroll { width: 34px; height: 34px; opacity: 0.8; }
+}
+
+/* Coarse-pointer devices (touch) get larger hit areas regardless of
+   viewport width - a tablet in landscape is still touched, not clicked. */
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 36px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -9.5px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
+  .starport-btn { min-height: 44px; }
+  .sys-reroll { width: 36px; height: 36px; opacity: 0.85; }
+  /* Touch UA can't hover, so keep reroll visible. */
+  .panel-actions button,
+  .quality-btn,
+  button.link {
+    min-height: 36px;
+  }
 }
