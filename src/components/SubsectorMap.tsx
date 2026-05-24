@@ -15,23 +15,24 @@ import {
 import { hexName } from '../domain/names'
 
 // Subsector map styled after the classic legacy 2d6 Map
-// (https://sector-map.com): black field, thin grey hex grid, each
-// occupied hex shows base markers, starport letter, system dot, world
-// name in caps, and a tiny gas-giant glyph. Travel zones outline the
-// hex (amber / red) instead of filling it. Jump routes are bright
-// green strokes between hex centres.
+// (https://sector-map.com): pure black field, thin grey flat-top
+// hex grid, each occupied hex shows base markers across the top,
+// starport letter above a filled system dot, world name below it,
+// gas-giant / belt glyphs to the sides. Travel zones outline the hex
+// (amber / red) instead of filling it. Jump routes are bright green
+// strokes between hex centres.
 //
-// Geometry: pointy-top hex with circumradius R. Horizontal step =
-// R * sqrt(3), vertical step = R * 1.5. Odd columns shift down by half
-// a vertical step so neighbouring hexes share edges.
+// Geometry: FLAT-TOP hex with circumradius R. Horizontal centre step
+// = 1.5 * R, vertical centre step = sqrt(3) * R. Odd columns shift
+// DOWN by half a vertical step. Matches the legacy 2d6 Map convention
+// exactly — point-east/west, flat top/bottom.
 
-const HEX_R = 30
-const HEX_W = HEX_R * Math.sqrt(3)
-const HEX_H = HEX_R * 2
-const COL_STEP = HEX_W
-const ROW_STEP = HEX_H * 0.75
-const PAD_X = HEX_W * 0.8
-const PAD_Y = HEX_H * 0.6
+const HEX_R = 34
+const HEX_H = HEX_R * Math.sqrt(3) // flat-to-flat height
+const COL_STEP = HEX_R * 1.5
+const ROW_STEP = HEX_H
+const PAD_X = HEX_R * 1.1
+const PAD_Y = HEX_H * 0.85
 
 const COLS = 8
 const ROWS = 10
@@ -39,17 +40,17 @@ const ROWS = 10
 interface XY { x: number; y: number }
 
 function hexCenter(col: number, row: number): XY {
-  // 1-indexed grid; odd cols shift down half a row.
+  // 1-indexed grid; odd cols shift down half a row (legacy 2d6 convention).
   const cx = PAD_X + (col - 1) * COL_STEP
   const cy = PAD_Y + (row - 1) * ROW_STEP + (col % 2 === 0 ? ROW_STEP * 0.5 : 0)
   return { x: cx, y: cy }
 }
 
 function hexPath(cx: number, cy: number, r: number): string {
-  // Pointy-top hex: vertices at 30, 90, 150, 210, 270, 330 deg.
+  // Flat-top hex: vertices at 0°, 60°, 120°, 180°, 240°, 300°.
   const pts: string[] = []
   for (let i = 0; i < 6; i++) {
-    const a = (Math.PI / 180) * (60 * i - 30)
+    const a = (Math.PI / 180) * 60 * i
     const px = cx + r * Math.cos(a)
     const py = cy + r * Math.sin(a)
     pts.push(`${px.toFixed(2)},${py.toFixed(2)}`)
@@ -87,8 +88,8 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
         role="img"
         aria-label="Subsector hex grid"
       >
-        {/* Routes sit below hex shapes so the hex outline reads as the
-            connector boundary, matching the legacy 2d6 Map look. */}
+        {/* Routes sit below the hex outlines so the hex border reads as
+            the connector boundary, matching the legacy 2d6 Map look. */}
         {routesVisible && (
           <g class="jump-routes" aria-hidden="true">
             {subsector.jump_routes.map((route) => {
@@ -148,7 +149,7 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProp
     return (
       <g class="hex-cell hex-empty" data-coord={label}>
         <path d={hexPath(cx, cy, HEX_R)} class="hex-shape" />
-        <text x={cx} y={cy - HEX_R + 9} class="hex-label" text-anchor="middle">
+        <text x={cx} y={cy - HEX_R * 0.55} class="hex-label" text-anchor="middle">
           {label}
         </text>
       </g>
@@ -158,10 +159,13 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProp
   const zoneClass = travelZoneClass(hex.travel_zone)
   const portClass = `port-${hex.uwp.starport.toLowerCase()}`
   const isRed = hex.travel_zone === 'Red'
-  const name = (hex.name ?? hexName(subsectorSeed, col, row)).toUpperCase()
+  const isHighPop = hex.uwp.pop >= 9
+  const rawName = hex.name ?? hexName(subsectorSeed, col, row)
+  // legacy 2d6 convention: ALL CAPS for high-pop worlds, Title Case otherwise.
+  const name = isHighPop ? rawName.toUpperCase() : titleCase(rawName)
   return (
     <g
-      class={`hex-cell hex-occupied ${zoneClass} ${portClass}${selected ? ' hex-selected' : ''}`}
+      class={`hex-cell hex-occupied ${zoneClass} ${portClass}${selected ? ' hex-selected' : ''}${isHighPop ? ' hex-hipop' : ''}`}
       data-coord={label}
       tabIndex={0}
       role="button"
@@ -178,55 +182,53 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProp
           via CSS classes - no fill, just stroke variants. */}
       <path d={hexPath(cx, cy, HEX_R)} class="hex-shape" />
 
-      {/* Hex coordinate, top-centre, very small - matches the
-          sector-map reference. */}
-      <text x={cx} y={cy - HEX_R + 9} class="hex-label" text-anchor="middle">
+      {/* Hex coordinate, top edge, very small dim grey. */}
+      <text x={cx} y={cy - HEX_R * 0.62} class="hex-label" text-anchor="middle">
         {label}
       </text>
 
-      {/* Bases row - tiny markers across the upper third of the hex.
-          ★ for Naval (top-left), △ for Scout, ◆ for Research, ◯ for Aid. */}
+      {/* Base symbols across the upper third of the hex. */}
       <BaseMarkers cx={cx} cy={cy} bases={hex.bases} />
 
-      {/* Starport letter, just above the system marker. Red ports are
-          flagged in red when the zone is Red. */}
+      {/* Starport letter above the system dot. */}
       <text
-        x={cx - HEX_R * 0.32}
-        y={cy - 2}
+        x={cx}
+        y={cy - HEX_R * 0.10}
         class={`hex-starport${isRed ? ' hex-starport-warn' : ''}`}
         text-anchor="middle"
       >
         {hex.uwp.starport}
       </text>
 
-      {/* System marker: filled dot. Selected highlights with a ring. */}
-      <circle cx={cx} cy={cy - 1} r={2.6} class="hex-system-dot" />
+      {/* System marker: filled circle (or a hollow ring for X-class). */}
+      <circle cx={cx} cy={cy + HEX_R * 0.10} r={3.2} class="hex-system-dot" />
 
-      {/* World name, classic uppercase legacy 2d6 style, below the dot. */}
+      {/* World name below the dot. */}
       <text
         x={cx}
-        y={cy + HEX_R * 0.38}
+        y={cy + HEX_R * 0.45}
         class={`hex-name${isRed ? ' hex-name-warn' : ''}`}
         text-anchor="middle"
       >
         {name}
       </text>
 
-      {/* Gas-giant glyph: small empty circle just below the name. */}
+      {/* Gas-giant glyph: hollow ring to the right of the system dot,
+          matching the legacy 2d6 Map's "GG" indicator. */}
       {hex.gas_giant && (
         <circle
           cx={cx + HEX_R * 0.42}
-          cy={cy + HEX_R * 0.16}
+          cy={cy + HEX_R * 0.10}
           r={2.4}
           class="hex-gas-giant"
         />
       )}
 
-      {/* Asteroid belt glyph: small dots cluster, opposite the gas giant. */}
+      {/* Asteroid belt glyph: small dot cluster to the left of the dot. */}
       {hex.belts && (
         <g class="hex-belt-glyph" aria-hidden="true">
-          <circle cx={cx - HEX_R * 0.40} cy={cy + HEX_R * 0.10} r={0.9} />
-          <circle cx={cx - HEX_R * 0.32} cy={cy + HEX_R * 0.18} r={0.7} />
+          <circle cx={cx - HEX_R * 0.40} cy={cy + HEX_R * 0.08} r={0.9} />
+          <circle cx={cx - HEX_R * 0.33} cy={cy + HEX_R * 0.18} r={0.7} />
           <circle cx={cx - HEX_R * 0.46} cy={cy + HEX_R * 0.20} r={0.6} />
         </g>
       )}
@@ -236,25 +238,25 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProp
 
 function BaseMarkers({ cx, cy, bases }: { cx: number; cy: number; bases: Bases }) {
   const markers: { x: number; y: number; symbol: string; cls: string }[] = []
-  const row1y = cy - HEX_R * 0.50
+  const rowY = cy - HEX_R * 0.38
   // Lay bases out left-to-right across the top half so multiple bases
-  // don't overlap. Naval ★ in the left slot, then Scout, Research, Aid.
-  let nextX = cx - HEX_R * 0.45
-  const stepX = HEX_R * 0.30
+  // don't overlap. Naval ★, Scout △, Research ◆, Aid ◯.
+  let nextX = cx - HEX_R * 0.42
+  const stepX = HEX_R * 0.28
   if (bases.naval) {
-    markers.push({ x: nextX, y: row1y, symbol: '★', cls: 'base-naval' })
+    markers.push({ x: nextX, y: rowY, symbol: '★', cls: 'base-naval' })
     nextX += stepX
   }
   if (bases.scout) {
-    markers.push({ x: nextX, y: row1y, symbol: '△', cls: 'base-scout' })
+    markers.push({ x: nextX, y: rowY, symbol: '△', cls: 'base-scout' })
     nextX += stepX
   }
   if (bases.research) {
-    markers.push({ x: nextX, y: row1y, symbol: '◆', cls: 'base-research' })
+    markers.push({ x: nextX, y: rowY, symbol: '◆', cls: 'base-research' })
     nextX += stepX
   }
   if (bases.Aid) {
-    markers.push({ x: nextX, y: row1y, symbol: '◯', cls: 'base-Aid' })
+    markers.push({ x: nextX, y: rowY, symbol: '◯', cls: 'base-Aid' })
   }
   return (
     <>
@@ -279,6 +281,16 @@ function travelZoneClass(zone: TravelZone): string {
     case 'Red': return 'zone-red'
     default: return 'zone-green'
   }
+}
+
+function titleCase(s: string): string {
+  // Cheap Title Case: capitalise every word's first letter, lowercase
+  // the rest. Roman-numeral world suffixes like "II" stay uppercase
+  // naturally because the names module emits them that way.
+  return s.replace(/[A-Za-zÀ-ÿ]+/g, (word) => {
+    if (/^[IVX]+$/i.test(word)) return word.toUpperCase()
+    return word[0].toUpperCase() + word.slice(1).toLowerCase()
+  })
 }
 
 function describe(hex: SubsectorHex): string {

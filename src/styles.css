@@ -1113,32 +1113,38 @@ label.color input[type="color"]::-webkit-color-swatch {
 /* Coordinate label - tiny, dim, top-centre of every hex (occupied or
    empty) so the user can read addresses without them dominating. */
 .hex-label {
-  font-family: var(--font-mono);
-  font-size: 6px;
-  fill: rgba(255, 255, 255, 0.32);
+  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 7px;
+  fill: rgba(255, 255, 255, 0.42);
   pointer-events: none;
   letter-spacing: 0.4px;
 }
 
-/* Starport letter - sits to the upper-left of the system dot, classic
-   legacy 2d6 convention. Red-zone hexes flag the port letter red. */
+/* Starport letter - sits centred above the dot. Red-zone hexes
+   flag the port letter red. */
 .hex-starport {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  fill: var(--color-text-strong);
+  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  fill: #ffffff;
   pointer-events: none;
 }
 .hex-starport-warn { fill: rgba(255, 110, 110, 1); }
 
-/* World name - canonical legacy 2d6 small-caps below the dot. */
+/* World name - sits below the system dot. Mixed case for normal
+   worlds, ALL CAPS for high-pop (pop >= 9) per legacy 2d6 convention. */
 .hex-name {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', sans-serif;
-  font-size: 6.5px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  fill: var(--color-text-strong);
+  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  fill: #ffffff;
   pointer-events: none;
+}
+.hex-cell.hex-hipop .hex-name {
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  font-size: 8.5px;
 }
 .hex-name-warn { fill: rgba(255, 110, 110, 1); }
 
