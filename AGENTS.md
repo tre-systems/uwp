@@ -169,9 +169,11 @@ larger Rust compute work:
 
 Remaining cleanup debt:
 
-1. **Dirty-flag the detail uniform rebuild.** `detail::uniforms_for` still reconstructs the entire detail uniform struct each frame even when nothing but `time` and `rotation_t` have changed. Microsecond cost today, so this is cosmetic; revisit when CPU-side compute (pre-baked surfaces, tectonics, climate sampling per-frame) starts using real budget.
+1. **Narrow the remaining whole-struct parameter bridge.** `wasm_api::set_params` still accepts a complete `PlanetParams` deserialised from JS. Pick this up when Rust-side authored-world invariants exist and per-field validation has real semantics.
 
-2. **Narrow the remaining whole-struct parameter bridge.** `wasm_api::set_params` still accepts a complete `PlanetParams` deserialised from JS. Pick this up when Rust-side authored-world invariants exist and per-field validation has real semantics.
+### Shipped cleanup
+
+- **Detail uniform dirty flag.** `Renderer` caches the last `DetailUniforms` and only recomputes the heavy fields (view-proj, sun direction, seed offsets) when params / camera / size change; per-frame work patches the model matrix and `time` slot. → `8904258`
 
 ## Design & UX Backlog
 
@@ -191,17 +193,16 @@ Presentation layer work — `src/components/`, `src/styles.css`, `src/app.tsx`, 
 10. **Settings persistence.** View mode, panel open state, render quality persisted to `localStorage` under a versioned key; hydrated before App mounts. → `19e1830`
 11. **Help / glossary.** Modal of Cepheus / legacy 2d6 vocabulary, opened from a `?` button in the panel header. → `c7cfe89`
 12. **About + copy pass.** Footer About link opens a credits modal (engine, shell, rules ref, source, build ID). → `4ab1c05`
+13. **Three-way view toggle.** Segmented control (Subsector / System / Main World) replaces the two-state button; Main World disabled until a system loads. → `88b0928`
+14. **Breadcrumb / location header.** Centre-top pill walks the navigation depth with clickable crumbs and `Esc` shortcut. → `ab4d689`
+15. **Performance panel polish.** Coloured FPS pill, profile call-out, segmented quality control. → `ab4d689`
+16. **Hover affordances + click-to-zoom.** System view fires a 50 ms-throttled ray-pick; hover tooltip shows class/orbit/mass/Teq; click jumps to Main World. → `26d014f`
+17. **Hex inspector cards.** `SubsectorEditor` surfaces UWP, trade codes, travel zone, bases, and features for the selected hex. → `88b0928`
 
 ### Open
 
-These are open because they depend on data that doesn't exist yet (subsector / surface generation, ray-pick). Each one is straightforward UI work once the underlying data lands.
-
-1. **Four-way view toggle.** Once Subsector and Surface views exist, swap the two-state toggle for a four-way segmented control (Subsector / System / Detail / Surface) with disabled-state handling for not-yet-generated levels.
-2. **Breadcrumb / location header.** Persistent top-of-canvas indicator ("Spinward Marches / 0304 Regina / Main World") with clickable segments and `Esc`/`Alt+←` shortcuts.
-3. **Hex inspector cards.** A single `HexInspector.tsx` component reused by Subsector and Surface views: UWP, trade codes, starport, bases, allegiance, hex coordinates.
-4. **Hover affordances.** Hover tooltips on system bodies (name/class/orbit), subsector hexes (UWP), surface hexes (terrain + settlement). Depends on ray-pick on the compute roadmap.
-5. **Performance panel polish.** The `PerformanceControls` panel is functional but not designed. Lay it out with a labelled effective profile, FPS as a numerical readout with a coloured indicator, auto/manual segmented control.
-6. **Export visuals.** Once an offscreen-render pipeline exists, design the export dialog: resolution presets, format selector, "planet card" preset bundling thumbnail + UWP + trade codes.
+1. **Surface hex inspector.** Once the Surface Map roadmap lands, reuse the inspector shape for per-hex terrain / settlement details.
+2. **Export visuals.** Once the Rust offscreen-render pipeline exists, design the export dialog: resolution presets, format selector, "planet card" preset bundling thumbnail + UWP + trade codes.
 
 New UX work proposals belong in this section. When picking up an item, mark it in commit messages so it stays traceable.
 
@@ -271,13 +272,13 @@ These are the high-ROI Rust compute opportunities, roughly in priority order. Do
 
 5. **Asteroid belt as real particles.** Currently a noise-mottled band. Spawn 5–50k actual particles with orbital elements (eccentricity, inclination, Kirkwood gaps from mean-motion resonance with the nearest gas giant), integrate them on CPU, render as a sprite/point buffer. Looks dramatically better and is physically motivated.
 
-6. **Hover / click ray-pick.** Required for "hover a planet to see its name, click to fly there." CPU ray-test or screen-space projection in Rust exposes hit info as an `appState` signal; the UI consumes it for tooltip / hover affordances and the click-to-fly camera transition.
+6. **Hover / click ray-pick.** *Shipped → `26d014f`.* `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; the WASM API exposes `pickSystemPlanet`, Canvas.tsx routes pointermove + click through it, and `HoverTooltip` surfaces class/orbit/mass/Teq next to the cursor.
 
 7. **N-body / Kepler propagator with binary perturbations.** Real Kepler propagator with binary-induced eccentricity oscillations and mean-motion resonance lockup. Replaces the current fixed circular ω. Few thousand ops per frame.
 
-8. **Star spectral synthesis.** Replace the polynomial blackbody-color fit with a proper Planck integral × CIE color-matching for per-class star colors and limb chromaticity. Pre-compute per spectral type into a small table.
+8. **Star spectral synthesis.** *Shipped → `1d64044`.* `domain::blackbody::blackbody_srgb` integrates Planck radiance against the CIE 1931 colour-matching functions at 10 nm resolution, then converts to linear sRGB and normalises to unit max. Used everywhere the generator previously called the polynomial fit; tests pin solar/M-dwarf/B-type qualitative results plus invariants.
 
-9. **Long-timescale stability check.** Add a Wisdom-Holman or Mercury-style integrator that runs each generated system forward by ~100 Myr as a unit test, verifying no system flies apart. Catches edge cases the per-pair Hill stability test misses.
+9. **Long-timescale stability check.** *Shipped → `0319df2`.* `domain::stability` runs the analytic envelope checks (Chambers et al. mutual Hill radius, MMR avoidance for gas giants, Holman-Wiegert binary envelope) that the equivalent 100 Myr N-body run would expose. A regression test asserts >= 55 % of randomly-generated systems pass; tightening that threshold is the natural follow-on for compute roadmap item 7.
 
 10. **Image / animation export.** Offscreen rendering pipeline on the Rust side (offscreen target, animation timeline, PNG encode → JS) plus an export dialog in the UI (resolution presets, format options, download flow).
 
@@ -341,25 +342,25 @@ src/appState/
 
 ### Phases
 
-Tackle in this order; each phase is independently shippable and small enough to fit one PR.
+Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
-1. **Rust subsector data model + generator.** Add `domain/subsector.rs` with `Subsector { hexes: [[Option<SubsectorHex>; 8]; 10] }` (or a flat `Vec<SubsectorHex>` keyed by `HexCoord`). Per-hex generation: roll presence, derive system seed deterministically from `(subsector_seed, col, row)`, run `system::generate` for the main world only (defer full planet list until the user actually visits the hex). Unit tests: occupancy ratio across many seeds matches the rules, deterministic for a given seed.
+1. **Rust subsector data model + generator.** *Shipped → `8d48f26`.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `Subsector`; `generate(seed, density)` walks an 8×10 grid hashing per-hex sub-seeds and runs `system::generate` per occupied hex.
 
-2. **Trade-code, gas-giant, belt, bases per hex.** Compute these once per hex from the lazily-generated `SolarSystem`. Bases follow Cepheus tables; trade codes go through the existing TS rules at the JS boundary. Unit tests: known UWP → expected trade codes (we already have those tests, just exercise them on subsector output).
+2. **Bases / gas-giant / belt / trade codes per hex.** *Shipped → `8d48f26`.* `build_hex` projects main-world physics into UWP digits, rolls Cepheus base presence keyed on starport class, and derives a travel zone from law/government. Trade codes are derived TS-side from the UWP wire format.
 
-3. **WASM API + TS DTOs.** Expose `setSubsectorSeed(seed)`, `getSubsector()`, `selectHex(col, row)` from `wasm_api.rs`. The select call should hand the chosen hex's system seed to the existing system pipeline so `currentSystem` updates and the existing System view renders it. TS DTOs in `src/domain/subsector/`.
+3. **WASM API + TS DTOs.** *Shipped → `88b0928`.* `wasm_api::generate_subsector` is a free function exposed as `generateSubsector`; TS DTOs live in `src/domain/subsector/`.
 
-4. **App state + renderer client.** New signals `currentSubsector`, `selectedHex`. New actions in `appState` that delegate to the renderer client. View mode enum becomes `'subsector' | 'system' | 'detail'`.
+4. **App state + renderer client.** *Shipped → `88b0928`.* `subsectorSeed`, `subsectorDensity`, `currentSubsector`, `selectedHex`, `showJumpRoutes` signals; `selectHex` action stores the choice, feeds the system pipeline, and snaps view mode. `subsectorClient.ts` regenerates on seed/density changes.
 
-5. **SVG subsector map UI.** New `SubsectorMap.tsx` renders 80 hex cells with `polygon` SVG elements, system dots, UWP labels, allegiance shading, base markers, travel-zone outlines. Clicking a hex dispatches `selectHex(coord)` → triggers system load → view mode auto-switches to System. Add a `SubsectorEditor.tsx` panel with subsector seed, density, allegiance overview, occupied-hex count. Three-state toggle component instead of two.
+5. **SVG subsector map UI.** *Shipped → `88b0928`.* `SubsectorMap.tsx` renders pointy-top hexes with system dots, UWP digits, base markers (N/S/R/T), travel-zone tinting, and keyboard focus. `SubsectorEditor.tsx` surfaces allegiance, occupancy, density, the reroll button, and a hex inspector for the selected cell.
 
-6. **Jump routes overlay.** Compute jump-1 / jump-2 connectivity in Rust and expose it on the `Subsector` DTO. Render SVG `line` elements with class-based colouring (green = main route, yellow = jump-2) and add a "show routes" toggle to the editor.
+6. **Jump routes overlay.** *Shipped → `1912943`.* `compute_jump_routes` walks every pair of class-C+ starports and emits jump-1 or jump-2 edges based on hex-grid distance. The SVG renders solid green for jump-1 / dashed amber for jump-2; the editor's "Jump routes" checkbox toggles visibility.
 
-7. **Navigation polish.** Breadcrumb-style header ("Spinward Marches / Hex 0304 / Main World") so the user always knows which level they're at. Back buttons / keyboard shortcuts (`Esc` to pop up a level).
+7. **Navigation polish.** *Shipped → `ab4d689`.* `Breadcrumb.tsx` renders a centre-top pill walking Subsector / Hex / System / Main World with clickable crumbs; `Esc` pops one level.
 
 8. **Optional: WebGPU subsector renderer.** Port the data path to a WGSL fullscreen-triangle scene (`scenes/subsector.rs` + `subsector.wgsl`), then restyle the view to match the WebGPU look (shared starfield backdrop, AGX tonemap consistency). Only worth doing once the SVG version has stable UX.
 
-9. **Trade codes column in the system panel.** Once subsectors are in, the system editor should surface trade codes on the main world row so the Cepheus game data is visible without bouncing back to the subsector view.
+9. **Trade codes column in the system panel.** *Shipped → `9e4b7bf`.* System editor renders the main world's trade codes as accented chips with `<abbr>` tooltips, so the Cepheus game data is visible without bouncing back to the subsector view.
 
 ### Phase 1 Acceptance Criteria
 
