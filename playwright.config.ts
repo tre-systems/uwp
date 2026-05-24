@@ -13,7 +13,7 @@ export default defineConfig({
     viewport: { width: 1280, height: 720 },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure',
+    video: 'off',
     launchOptions: {
       args: [
         '--enable-unsafe-webgpu',

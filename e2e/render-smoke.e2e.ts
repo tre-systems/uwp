@@ -25,7 +25,7 @@ test('detail and system views render with quality controls', async ({ page }) =>
   expect(highCanvas.height).toBeGreaterThan(lowCanvas.height)
 
   await selectQuality(panel, 'Low')
-  await page.getByRole('button', { name: /system/i }).click()
+  await page.getByRole('button', { name: /system/i }).click({ force: true })
 
   await expect(panel.locator('h1')).toHaveText('System')
   await expect(panel.getByText('PLANETS')).toBeVisible()

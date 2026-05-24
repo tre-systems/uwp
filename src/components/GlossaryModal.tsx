@@ -42,7 +42,7 @@ const ENTRIES: readonly GlossaryEntry[] = [
   },
   {
     term: 'Government',
-    defn: 'Style of ruling authority — corporate, balkanised, theocracy, charismatic dictator, etc.',
+    defn: 'Style of ruling authority - corporate, balkanised, theocracy, charismatic dictator, etc.',
   },
   {
     term: 'Law level',
@@ -54,7 +54,7 @@ const ENTRIES: readonly GlossaryEntry[] = [
   },
   {
     term: 'Trade codes',
-    defn: 'Two-letter labels derived from the UWP that flag commerce niches and hazards — Ag (agricultural), Hi (high-pop), Va (vacuum), and so on.',
+    defn: 'Two-letter labels derived from the UWP that flag commerce niches and hazards - Ag (agricultural), Hi (high-pop), Va (vacuum), and so on.',
   },
   {
     term: 'Habitable zone',
@@ -62,11 +62,11 @@ const ENTRIES: readonly GlossaryEntry[] = [
   },
   {
     term: 'Snow line',
-    defn: 'Distance from the star beyond which water condenses as ice during planet formation — gas giants tend to live just outside it.',
+    defn: 'Distance from the star beyond which water condenses as ice during planet formation - gas giants tend to live just outside it.',
   },
   {
     term: 'Main world',
-    defn: 'The most settled or significant body in a system; what the UWP describes. Marked with ★ in the planet table.',
+    defn: 'The most settled or significant body in a system; what the UWP describes. Marked with main world marker in the planet table.',
   },
 ]
 
@@ -102,7 +102,7 @@ export function GlossaryModal({ open, onClose }: GlossaryModalProps) {
             onClick={onClose}
             aria-label="Close glossary"
           >
-            ✕
+            X
           </button>
         </header>
         <div class="glossary-body">
