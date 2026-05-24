@@ -452,33 +452,91 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     // ---------- Asteroid belts ----------
+    // Discrete-particle look: two grain scales (coarse rocks + fine dust),
+    // angular streaks following orbital direction, soft Kirkwood-style gaps
+    // at 2:1 / 3:1 resonance fractions of the belt width, and a small
+    // out-of-plane tolerance so the belt has perceptible thickness.
     let n_belts = i32(sys.star_color.w);
-    if (abs(denom) > 1e-5 && n_belts > 0) {
-        let t_plane2 = -dot(ray_origin, ring_n) / denom;
-        if (t_plane2 > 0.0) {
-            let p = ray_origin + ray_dir * t_plane2;
-            let r = length(p.xz);
-            for (var bi: i32 = 0; bi < 4; bi = bi + 1) {
-                if (bi >= n_belts) { break; }
-                let belt = sys.belts[u32(bi)];
-                let inner = belt.x;
-                let outer = belt.y;
-                let density = belt.z;
-                if (r >= inner && r <= outer) {
-                    // Higher-frequency granular pattern via fbm on the hit
-                    // point — reads as scattered dust rather than a solid band.
-                    let n_lo = fbm3(vec3<f32>(p.x * 4.0, p.z * 4.0, 0.0), 3);
-                    let n_hi = hash21(floor(p.xz * 18.0));
-                    let n_hi2 = hash21(floor(p.xz * 18.0) + vec2<f32>(31.0, 17.0));
-                    let speck = step(0.55, n_hi) * (0.4 + n_hi2 * 0.6);
-                    let edge_in  = smoothstep(inner, inner + (outer - inner) * 0.10, r);
-                    let edge_out = 1.0 - smoothstep(outer - (outer - inner) * 0.10, outer, r);
-                    let band = edge_in * edge_out;
-                    let dust = vec3<f32>(0.55, 0.48, 0.40);
-                    color = color
-                          + dust * (n_lo * 0.10 + speck * 0.40) * density * band;
-                }
+    if (n_belts > 0) {
+        for (var bi: i32 = 0; bi < 4; bi = bi + 1) {
+            if (bi >= n_belts) { break; }
+            let belt = sys.belts[u32(bi)];
+            let inner = belt.x;
+            let outer = belt.y;
+            let density = belt.z;
+            let width = max(outer - inner, 1e-3);
+
+            // Out-of-plane thickness: ~3% of belt width as 1-sigma.
+            let half_thick = max(width * 0.04, 0.01);
+            // Quick conservative bound: only ray-march when the ray
+            // direction can plausibly hit the slab.
+            if (abs(ray_dir.y) < 1e-4) { continue; }
+
+            // Take two plane samples (top + bottom of slab) and integrate
+            // the discrete-particle response across the segment between.
+            let t_top = (half_thick - ray_origin.y) / ray_dir.y;
+            let t_bot = (-half_thick - ray_origin.y) / ray_dir.y;
+            let t_near = min(t_top, t_bot);
+            let t_far  = max(t_top, t_bot);
+            if (t_far <= 0.0) { continue; }
+            let t0 = max(t_near, 0.0);
+            let t1 = t_far;
+            // Three samples through the slab — cheap and enough to
+            // resolve the particles edge-on without ghosting.
+            let dt = (t1 - t0) / 3.0;
+            var accum = vec3<f32>(0.0);
+            var alpha = 0.0;
+            for (var s: i32 = 0; s < 3; s = s + 1) {
+                let t = t0 + dt * (f32(s) + 0.5);
+                let p = ray_origin + ray_dir * t;
+                let r = length(p.xz);
+                if (r < inner || r > outer) { continue; }
+
+                // Soft inner / outer edges
+                let edge_in  = smoothstep(inner, inner + width * 0.06, r);
+                let edge_out = 1.0 - smoothstep(outer - width * 0.06, outer, r);
+                let band = edge_in * edge_out;
+                if (band <= 0.0) { continue; }
+
+                // Kirkwood-like resonance gaps. Place two narrow depletion
+                // bands inside the belt — 2:1 (one-third in from outer edge)
+                // and 3:1 (two-thirds in). These read as visible gaps the
+                // real solar-system belt has.
+                let u_belt = (r - inner) / width;  // 0 at inner, 1 at outer
+                let gap_a = 1.0 - exp(-pow((u_belt - 0.40) / 0.05, 2.0));
+                let gap_b = 1.0 - exp(-pow((u_belt - 0.68) / 0.04, 2.0));
+                let gap = clamp(gap_a * gap_b, 0.0, 1.0);
+
+                // Out-of-plane Gaussian — particles thicken near the centre
+                // plane and thin to almost nothing at the slab edges.
+                let z_falloff = exp(-pow(p.y / half_thick, 2.0) * 2.0);
+
+                // Coarse grains: thresholded hash on a moderate grid.
+                let cell_c = floor(p.xz * 22.0);
+                let h_c = hash21(cell_c);
+                let h_c2 = hash21(cell_c + vec2<f32>(11.0, 73.0));
+                let coarse = step(0.74, h_c) * (0.4 + h_c2 * 0.6);
+
+                // Fine dust: tiny grains at much higher frequency, lower
+                // contribution, fills the gaps between rocks.
+                let cell_f = floor(p.xz * 96.0);
+                let h_f = hash21(cell_f);
+                let fine = step(0.94, h_f) * 0.45;
+
+                // Slow azimuthal streaks: aligned with orbital direction so
+                // the belt reads as motion-blurred dust rather than a tile.
+                let theta = atan2(p.z, p.x);
+                let streak = smoothstep(0.42, 0.62, sin(theta * 280.0 + r * 60.0) * 0.5 + 0.5) * 0.10;
+
+                let particle = (coarse + fine + streak) * z_falloff * gap * band;
+
+                let dust = vec3<f32>(0.58, 0.50, 0.42);
+                let sun_lit = 0.65 + 0.35 * max(dot(normalize(-p), normalize(vec3<f32>(0.4, 0.18, 0.7))), 0.0);
+                accum = accum + dust * particle * density * sun_lit;
+                alpha = alpha + particle * density * 0.3;
             }
+            color = color + accum * 0.7;
+            color = mix(color, color * 0.9, clamp(alpha, 0.0, 0.4));
         }
     }
 
