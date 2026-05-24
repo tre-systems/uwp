@@ -205,6 +205,16 @@ export class RendererClient {
     let lastRenderMs = 0
     const loop = (time: number) => {
       if (!this.planet || this.cancelled) return
+      // Skip the GPU pass entirely when an SVG overlay is covering the
+      // canvas. Saves battery on long Subsector / Surface sessions
+      // without affecting the user-visible scene.
+      const mode = viewMode.value
+      const gpuVisible = mode === 'system' || mode === 'detail'
+      if (!gpuVisible) {
+        lastRenderMs = time
+        this.animationFrame = requestAnimationFrame(loop)
+        return
+      }
       const minFrameMs = shouldThrottleRenderProfile(this.profile) ? 1000 / this.profile.targetFps : 0
       if (minFrameMs > 0 && time - lastRenderMs < minFrameMs) {
         this.animationFrame = requestAnimationFrame(loop)

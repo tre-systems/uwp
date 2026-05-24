@@ -113,7 +113,16 @@ export function RegionView() {
   if (!surfaceHex) return null
 
   const title = `${systemName(mix32(map.seed, mix32(hex.col, hex.row)))} (${hexCoordLabel(hex)})`
-  const subtitle = `${terrainLabel(surfaceHex.terrain)} · ${surfaceHex.temperature_k.toFixed(0)} K · lat ${surfaceHex.latitude_deg.toFixed(1)}°`
+  const tempC = surfaceHex.temperature_k - 273.15
+  const climateBand = climateBandLabel(surfaceHex.latitude_deg, surfaceHex.temperature_k)
+  const rainfall = rainfallBandLabel(surfaceHex.latitude_deg, surfaceHex.temperature_k, surfaceHex.terrain)
+  const subtitle = `${terrainLabel(surfaceHex.terrain)} · ${surfaceHex.temperature_k.toFixed(0)} K (${tempC.toFixed(0)} °C) · lat ${surfaceHex.latitude_deg.toFixed(1)}° · ${climateBand} · ${rainfall}`
+  // 32 x 16 hex grid covers a sphere ~12,000 km in diameter for the
+  // default Earth-class world. Translating one hex of that grid to its
+  // physical width gives a rough scale for the region card.
+  const planetRadiusKm = 6378
+  const hexAngularWidthRad = (2 * Math.PI) / 32
+  const hexKm = Math.round(planetRadiusKm * hexAngularWidthRad)
 
   return (
     <div
@@ -153,6 +162,20 @@ export function RegionView() {
               {l.text}
             </div>
           ))}
+          {/* Compass rose: north points toward the lit hemisphere. */}
+          <div class="region-compass" aria-hidden="true">
+            <svg viewBox="0 0 40 40" width="44" height="44">
+              <circle cx="20" cy="20" r="18" />
+              <polygon points="20,4 24,20 20,16 16,20" class="region-compass-north" />
+              <polygon points="20,36 24,20 20,24 16,20" class="region-compass-south" />
+              <text x="20" y="10" class="region-compass-letter" text-anchor="middle">N</text>
+            </svg>
+          </div>
+          {/* Scale bar: 1 hex ~ planet circumference / 32. */}
+          <div class="region-scale" aria-hidden="true">
+            <div class="region-scale-bar" />
+            <span>{hexKm.toLocaleString()} km</span>
+          </div>
         </div>
       </div>
     </div>
@@ -189,4 +212,30 @@ function mix32(a: number, b: number): number {
   h = ((h ^ (h >>> 16)) * 0x85ebca6b) >>> 0
   h = ((h ^ (h >>> 13)) * 0xc2b2ae35) >>> 0
   return h ^ (h >>> 16)
+}
+
+function climateBandLabel(latDeg: number, tempK: number): string {
+  const absLat = Math.abs(latDeg)
+  if (tempK > 320) return 'Hyperthermal'
+  if (tempK < 235) return 'Polar deep-freeze'
+  if (absLat < 23.5) return 'Tropical'
+  if (absLat < 35) return 'Subtropical'
+  if (absLat < 55) return 'Temperate'
+  if (absLat < 66.5) return 'Subarctic'
+  return 'Polar'
+}
+
+function rainfallBandLabel(latDeg: number, tempK: number, terrain: import('../domain/surfaceMap').Terrain): string {
+  // Caricature of the Hadley / Ferrel / polar precipitation belts: rain
+  // belt at the equator and around 55°, dry belts around the
+  // subtropical highs (~30°) and the poles.
+  if (terrain === 'Ocean') return 'Marine'
+  if (terrain === 'Ice') return 'Sublimating'
+  const absLat = Math.abs(latDeg)
+  if (tempK < 240) return 'Bone-dry frost'
+  if (tempK > 320) return 'Arid'
+  if (absLat < 12) return 'High rainfall'
+  if (absLat < 35) return 'Dry belt'
+  if (absLat < 60) return 'Moderate rainfall'
+  return 'Cold dry'
 }

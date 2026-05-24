@@ -6,6 +6,10 @@ import {
   loadPersistedPreferences,
 } from './appState/persistence'
 import {
+  installUrlStateMirror,
+  loadUrlState,
+} from './appState/urlState'
+import {
   paramsPatchFromUwpDigits,
   setParamsSnapshot,
   params,
@@ -20,7 +24,9 @@ installServiceWorkerAutoReload()
 // first render already reflects the user's last session, then start the
 // effect that mirrors future signal writes back to storage.
 loadPersistedPreferences()
+loadUrlState()
 installPreferencePersistence()
+installUrlStateMirror()
 // Project the default (or persisted) UWP into the visual params so the
 // planet the user sees on first frame matches the UWP code displayed in
 // the panel. Without this, population_intensity / sea_level / atmosphere
