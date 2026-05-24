@@ -82,6 +82,12 @@ export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
  *  inside this surface hex. Set via openRegionView; cleared by Escape /
  *  backdrop / explicit close. */
 export const regionHex = signal<SurfaceHexCoord | null>(null)
+/** Time-scale multiplier for the System scene's orbital animation.
+ *  0 = paused. 1 = real-time (a planet's orbital period maps to its
+ *  Kepler year). 5×/20× let the user watch a system evolve quickly.
+ *  Only consulted while viewMode === 'system'; detail-view scenes
+ *  always advance at 1× so clouds and waves never freeze. */
+export const systemTimeSpeed = signal<number>(1)
 export const renderQualityMode = signal<RenderQualityMode>('auto')
 export const renderPerformance = signal<RenderPerformanceSnapshot>({
   mode: 'auto',
@@ -118,6 +124,13 @@ export function togglePanel() {
 
 export function setViewMode(mode: ViewMode) {
   viewMode.value = mode
+}
+
+export function setSystemTimeSpeed(speed: number) {
+  // Clamp negatives to 0 so the renderer's dt stays non-negative;
+  // reverse-time would require flipping each scene's phase advance
+  // which isn't worth the extra plumbing.
+  systemTimeSpeed.value = Math.max(0, speed)
 }
 
 export function setRenderQualityMode(mode: RenderQualityMode) {

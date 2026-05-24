@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
-import { params, rerollPlanet, rerollSystemSeed, setSystemSeed, uwp } from '../appState'
+import { params, rerollPlanet, rerollSystemSeed, setSystemSeed, setSystemTimeSpeed, systemTimeSpeed, uwp } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
 import { systemName } from '../domain/names'
@@ -88,6 +88,7 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
             aria-label="System seed"
           />
         </div>
+        <TimeScrubber disabled={disabled} />
       </section>
 
       <section>
@@ -231,6 +232,40 @@ function RerollGlyph() {
       <path d="M13.5 8a5.5 5.5 0 1 1-1.8-4.1" />
       <path d="M13 2v3h-3" />
     </svg>
+  )
+}
+
+const SPEED_PRESETS: readonly { label: string; value: number; title: string }[] = [
+  { label: '⏸', value: 0, title: 'Pause' },
+  { label: '1×', value: 1, title: 'Real-time orbits' },
+  { label: '5×', value: 5, title: '5× speed' },
+  { label: '20×', value: 20, title: '20× speed - watch a year tick by' },
+]
+
+function TimeScrubber({ disabled }: { disabled: boolean }) {
+  const speed = systemTimeSpeed.value
+  return (
+    <div class="time-scrubber" role="group" aria-label="System animation speed">
+      <span class="time-scrubber-label">Time</span>
+      <div class="time-scrubber-buttons">
+        {SPEED_PRESETS.map((p) => {
+          const active = speed === p.value
+          return (
+            <button
+              key={p.value}
+              type="button"
+              class={`time-scrubber-btn${active ? ' active' : ''}`}
+              onClick={() => setSystemTimeSpeed(p.value)}
+              disabled={disabled}
+              title={p.title}
+              aria-pressed={active}
+            >
+              {p.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

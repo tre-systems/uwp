@@ -13,6 +13,7 @@ import {
   setSystemSnapshot,
   setViewMode,
   systemSeed,
+  systemTimeSpeed,
   viewMode,
   type RenderQualityMode,
   type ViewMode,
@@ -58,6 +59,13 @@ export class RendererClient {
   private readonly resizeObserver: ResizeObserver
   private debugHandle: Window['uwp'] | null = null
   private lastPointer = { x: 0, y: 0 }
+  // Simulation clock the renderer reads from. Advances every frame
+  // either at 1x (detail mode) or systemTimeSpeed (system mode), so
+  // a paused system view freezes planet positions while picking and
+  // hover stay aligned with the visible state. Initialised lazily on
+  // the first real frame.
+  private simTimeMs = 0
+  private simInitialised = false
   private dragging = false
   private fpsSampleStartMs = 0
   private fpsSampleFrames = 0
@@ -129,13 +137,18 @@ export class RendererClient {
     return (this.planet?.getSystem() as SolarSystem | undefined) ?? null
   }
 
-  pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null {
+  pickSystemPlanet(canvasX: number, canvasY: number, _timeMs: number): number | null {
     const planet = this.planet
     if (!planet) return null
     // Convert CSS pixels to backbuffer pixels (the renderer thinks in
     // device pixels via the canvas attribute width/height).
     const dpr = window.devicePixelRatio || 1
-    const idx = planet.pickSystemPlanet(canvasX * dpr, canvasY * dpr, timeMs)
+    // Ignore the wall-clock time the caller passed - the visible
+    // planet positions are anchored to the simulation clock the frame
+    // loop is feeding the renderer. Using wall-clock here would
+    // de-sync picking from the visible position whenever the user
+    // paused or sped up the system view.
+    const idx = planet.pickSystemPlanet(canvasX * dpr, canvasY * dpr, this.simTimeMs)
     return idx < 0 ? null : idx
   }
 
@@ -222,8 +235,21 @@ export class RendererClient {
       }
       const frameTimeMs = lastRenderMs > 0 ? time - lastRenderMs : 0
       lastRenderMs = time
+
+      if (!this.simInitialised) {
+        this.simTimeMs = time
+        this.simInitialised = true
+      } else {
+        // Pause / speed control only applies in system mode. In detail
+        // mode the simulation clock always advances at 1x so clouds
+        // and waves animate normally even if the user paused the
+        // system view earlier.
+        const speed = mode === 'system' ? systemTimeSpeed.value : 1
+        this.simTimeMs += frameTimeMs * speed
+      }
+
       try {
-        this.planet.render(time)
+        this.planet.render(this.simTimeMs)
       } catch (err) {
         setErrorMessage(String(err))
         return

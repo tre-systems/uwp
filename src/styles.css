@@ -295,6 +295,48 @@ html, body, #app {
   border-color: rgba(255, 255, 255, 0.18);
 }
 .sys-export-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.time-scrubber {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.time-scrubber-label {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.time-scrubber-buttons {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 1px;
+}
+.time-scrubber-btn {
+  font: inherit;
+  padding: 3px 8px;
+  color: rgba(255, 255, 255, 0.6);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  transition: background 120ms, color 120ms;
+}
+.time-scrubber-btn:hover:not(:disabled) {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.time-scrubber-btn.active {
+  color: var(--color-text);
+  background: rgba(110, 164, 255, 0.18);
+}
+.time-scrubber-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .sys-seed {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.45);
