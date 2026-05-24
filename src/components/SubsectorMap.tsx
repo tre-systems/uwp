@@ -12,7 +12,7 @@ import {
   type SubsectorHex,
   type TravelZone,
 } from '../domain/subsector'
-import { hexName } from '../domain/names'
+import { hexName, uniqueHexNames } from '../domain/names'
 
 // Subsector map styled after the classic legacy 2d6 Map
 // (https://sector-map.com): pure black field, thin grey flat-top
@@ -80,6 +80,13 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   for (const h of subsector.hexes) {
     hexByCoord.set(`${h.coord.col},${h.coord.row}`, h)
   }
+  // Pre-compute names that are guaranteed unique across the subsector so
+  // the visible map doesn't repeat the same world name on multiple hexes
+  // (a quirk of the splitmix32 + small CV inventory).
+  const nameMap = uniqueHexNames(
+    seed,
+    subsector.hexes.map((h) => ({ col: h.coord.col, row: h.coord.row })),
+  )
   return (
     <div class="subsector-map" role="region" aria-label={`Subsector ${subsector.allegiance}, seed ${subsector.seed}`}>
       <svg
@@ -124,6 +131,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
                 hex={hex}
                 selected={isSelected}
                 subsectorSeed={seed}
+                displayName={nameMap.get(key)}
               />
             )
           }),
@@ -141,9 +149,10 @@ interface HexCellProps {
   hex: SubsectorHex | null
   selected: boolean
   subsectorSeed: number
+  displayName?: string
 }
 
-function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProps) {
+function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName }: HexCellProps) {
   const label = `${col.toString().padStart(2, '0')}${row.toString().padStart(2, '0')}`
   if (!hex) {
     return (
@@ -160,7 +169,7 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProp
   const portClass = `port-${hex.uwp.starport.toLowerCase()}`
   const isRed = hex.travel_zone === 'Red'
   const isHighPop = hex.uwp.pop >= 9
-  const rawName = hex.name ?? hexName(subsectorSeed, col, row)
+  const rawName = displayName ?? hex.name ?? hexName(subsectorSeed, col, row)
   // legacy 2d6 convention: ALL CAPS for high-pop worlds, Title Case otherwise.
   const name = isHighPop ? rawName.toUpperCase() : titleCase(rawName)
   return (

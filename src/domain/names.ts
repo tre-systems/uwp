@@ -58,3 +58,39 @@ export function hexName(subsectorSeed: number, col: number, row: number): string
   const combined = ((subsectorSeed >>> 0) * 0x9e3779b9 + ((col << 16) | row)) >>> 0
   return systemName(combined)
 }
+
+/**
+ * Build a {col,row} -> unique-name map for an entire subsector. Walks the
+ * grid in scan order, asks `hexName` for each cell's deterministic name,
+ * and re-rolls (by perturbing the seed) on any duplicate until the name
+ * is unique within the subsector. Result is itself deterministic for a
+ * given subsector seed - just stably disambiguated.
+ *
+ * The grid is small (80 cells) and the inventory has ~100k base names,
+ * so the re-roll loop typically exits in 0 or 1 attempts per hex; the
+ * cap of 64 attempts is a defensive bound against pathological seeds.
+ */
+export function uniqueHexNames(
+  subsectorSeed: number,
+  coords: ReadonlyArray<{ col: number; row: number }>,
+): Map<string, string> {
+  const map = new Map<string, string>()
+  const used = new Set<string>()
+  // Sort so the disambiguation order is the same regardless of caller
+  // iteration order.
+  const sorted = [...coords].sort((a, b) => a.col - b.col || a.row - b.row)
+  for (const { col, row } of sorted) {
+    let candidate = hexName(subsectorSeed, col, row)
+    let attempts = 0
+    while (used.has(candidate) && attempts < 64) {
+      attempts++
+      // Mix the seed with the attempt counter so we walk the name space
+      // deterministically until we land on something unused.
+      const combined = ((subsectorSeed >>> 0) * 0x9e3779b9 + ((col << 16) | row) + attempts * 0x85EBCA6B) >>> 0
+      candidate = systemName(combined)
+    }
+    used.add(candidate)
+    map.set(`${col},${row}`, candidate)
+  }
+  return map
+}
