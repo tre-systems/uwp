@@ -76,6 +76,11 @@ struct SystemUniforms {
     belts: [[f32; 4]; MAX_SYSTEM_BELTS],
     companion: [f32; 4],
     companion_color: [f32; 4],
+    /// Per-star activity metadata used by the shader for class-specific
+    /// rendering. x = primary temperature (K), y = primary "warmth" factor
+    /// [-1..1] (negative = blue hot, positive = red cool), z = companion
+    /// temperature, w = companion warmth.
+    stars_meta: [f32; 4],
 }
 
 pub struct Renderer {
@@ -1071,8 +1076,12 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     let mut planet_positions = [[0.0f32; 3]; MAX_SYSTEM_PLANETS];
     for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
         // Mean motion at the *real* AU (so closer planets still orbit faster
-        // even if they got pushed out visually).
-        let omega = 0.20 / planet.orbit_au.powf(1.5);
+        // even if they got pushed out visually). Slowed ~5× from the first
+        // pass — and capped so hot-inner-orbit planets don't spin a full
+        // revolution in under 2 s of wall time. Kepler 3rd still drives the
+        // outer-to-inner ratio; the cap just slices off the unwatchably-fast
+        // upper end at small a.
+        let omega = (0.04 / planet.orbit_au.powf(1.5)).min(0.50);
         let theta = planet.phase_rad + time * omega;
         let r = display_orbit_r[i];
         let pos = [r * theta.cos(), 0.0, r * theta.sin()];
@@ -1102,8 +1111,9 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
             // Moon orbit display radius — outside the planet disc, scales
             // with the moon's orbital ring (compressed for visibility).
             let orbit_r = host_r * (1.6 + (moon.orbit_radii / 12.0).min(4.0));
-            // Spin moons quickly (visible motion at default time-scale).
-            let omega = 0.6 / (moon.orbit_radii).powf(1.5);
+            // Spin moons fast enough to read as moving, slow enough not to
+            // strobe. Capped like the planet omegas.
+            let omega = (0.15 / (moon.orbit_radii).powf(1.5)).min(0.40);
             let theta = moon.phase_rad + time * omega;
             let pos = [
                 host_pos[0] + orbit_r * theta.cos(),
@@ -1141,11 +1151,31 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
         n_b as f32,
     ];
 
+    // Warmth = R - B from the blackbody colour. Cool M-dwarfs are very red
+    // (R=1, B≈0.4 → warmth ≈ 0.6); hot O/B stars are blue (R≈0.7, B=1 →
+    // warmth ≈ -0.3). The shader reads warmth directly to drive granulation,
+    // sunspot density and limb-darkening intensity per spectral class.
+    let primary_warmth = sys.star.color[0] - sys.star.color[2];
+    out.stars_meta = [
+        sys.star.temperature_k,
+        primary_warmth,
+        sys.companion
+            .as_ref()
+            .map(|c| c.star.temperature_k)
+            .unwrap_or(0.0),
+        sys.companion
+            .as_ref()
+            .map(|c| c.star.color[0] - c.star.color[2])
+            .unwrap_or(0.0),
+    ];
+
     // Companion star. Orbits the system centre on its own (very slow) cycle —
     // a real binary takes years to decades to swing around. Time-scaled to
     // about 60 s for a 30-AU binary so the user sees visible motion.
     if let Some(comp) = &sys.companion {
-        let omega = 0.05 / comp.separation_au.powf(1.5);
+        // Slowed to match planets — a real binary at 30 AU takes ~165 years
+        // to swing around. We'd never finish a cycle but visible drift is fine.
+        let omega = (0.012 / comp.separation_au.powf(1.5)).min(0.05);
         let theta = comp.phase_rad + time * omega;
         let incl = comp.inclination_deg.to_radians();
         let r = comp.separation_au * SCENE_UNITS_PER_AU;

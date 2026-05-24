@@ -46,6 +46,9 @@ struct SystemData {
     belts: array<vec4<f32>, 4>,
     companion: vec4<f32>,
     companion_color: vec4<f32>,
+    /// x = primary temperature K, y = primary warmth (R-B from blackbody),
+    /// z = companion temperature K, w = companion warmth.
+    stars_meta: vec4<f32>,
 };
 
 struct VsOut {
@@ -339,6 +342,7 @@ fn render_star(
     radius: f32,
     base: vec3<f32>,
     intensity: f32,
+    warmth: f32,
     best_t: f32,
 ) -> StarHit {
     var h: StarHit;
@@ -349,14 +353,51 @@ fn render_star(
     if (t > 0.0 && t < best_t) {
         let hit_pos = orig + dir * t;
         let n = normalize(hit_pos - centre);
-        // Eddington limb darkening: I(μ) = I₀ (2 + 3μ)/5.
+        // Eddington limb darkening I(μ) = I₀ (a + b·μ + c·μ²). Standard
+        // photometric limb-darkening laws give stronger darkening for cooler
+        // stars (their photospheres are more opaque to grazing rays). We bias
+        // the cooler-end coefficient to read as a more saturated red limb on
+        // M-dwarfs and a near-uniform disc on O/B stars.
         let mu = max(dot(n, -dir), 0.0);
-        let limb = (2.0 + 3.0 * mu) / 5.0;
-        // Granulation — fbm on the surface for a textured photosphere; cell
-        // size scales inverse to radius so a tiny star still shows texture.
-        let grain = 0.86 + fbm3(n * 18.0, 3) * 0.28;
-        // Subtle reddened limb on cooler stars (just darken the limb).
-        h.color = base * limb * grain * intensity;
+        let cool_strength = clamp(warmth * 1.4, 0.0, 1.0);
+        let limb = mix((2.0 + 3.0 * mu) / 5.0,           // hot star, mild
+                       (0.4 + 1.6 * mu - 0.0 * mu * mu),  // cool star, strong
+                       cool_strength);
+
+        // Granulation cell size: small for hot blue stars (~smooth photosphere),
+        // big and chunky for cool M-dwarfs (Sol's granules are ~1500 km,
+        // M-dwarf granules can be ~10 % of the star's radius). The shader
+        // scale is in normal-space — smaller scale = larger visible cells.
+        let g_scale = mix(36.0, 8.0, cool_strength);
+        let g_amp   = mix(0.20, 0.45, cool_strength);
+        let grain   = 1.0 + (fbm3(n * g_scale, 3) - 0.5) * g_amp;
+
+        // Sunspots: F/G/K stars show small dark spots; M-dwarfs show large
+        // irregular active regions; O/B/A are nearly featureless. Spots cluster
+        // at sub-equatorial latitudes for solar-types and anywhere on M-dwarfs.
+        let spot_band = exp(-pow((abs(n.y) - 0.35), 2.0) * 18.0); // ±30° latitudes
+        let spot_field = fbm3(n * 6.0 + vec3<f32>(91.0, 7.0, -41.0), 4);
+        let solar_spot_mask = step(0.62, spot_field);
+        let m_spot_mask = smoothstep(0.48, 0.66, spot_field);
+        // Spot strength ramps up between A (warmth ~0) and M (warmth ~0.6).
+        let spot_strength = smoothstep(0.05, 0.55, warmth);
+        let solar_spots = solar_spot_mask * spot_band * 0.40;
+        let m_spots = m_spot_mask * 0.30;
+        let spots = mix(solar_spots, m_spots, smoothstep(0.30, 0.55, warmth))
+                  * spot_strength;
+
+        // Final surface multiplier — darker where spots fall.
+        let surface = grain * (1.0 - spots);
+
+        // Warmth-tint shift on the limb — bias toward red/orange at the edge
+        // for K/M, toward blue for hot stars (Doppler-like illusion).
+        let limb_tint_warm = vec3<f32>(1.10, 0.70, 0.40);
+        let limb_tint_cool = vec3<f32>(0.85, 0.92, 1.10);
+        let limb_tint = mix(limb_tint_cool, limb_tint_warm, cool_strength);
+        let edge = 1.0 - mu;
+        let tinted = mix(base, base * limb_tint, edge * 0.55);
+
+        h.color = tinted * limb * surface * intensity;
         h.t = t;
         h.hit = true;
     }
@@ -540,7 +581,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let primary = render_star(
         ray_origin, ray_dir,
         vec3<f32>(0.0), sys.info.y,
-        sys.star_color.rgb, sys.info.z, best_t,
+        sys.star_color.rgb, sys.info.z,
+        sys.stars_meta.y, best_t,
     );
     if (primary.hit) {
         hit_color = primary.color;
@@ -555,7 +597,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let companion = render_star(
             ray_origin, ray_dir,
             sys.companion.xyz, comp_r,
-            sys.companion_color.rgb, sys.companion_color.w, best_t,
+            sys.companion_color.rgb, sys.companion_color.w,
+            sys.stars_meta.w, best_t,
         );
         if (companion.hit) {
             hit_color = companion.color;
