@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-use crate::domain::subsector;
+use crate::domain::{subsector, surface_map};
 use crate::{params, renderer};
 
 #[wasm_bindgen]
@@ -84,6 +84,20 @@ impl Planet {
             Some(i) => i as i32,
             None => -1,
         }
+    }
+
+    /// Generate a Cepheus-style hex world map for the main world of the
+    /// current system. Returns the serialised SurfaceMap or null if the
+    /// system has no qualifying main world.
+    #[wasm_bindgen(js_name = getSurfaceMap)]
+    pub fn get_surface_map(&self) -> Result<JsValue, JsValue> {
+        let system = self.inner.system();
+        if system.main_world < 0 {
+            return Ok(JsValue::NULL);
+        }
+        let planet = &system.planets[system.main_world as usize];
+        let map = surface_map::generate(planet, &planet.climate, planet.seed);
+        serde_wasm_bindgen::to_value(&map).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 

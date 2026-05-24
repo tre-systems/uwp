@@ -10,13 +10,14 @@ import {
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
 import type { SolarSystem } from '../domain/system'
 import type { HexCoord, Subsector } from '../domain/subsector'
+import type { SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
 
 export * from '../params'
 export * from '../domain/cepheus'
 export { paramsPatchFromUwp, paramsPatchFromUwpDigits }
 
-export type ViewMode = 'subsector' | 'system' | 'detail'
+export type ViewMode = 'subsector' | 'system' | 'detail' | 'surface'
 export type RenderQualityMode = 'auto' | RenderProfileName
 
 export interface RenderPerformanceSnapshot {
@@ -39,6 +40,8 @@ export interface RendererControls {
    * canvas origin. Returns the 0-based planet index or `null` on miss.
    */
   pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null
+  /** Generate a Cepheus hex world map for the current main world. */
+  getSurfaceMap(): SurfaceMap | null
 }
 
 /** Hovered-body snapshot consumed by tooltips. Stays null when nothing
@@ -71,6 +74,8 @@ export const currentSubsector = signal<Subsector | null>(null)
 export const selectedHex = signal<HexCoord | null>(null)
 export const showJumpRoutes = signal<boolean>(true)
 export const hoverTarget = signal<HoverTarget | null>(null)
+export const currentSurfaceMap = signal<SurfaceMap | null>(null)
+export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
 export const renderQualityMode = signal<RenderQualityMode>('auto')
 export const renderPerformance = signal<RenderPerformanceSnapshot>({
   mode: 'auto',
@@ -172,6 +177,21 @@ export function pickSystemPlanet(
   timeMs: number,
 ): number | null {
   return rendererControls?.pickSystemPlanet(canvasX, canvasY, timeMs) ?? null
+}
+
+export function setSurfaceMap(map: SurfaceMap | null) {
+  currentSurfaceMap.value = map
+}
+
+export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null) {
+  selectedSurfaceHex.value = coord
+}
+
+/** Refresh the surface map from the current main world's climate. Cheap. */
+export function refreshSurfaceMap(): void {
+  const map = rendererControls?.getSurfaceMap() ?? null
+  currentSurfaceMap.value = map
+  selectedSurfaceHex.value = null
 }
 
 /**

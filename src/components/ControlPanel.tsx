@@ -19,6 +19,7 @@ import { ExportPanel } from './ExportPanel'
 import { GlossaryModal } from './GlossaryModal'
 import { SocietyEditor } from './SocietyEditor'
 import { SubsectorEditor } from './SubsectorEditor'
+import { SurfaceMapEditor } from './SurfaceMapEditor'
 import { StarportEditor } from './StarportEditor'
 import { SystemEditor } from './SystemEditor'
 import { PerformanceControls } from './PerformanceControls'
@@ -56,7 +57,7 @@ export function ControlPanel() {
 
       <aside id={panelId} class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open} inert={!open}>
         <header class="panel-header">
-          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : 'Main World'}</h1>
+          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : mode === 'surface' ? 'Surface' : 'Main World'}</h1>
           <div class="panel-actions">
             {mode === 'detail' && (
               <>
@@ -78,6 +79,10 @@ export function ControlPanel() {
 
         {mode === 'subsector' && (
           <SubsectorEditor disabled={controlsDisabled} />
+        )}
+
+        {mode === 'surface' && (
+          <SurfaceMapEditor disabled={controlsDisabled} />
         )}
 
         {mode === 'system' && sys && (

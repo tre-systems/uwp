@@ -27,7 +27,8 @@ export function Breadcrumb() {
       // Only pop if no modal is open. Modals already consume Escape
       // before bubbling up, so reaching this handler means the user
       // means to pop a view level.
-      if (mode === 'detail') setViewMode('system')
+      if (mode === 'surface') setViewMode('detail')
+      else if (mode === 'detail') setViewMode('system')
       else if (mode === 'system') setViewMode('subsector')
     }
     window.addEventListener('keydown', onKey)
@@ -70,6 +71,11 @@ export function Breadcrumb() {
         label: mainLabel,
         active: mode === 'detail',
         onClick: () => setViewMode('detail'),
+      })
+      crumbs.push({
+        label: 'Surface',
+        active: mode === 'surface',
+        onClick: () => setViewMode('surface'),
       })
     }
   }

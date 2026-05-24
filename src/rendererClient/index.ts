@@ -9,6 +9,7 @@ import {
   setParamsSnapshot,
   setRenderPerformanceSnapshot,
   setSystemSeed,
+  setSurfaceMap as setSurfaceMapSnapshot,
   setSystemSnapshot,
   setViewMode,
   systemSeed,
@@ -27,6 +28,7 @@ import {
   type RenderProfile,
 } from '../renderProfile'
 import type { SolarSystem } from '../domain/system'
+import type { SurfaceMap } from '../domain/surfaceMap'
 
 let wasmReady: Promise<void> | null = null
 
@@ -137,12 +139,24 @@ export class RendererClient {
     return idx < 0 ? null : idx
   }
 
+  getSurfaceMap(): SurfaceMap | null {
+    const planet = this.planet
+    if (!planet) return null
+    return (planet.getSurfaceMap() as SurfaceMap | null | undefined) ?? null
+  }
+
   private renderParams() {
     return { ...params.value, render_quality: this.profile.shaderQuality }
   }
 
   private refreshSystemSnapshot() {
     setSystemSnapshot(this.getSystem())
+    // The surface map is keyed to the main world, so refresh it whenever
+    // the system snapshot changes. Cheap (one hex-grid pass) and keeps
+    // the Surface view always showing the live main world.
+    if (this.planet) {
+      setSurfaceMapSnapshot(this.getSurfaceMap())
+    }
   }
 
   private installEffects() {
@@ -167,6 +181,7 @@ export class RendererClient {
       getSystem: () => this.getSystem(),
       setParams: (nextParams) => this.setParams(nextParams),
       pickSystemPlanet: (x, y, t) => this.pickSystemPlanet(x, y, t),
+      getSurfaceMap: () => this.getSurfaceMap(),
     })
     this.debugHandle = {
       setMode: (mode) => {

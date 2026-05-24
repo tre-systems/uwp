@@ -5,9 +5,9 @@ import {
   type ViewMode,
 } from '../appState'
 
-// Three-state segmented control. Detail is disabled until a system loads
-// so the user can't drop into a blank planet view. Future work can extend
-// this to four-way once Surface Map ships.
+// Four-state segmented control. Detail and Surface stay disabled until a
+// system loads (and Surface additionally requires a main world) so the
+// user can't drop into a blank view.
 
 interface ModeOption {
   mode: ViewMode
@@ -19,6 +19,7 @@ const OPTIONS: readonly ModeOption[] = [
   { mode: 'subsector', label: 'Subsector', hint: 'Browse the subsector hex grid' },
   { mode: 'system', label: 'System', hint: 'Overview of the current solar system' },
   { mode: 'detail', label: 'Main World', hint: 'Render the selected main world' },
+  { mode: 'surface', label: 'Surface', hint: 'Cepheus hex world map for the main world' },
 ]
 
 export function ViewModeToggle() {
@@ -27,7 +28,8 @@ export function ViewModeToggle() {
   return (
     <div class="view-mode-toggle" role="tablist" aria-label="View mode">
       {OPTIONS.map((opt) => {
-        const disabled = opt.mode === 'detail' && !sys
+        const hasMainWorld = sys != null && sys.main_world >= 0
+        const disabled = (opt.mode === 'detail' && !sys) || (opt.mode === 'surface' && !hasMainWorld)
         const isActive = mode === opt.mode
         return (
           <button
