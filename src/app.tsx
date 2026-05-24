@@ -25,21 +25,34 @@ export function App() {
   const mode = viewMode.value
   const subsector = currentSubsector.value
   const surfaceMap = currentSurfaceMap.value
-  const overlayClass = panelOpen.value ? 'subsector-overlay panel-open' : 'subsector-overlay'
+  const panelClass = panelOpen.value ? ' panel-open' : ''
+  // Both overlay views stay MOUNTED across tab switches so we don't pay
+  // the cost of remounting hundreds of SVG hex elements every time the
+  // user changes view mode. The inactive overlay is hidden via CSS
+  // (display:none) so it neither paints nor catches pointer events, but
+  // its Preact subtree survives - making tab swaps essentially instant.
+  const subsectorHidden = mode === 'subsector' ? '' : ' overlay-hidden'
+  const surfaceHidden = mode === 'surface' ? '' : ' overlay-hidden'
 
   return (
     <div class="app">
       <Canvas />
-      {mode === 'subsector' && (
-        <div class={overlayClass} role="region" aria-label="Subsector view">
-          <SubsectorMap subsector={subsector} />
-        </div>
-      )}
-      {mode === 'surface' && (
-        <div class={overlayClass} role="region" aria-label="Surface view">
-          <SurfaceMap map={surfaceMap} />
-        </div>
-      )}
+      <div
+        class={`subsector-overlay${panelClass}${subsectorHidden}`}
+        role="region"
+        aria-label="Subsector view"
+        aria-hidden={mode !== 'subsector'}
+      >
+        <SubsectorMap subsector={subsector} />
+      </div>
+      <div
+        class={`subsector-overlay${panelClass}${surfaceHidden}`}
+        role="region"
+        aria-label="Surface view"
+        aria-hidden={mode !== 'surface'}
+      >
+        <SurfaceMap map={surfaceMap} />
+      </div>
       <ViewTransition />
       {status === 'loading' && <LoadingOverlay />}
       {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}

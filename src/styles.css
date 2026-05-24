@@ -1092,6 +1092,12 @@ label.color input[type="color"]::-webkit-color-swatch {
 .subsector-overlay.panel-open {
   padding-right: 340px;
 }
+/* Mounted-but-hidden state for the inactive overlay. display:none skips
+   paint and pointer hit-testing entirely while leaving the Preact
+   subtree intact, so swapping tabs doesn't pay the SVG remount cost. */
+.subsector-overlay.overlay-hidden {
+  display: none;
+}
 .subsector-map {
   width: 100%;
   max-width: 760px;
