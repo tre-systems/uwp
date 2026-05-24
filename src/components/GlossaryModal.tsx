@@ -69,6 +69,22 @@ const ENTRIES: readonly GlossaryEntry[] = [
     term: 'Main world',
     defn: 'The most settled or significant body in a system; what the UWP describes. Marked with main world marker in the planet table.',
   },
+  {
+    term: 'Bases',
+    defn: 'Per-hex installations. Naval (military fleet), Scout (courier service courier base), Research (lab outpost), Aid (pilots Aid Society lounge).',
+  },
+  {
+    term: 'Travel zone',
+    defn: 'Per-hex safety advisory. Green is unmarked, Amber warns pilots off, Red is interdicted - typically a hot war or contagion.',
+  },
+  {
+    term: 'Jump route',
+    defn: 'A regular trade lane between two starports. Solid lines are jump-1 (one hex), dashed are jump-2 (two hexes) - long enough that only well-fitted ships can run them.',
+  },
+  {
+    term: 'PBG',
+    defn: 'Three-digit suffix on a Cepheus survey row: Population multiplier · Planetoid belts · Gas giants. Tells you what is fuelable on the way through.',
+  },
 ]
 
 export function GlossaryModal({ open, onClose }: GlossaryModalProps) {
