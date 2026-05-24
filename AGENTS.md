@@ -167,11 +167,55 @@ larger Rust compute work:
 - Detail and system uniform layout tests pin the WGSL contracts.
 - `recompute_planet_climate` refreshes climate summaries after planet mutation, and `reroll_planet` calls it even though current rerolls are surface-seed-only.
 
-Remaining cleanup debt:
+Remaining cleanup debt **— all [Codex] stream:**
 
 1. **Dirty-flag the detail uniform rebuild.** `detail::uniforms_for` still reconstructs the entire detail uniform struct each frame even when nothing but `time` and `rotation_t` have changed. Microsecond cost today, so this is cosmetic; revisit when CPU-side compute (pre-baked surfaces, tectonics, climate sampling per-frame) starts using real budget.
 
 2. **Narrow the remaining whole-struct parameter bridge.** `wasm_api::set_params` still accepts a complete `PlanetParams` deserialised from JS. Pick this up when Rust-side authored-world invariants exist and per-field validation has real semantics.
+
+## Design & UX Backlog
+
+The Claude Code stream's home base. All items here live in `src/components/`, `src/styles.css`, `src/app.tsx`, the leaf TS modules that drive presentation (`uwpDescriptions.ts`, render-profile labels, …), and the doc files that describe look-and-feel. None of these items touch Rust, WGSL, or `wasm_api.rs`. None should require new fields on the Rust DTOs — if a particular task does, raise it as a coordinated change and the Codex stream lands the DTO addition first.
+
+Roughly priority-ordered. Pick items based on which user-visible weakness is most visible at the time.
+
+1. **Visual design system.** Extract the ad-hoc colour, spacing and typography decisions in `styles.css` into a documented set of design tokens (CSS custom properties + a comment header explaining the system). Pick a heading scale, an explicit chrome / surface / text hierarchy, and a stable accent palette. Currently the panel is fine but feels engineering-first; a pass to make the chrome read as "legacy 2d6-style game tool" without losing the dark-WebGPU vibe pays off across every future component.
+
+2. **Four-way view toggle.** Today the toggle is a two-state button. With Subsector + Surface views coming, this needs to be a four-way segmented control (Subsector / System / Detail / Surface) with clear current-state styling, keyboard focus, and graceful collapse to a menu on narrow screens. Specify behaviour when a level isn't yet generated (e.g. Surface disabled until a main world is selected).
+
+3. **Breadcrumb / location header.** Persistent top-of-canvas indicator showing the current navigation depth ("Spinward Marches / 0304 Regina / Main World"). Clickable segments pop back up the hierarchy. Keyboard shortcut (`Esc` / `Alt+←`) mirror the visual affordance.
+
+4. **Hex inspector cards.** Both Subsector and Surface views need a per-hex info card on the side or below the map: UWP, trade codes, starport class, bases, allegiance, hex coordinates. Design it once, reuse across both views with a `HexInspector.tsx` component that takes a typed DTO.
+
+5. **Iconography pass.** Starport class indicators (A/B/C/D/E/X), base markers (N for Naval, S for Scout, R for Research, T for Aid), body-type icons in the system panel (gas giant / ice giant / terrestrial / rocky / frozen / inferno), trade-code chips. Define these as a single icon kit (SVG sprites or inline JSX) so styling stays consistent.
+
+6. **Empty / error / loading states.** Today an error becomes "Can't start the renderer"; loading is invisible (the canvas just stays black while WASM loads). Design a coherent system: WebGPU-unsupported card, WASM-loading skeleton, "no main world habitable" gentle empty state on the planet table, "no systems in this subsector" empty state, error toast for transient failures.
+
+7. **System editor presentation refresh.** The system panel currently shows the planet list and belt list as plain tables. Visit it with a designer's eye: better column alignment, hover affordances on planets, climate / habitability indicators rendered as small icons rather than raw numbers, main-world row visually distinct, reroll button less utilitarian.
+
+8. **Mobile and touch.** Audit the panel for mobile use: touch-friendly slider hit areas, drawer pattern instead of overlay, the view toggle as a tab bar, the subsector/surface maps pinch-zoomable on touch. The render canvas already handles pointer events; the panel needs the same treatment.
+
+9. **Accessibility.** Visible focus rings, ARIA labels on the icon-only buttons, sufficient contrast on the dark theme, `prefers-reduced-motion` respect for the view-mode transitions, keyboard reachability for every interactive element. Run an axe-core scan and fix what it surfaces.
+
+10. **Animation and transitions.** Today switching view modes is an instant cut. Cross-fade between Subsector ↕ System ↕ Detail ↕ Surface with a short (~200 ms) transition. Animate the four-way toggle indicator. Animate hex selection on the maps (subtle ring expansion). Respect `prefers-reduced-motion`.
+
+11. **Hover affordances.** Once Codex ships compute-roadmap item 6 (ray-pick), Claude Code surfaces it: hover tooltip on system bodies showing name/class/orbit, hover label on subsector hexes showing UWP, hover label on surface hexes showing terrain + settlement. Coordinate the appearance so the three views feel related.
+
+12. **First-run / onboarding.** Considered: when a user lands on the app cold, what should they see and do first? A subtle inline hint ("drag to orbit, scroll to zoom, ☰ for controls") that fades after the user interacts; a labelled "this is a randomly-generated G-class system; click ☉ System to see the whole solar system." Small-touch, large-impact.
+
+13. **Trade-code chip rendering.** Once Codex's subsector roadmap phase 9 ships (trade codes on the main world row), present them as small uppercase chips with hover tooltips for the full name. Reuse the iconography pass for consistency.
+
+14. **Performance panel polish.** The PerformanceControls panel exists but is functional rather than designed. Lay it out cleanly with a labelled effective profile, FPS as a visible number with a coloured indicator, the auto/manual segmented control as a proper UI element rather than radio buttons.
+
+15. **Settings persistence.** Persist render-quality preference, last-used view mode, and the open/closed panel state to `localStorage` so a returning user keeps their setup. (Pure TS; just a small hook around the existing signals.)
+
+16. **Help / glossary.** Cepheus / legacy 2d6 vocabulary (UWP, starport, hydrographics, trade codes, allegiance, jumps) is dense. A modal or sidebar reference that decodes a digit by hovering it would help non-legacy 2d6 players massively. Either a static glossary or context-aware ("hovering size digit → 'Size 8: roughly Earth-sized (8000 km)'").
+
+17. **Export visuals.** Once Codex ships compute-roadmap item 10 (image/animation export), design the export dialog: resolution presets, format selector, "save planet card" preset that bundles a planet thumbnail + UWP + trade codes for sharing on a VTT.
+
+18. **In-app credits + copy pass.** README is good; the app itself has no about / credits. Add a small "about" link in the panel footer. Tighten copy across every label (currently a mix of "UWP", "World profile", "Society", "View" — review for consistency).
+
+These are *the* Claude Code backlog. New UX work proposals belong here. When picking up an item, mark it in commit messages so it's traceable.
 
 ## Rust Compute Baseline
 
@@ -215,6 +259,29 @@ creates a natural landing zone for future climate/biome/tectonics work.
   - visual rendering controls.
 - Controls should make it clear when the user is editing continuous physical state versus editing the rounded UWP code.
 
+## Parallel Work Streams
+
+The backlog is split into two streams that can be worked on simultaneously by different agents without merge collisions:
+
+- **Stream A — UX / UI / Look & Feel (Claude Code):** owns the presentation layer. React/Preact components, styling, layout, interaction design, visual polish, copy, iconography, accessibility, mobile, animation, theme. Operates on `src/components/`, `src/styles.css`, `src/app.tsx`, and the leaf TS modules that exist only to drive the UI (e.g. UWP slider descriptions, render-profile labels). May read from app state and renderer-client APIs, but never modifies Rust or the WASM API surface.
+- **Stream B — Engineering / Compute / Data (Codex):** owns the data layer. Rust crate (`crates/planet-render/`), WGSL shaders, WASM API, app-state plumbing, tests, refactors, Cepheus rule implementations, generator changes, performance and CI. May surface new data through new actions/signals on `appState`, but does not write Preact components or design CSS.
+
+### Coordination Contract
+
+Both streams meet at three boundaries:
+
+1. **Serialised Rust → TS DTOs.** When Codex adds a field to a Rust domain struct, Claude Code consumes it as the matching TS DTO in `src/domain/*`. Stream A reads, Stream B writes. New fields must land in the DTO before Stream A can render them.
+2. **App-state actions and signals.** Codex adds typed actions and snapshot signals to `src/appState/`; Stream A calls those actions from components. Neither stream pokes the WASM object directly; the `RendererClient` is Codex's contract surface for stream A.
+3. **CSS class / data-attribute hooks.** When Stream A needs styling hooks for newly-rendered data (e.g. a `data-body-type="GasGiant"` attribute), Stream B exposes it on the produced DTOs or in the action that hands data to components. CSS lives entirely in Stream A; the *data* CSS keys off lives in Stream B.
+
+### How To Work In Parallel Safely
+
+- **Don't touch the other stream's files.** Stream A never edits `crates/planet-render/`, WGSL shaders, `wasm_api.rs`, or the Rust-test plumbing. Stream B never edits component JSX, `styles.css`, or panel layout.
+- **Shared files are negotiated:** `AGENTS.md`, `RENDERING.md`, `README.md`, `package.json`, `appState/index.ts`, `domain/*/types.ts`. When either stream changes one of these, the change should be small and obviously additive; if a refactor is needed, flag in the commit message which stream "owns" the change.
+- **DTO additions are Codex commits.** UI-only consumers of new DTO fields are Claude Code commits. They can land in either order — TS will compile with optional fields until both sides exist.
+- **CI gates both streams.** `npm run verify:fast` covers TS tests + Rust fmt + Rust check; `npm run verify` is the full gate. Either stream's commit must pass both, even if its own changes are entirely in the other domain (because the husky pre-commit / pre-push hooks run the full thing).
+- **When in doubt about ownership, look at the roadmap tags below.** Every item in every roadmap is tagged `[Codex]`, `[Claude]`, or `[Coord]` (needs both, sequenced).
+
 ## Performance Principles
 
 - Mobile and low-power devices matter. Keep adaptive render profiles and continue pushing toward runtime downshifts when frame time is poor.
@@ -228,25 +295,25 @@ The current CPU-side workload is trivial — mesh once at startup, microseconds 
 
 These are the high-ROI Rust compute opportunities, roughly in priority order. Don't do them speculatively — pick the next one when a feature actually needs it.
 
-1. **Procedural surface pre-bake.** Biggest win by a wide margin. `planet.wgsl` currently recomputes 7-octave FBM + plate-tectonics Voronoi + crater layers + biome blending per fragment per frame, which is wasteful — the surface doesn't change while you orbit. Bake six 2k×2k cube-map faces (heightmap + biome + feature mask) per seed in Rust with `rayon`. Shader becomes cheap texture lookups; per-pixel budget drops 5–10×, freeing space for finer detail, real river networks, or higher resolution at the same framerate. Natural pre-bake step for any modern planet renderer.
+1. **Procedural surface pre-bake.** **[Codex]** Biggest win by a wide margin. `planet.wgsl` currently recomputes 7-octave FBM + plate-tectonics Voronoi + crater layers + biome blending per fragment per frame, which is wasteful — the surface doesn't change while you orbit. Bake six 2k×2k cube-map faces (heightmap + biome + feature mask) per seed in Rust with `rayon`. Shader becomes cheap texture lookups; per-pixel budget drops 5–10×, freeing space for finer detail, real river networks, or higher resolution at the same framerate. **Hard prerequisite for the World Surface Map Roadmap.**
 
-2. **Climate / habitability simulation.** Initial version implemented: a coarse latitude-band energy-balance model runs once per generated planet and feeds main-world selection. Cleanup-backlog item 4 covers re-running it on `reroll_planet` and future per-planet setters so the panel never shows stale habitability. Next functional iterations: seasonal axial-tilt sampling (sample insolation at multiple obliquity-modulated points around the orbit, average), precipitation bands (latitude-dependent Hadley / Ferrel / polar cells), ocean heat capacity (sea-fraction-weighted thermal inertia so temperate worlds stop reaching equilibrium in a single iteration), and a shader-facing biome field uploaded as a small texture so `planet.wgsl` can colour continents physically instead of from fbm.
+2. **Climate / habitability simulation.** **[Codex]** Initial version implemented. Next functional iterations: seasonal axial-tilt sampling (sample insolation at multiple obliquity-modulated points around the orbit, average), precipitation bands (latitude-dependent Hadley / Ferrel / polar cells), ocean heat capacity (sea-fraction-weighted thermal inertia so temperate worlds stop reaching equilibrium in a single iteration), and a shader-facing biome field uploaded as a small texture so `planet.wgsl` can colour continents physically instead of from fbm.
 
-3. **Tectonics simulation.** Run plate motion + uplift + erosion for N timesteps to produce real continents, mountain belts, ocean basins. Replace the noise-derived continents with a physically-motivated heightmap. Heavy compute, exactly where Rust shines.
+3. **Tectonics simulation.** **[Codex]** Run plate motion + uplift + erosion for N timesteps to produce real continents, mountain belts, ocean basins. Replace the noise-derived continents with a physically-motivated heightmap. Heavy compute, exactly where Rust shines.
 
-4. **Multi-scatter atmosphere LUT** (Bruneton & Neyret 2008 / Hillaire 2020). The full method precomputes a 4D scattering LUT once per atmosphere config. We currently raymarch single-scattering per fragment with a constant multi-scatter hack. Real LUT gives proper Earth-from-orbit blue rim, twilight bands, and is dramatically cheaper at render time. Rust precomputes on parameter change, stores into GPU textures.
+4. **Multi-scatter atmosphere LUT** (Bruneton & Neyret 2008 / Hillaire 2020). **[Codex]** The full method precomputes a 4D scattering LUT once per atmosphere config. We currently raymarch single-scattering per fragment with a constant multi-scatter hack. Real LUT gives proper Earth-from-orbit blue rim, twilight bands, and is dramatically cheaper at render time. Rust precomputes on parameter change, stores into GPU textures.
 
-5. **Asteroid belt as real particles.** Currently a noise-mottled band. Spawn 5–50k actual particles with orbital elements (eccentricity, inclination, Kirkwood gaps from mean-motion resonance with the nearest gas giant), integrate them on CPU, render as a sprite/point buffer. Looks dramatically better and is physically motivated.
+5. **Asteroid belt as real particles.** **[Codex]** Currently a noise-mottled band. Spawn 5–50k actual particles with orbital elements (eccentricity, inclination, Kirkwood gaps from mean-motion resonance with the nearest gas giant), integrate them on CPU, render as a sprite/point buffer. Looks dramatically better and is physically motivated.
 
-6. **Hover / click ray-pick.** Required for "hover a planet to see its name, click to fly there." Project planet positions to screen space (or ray-test against the bodies) on CPU each frame. The data is right there; pick the nearest hit and feed it to the UI as a signal.
+6. **Hover / click ray-pick.** **[Coord]** Required for "hover a planet to see its name, click to fly there." Codex implements CPU ray-test or screen-space projection, exposes hit info as an `appState` signal. Claude Code renders the resulting tooltip / hover affordances and the click-to-fly camera transition.
 
-7. **N-body / Kepler propagator with binary perturbations.** Real Kepler propagator with binary-induced eccentricity oscillations and mean-motion resonance lockup. Replaces the current fixed circular ω. Few thousand ops per frame.
+7. **N-body / Kepler propagator with binary perturbations.** **[Codex]** Real Kepler propagator with binary-induced eccentricity oscillations and mean-motion resonance lockup. Replaces the current fixed circular ω. Few thousand ops per frame.
 
-8. **Star spectral synthesis.** Replace the polynomial blackbody-color fit with a proper Planck integral × CIE color-matching for per-class star colors and limb chromaticity. Pre-compute per spectral type into a small table.
+8. **Star spectral synthesis.** **[Codex]** Replace the polynomial blackbody-color fit with a proper Planck integral × CIE color-matching for per-class star colors and limb chromaticity. Pre-compute per spectral type into a small table.
 
-9. **Long-timescale stability check.** Add a Wisdom-Holman or Mercury-style integrator that runs each generated system forward by ~100 Myr as a unit test, verifying no system flies apart. Catches edge cases the per-pair Hill stability test misses.
+9. **Long-timescale stability check.** **[Codex]** Add a Wisdom-Holman or Mercury-style integrator that runs each generated system forward by ~100 Myr as a unit test, verifying no system flies apart. Catches edge cases the per-pair Hill stability test misses.
 
-10. **Image / animation export.** Offscreen rendering at custom resolution, animation timelines, batch-rendering all planets in a system to a sprite atlas for fast switching. Rust orchestrates an offscreen render with different uniform parameters and ships PNG bytes back to JS.
+10. **Image / animation export.** **[Coord]** Codex builds the offscreen rendering pipeline (offscreen target, animation timeline, PNG encode → JS). Claude Code designs the export UI (resolution presets, format options, download flow).
 
 When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
 
@@ -310,23 +377,23 @@ src/appState/
 
 Tackle in this order; each phase is independently shippable and small enough to fit one PR.
 
-1. **Rust subsector data model + generator.** Add `domain/subsector.rs` with `Subsector { hexes: [[Option<SubsectorHex>; 8]; 10] }` (or a flat `Vec<SubsectorHex>` keyed by `HexCoord`). Per-hex generation: roll presence, derive system seed deterministically from `(subsector_seed, col, row)`, run `system::generate` for the main world only (defer full planet list until the user actually visits the hex). Unit tests: occupancy ratio across many seeds matches the rules, deterministic for a given seed.
+1. **Rust subsector data model + generator.** **[Codex]** Add `domain/subsector.rs` with `Subsector { hexes: [[Option<SubsectorHex>; 8]; 10] }` (or a flat `Vec<SubsectorHex>` keyed by `HexCoord`). Per-hex generation: roll presence, derive system seed deterministically from `(subsector_seed, col, row)`, run `system::generate` for the main world only (defer full planet list until the user actually visits the hex). Unit tests: occupancy ratio across many seeds matches the rules, deterministic for a given seed.
 
-2. **Trade-code, gas-giant, belt, bases per hex.** Compute these once per hex from the lazily-generated `SolarSystem`. Bases follow Cepheus tables; trade codes go through the existing TS rules at the JS boundary. Unit tests: known UWP → expected trade codes (we already have those tests, just exercise them on subsector output).
+2. **Trade-code, gas-giant, belt, bases per hex.** **[Codex]** Compute these once per hex from the lazily-generated `SolarSystem`. Bases follow Cepheus tables; trade codes go through the existing TS rules at the JS boundary. Unit tests: known UWP → expected trade codes (we already have those tests, just exercise them on subsector output).
 
-3. **WASM API + TS DTOs.** Expose `setSubsectorSeed(seed)`, `getSubsector()`, `selectHex(col, row)` from `wasm_api.rs`. The select call should hand the chosen hex's system seed to the existing system pipeline so `currentSystem` updates and the existing System view renders it. TS DTOs in `src/domain/subsector/`.
+3. **WASM API + TS DTOs.** **[Codex]** Expose `setSubsectorSeed(seed)`, `getSubsector()`, `selectHex(col, row)` from `wasm_api.rs`. The select call should hand the chosen hex's system seed to the existing system pipeline so `currentSystem` updates and the existing System view renders it. TS DTOs in `src/domain/subsector/`.
 
-4. **App state + renderer client.** New signals `currentSubsector`, `selectedHex`. New actions in `appState` that delegate to the renderer client. View mode enum becomes `'subsector' | 'system' | 'detail'`. Three-state toggle button instead of two.
+4. **App state + renderer client.** **[Codex]** New signals `currentSubsector`, `selectedHex`. New actions in `appState` that delegate to the renderer client. View mode enum becomes `'subsector' | 'system' | 'detail'`.
 
-5. **SVG subsector map UI.** New `SubsectorMap.tsx` renders 80 hex cells with `polygon` SVG elements, system dots, UWP labels, allegiance shading, base markers, travel-zone outlines. Clicking a hex dispatches `selectHex(coord)` → triggers system load → view mode auto-switches to System. Add a `SubsectorEditor.tsx` panel with subsector seed, density, allegiance overview, occupied-hex count.
+5. **SVG subsector map UI.** **[Claude]** New `SubsectorMap.tsx` renders 80 hex cells with `polygon` SVG elements, system dots, UWP labels, allegiance shading, base markers, travel-zone outlines. Clicking a hex dispatches `selectHex(coord)` → triggers system load → view mode auto-switches to System. Add a `SubsectorEditor.tsx` panel with subsector seed, density, allegiance overview, occupied-hex count. Three-state toggle component instead of two.
 
-6. **Jump routes overlay.** Compute jump-1 / jump-2 connectivity in Rust; render as SVG `line` elements on the map with class-based colouring (green = main route, yellow = jump-2). Adds a "show routes" toggle in the editor.
+6. **Jump routes overlay.** **[Coord]** Codex computes jump-1 / jump-2 connectivity in Rust and exposes it on the `Subsector` DTO. Claude Code renders SVG `line` elements with class-based colouring (green = main route, yellow = jump-2) and adds the "show routes" toggle to the editor.
 
-7. **Navigation polish.** Breadcrumb-style header ("Spinward Marches / Hex 0304 / Main World") so the user always knows which level they're at. Back buttons / keyboard shortcuts (`Esc` to pop up a level).
+7. **Navigation polish.** **[Claude]** Breadcrumb-style header ("Spinward Marches / Hex 0304 / Main World") so the user always knows which level they're at. Back buttons / keyboard shortcuts (`Esc` to pop up a level).
 
-8. **Optional: WebGPU subsector renderer.** Port the SVG view to a WGSL fullscreen-triangle scene (`scenes/subsector.rs` + `subsector.wgsl`) so the map shares the starfield backdrop and AGX tonemap with the existing system/detail views. Only worth doing once the SVG version has stable UX; the data model and picking logic are the hard part and stay in TS/Rust either way.
+8. **Optional: WebGPU subsector renderer.** **[Coord]** Codex ports the data path to a WGSL fullscreen-triangle scene (`scenes/subsector.rs` + `subsector.wgsl`); Claude Code restyles the view to match the WebGPU look (shared starfield backdrop, AGX tonemap consistency). Only worth doing once the SVG version has stable UX.
 
-9. **Trade codes column in the system panel.** Once subsectors are in, the system editor should surface trade codes on the main world row so the Cepheus game data is visible without bouncing back to the subsector view.
+9. **Trade codes column in the system panel.** **[Claude]** Once subsectors are in, the system editor should surface trade codes on the main world row so the Cepheus game data is visible without bouncing back to the subsector view.
 
 ### Phase 1 Acceptance Criteria
 
@@ -401,21 +468,21 @@ src/components/
 
 Tackle in this order; the pre-bake must land before phase 1.
 
-1. **Rust surface-map generation from pre-baked data.** `surface_map::generate(planet_id, pre_bake) -> SurfaceMap`. Walk a 32×16 (or configurable) hex grid in equal-area projection, sample the pre-baked cube-map at each hex centre, classify terrain from elevation + biome + climate. Unit tests: ocean fraction matches the pre-bake's water fraction, polar caps within ice-latitude, no NaN hexes.
+1. **Rust surface-map generation from pre-baked data.** **[Codex]** `surface_map::generate(planet_id, pre_bake) -> SurfaceMap`. Walk a 32×16 (or configurable) hex grid in equal-area projection, sample the pre-baked cube-map at each hex centre, classify terrain from elevation + biome + climate. Unit tests: ocean fraction matches the pre-bake's water fraction, polar caps within ice-latitude, no NaN hexes.
 
-2. **Starport placement.** Pick one hex meeting: habitable, coastal-or-plain, on the lit hemisphere if the world is tidally locked, ideally near the population centroid. Deterministic for a given seed. Unit test: starport hex is one of the more habitable cells.
+2. **Starport placement.** **[Codex]** Pick one hex meeting: habitable, coastal-or-plain, on the lit hemisphere if the world is tidally locked, ideally near the population centroid. Deterministic for a given seed. Unit test: starport hex is one of the more habitable cells.
 
-3. **City placement.** Count from population code. Poisson-disc-sampled positions weighted by habitability and avoiding ocean/mountain. Unit tests: count matches UWP, spread reasonable (min spacing).
+3. **City placement.** **[Codex]** Count from population code. Poisson-disc-sampled positions weighted by habitability and avoiding ocean/mountain. Unit tests: count matches UWP, spread reasonable (min spacing).
 
-4. **WASM API + TS DTOs.** Expose `getSurfaceMap()` from `wasm_api.rs`; TS DTOs in `src/domain/surfaceMap/`. Cache the map in Rust (it doesn't change while the world parameters are fixed); recompute only when the world or its surface pre-bake changes.
+4. **WASM API + TS DTOs.** **[Codex]** Expose `getSurfaceMap()` from `wasm_api.rs`; TS DTOs in `src/domain/surfaceMap/`. Cache the map in Rust (it doesn't change while the world parameters are fixed); recompute only when the world or its surface pre-bake changes.
 
-5. **App state + renderer client.** Signals `currentSurfaceMap`, `selectedSurfaceHex`. View mode enum extends to `'surface'`. View toggle becomes a four-way segmented control.
+5. **App state + renderer client.** **[Codex]** Signals `currentSurfaceMap`, `selectedSurfaceHex`. View mode enum extends to `'surface'`. Renderer client exposes `selectSurfaceHex` and a `pointCameraAt(latitude, longitude)` helper used by phase 7.
 
-6. **SVG surface hex map UI.** `SurfaceMap.tsx` renders the 512-ish hex grid; terrain types coloured per biome; starport marker (★) and city markers (●, size scaled by tier). `SurfaceMapEditor.tsx` shows the inspector for the selected hex with biome / climate / settlements. Click → `selectSurfaceHex`. Equal-area or interrupted-projection is fine; what matters is hex-to-globe correspondence.
+6. **SVG surface hex map UI.** **[Claude]** `SurfaceMap.tsx` renders the 512-ish hex grid; terrain types coloured per biome; starport marker (★) and city markers (●, size scaled by tier). `SurfaceMapEditor.tsx` shows the inspector for the selected hex with biome / climate / settlements. Click → `selectSurfaceHex`. Four-way segmented control wires up the new view mode.
 
-7. **Globe ↔ surface bridge.** Clicking "show on globe" on a hex rotates the detail-render camera to face that latitude/longitude. Hovering a hex on the surface map highlights a corresponding latitude band on the globe. This is the payoff for getting the data sources unified.
+7. **Globe ↔ surface bridge.** **[Coord]** Codex implements the camera-rotation helper and lat/long projection math in Rust + the renderer-client method. Claude Code adds the "show on globe" affordance, the hover-to-highlight-latitude-band interaction on the surface map, and the matching CSS / animation.
 
-8. **Optional WebGPU port.** Same as the subsector roadmap: once the SVG version's UX is stable, the surface map can move into the WebGPU canvas as a fullscreen-triangle scene with shared starfield/tonemap, so users can use canvas-native interactions (pinch zoom, etc.).
+8. **Optional WebGPU port.** **[Coord]** Same split as the subsector roadmap: Codex moves data path to a WGSL fullscreen-triangle scene, Claude Code restyles. Only worth doing once the SVG version's UX is stable.
 
 ### Phase 1 Acceptance Criteria
 
@@ -444,9 +511,10 @@ npm run verify:fast
 
 The Husky pre-commit hook runs `npm run verify:fast`, which covers TS unit
 tests, Rust formatting, and native Rust checking. Before pushing, run the full
-gate with `npm run verify`; the Husky pre-push hook runs the same command and
-mirrors CI: tests, typecheck, audit, native+wasm Rust checks, Rust tests,
-native+wasm clippy with warnings denied, and the production build.
+gate with `npm run verify`; the Husky pre-push hook runs the same command:
+tests, typecheck, audit, native+wasm Rust checks, Rust tests, native+wasm
+clippy with warnings denied, the production build, and the Playwright smoke
+suite against the production preview.
 
 If a check cannot be run, say so explicitly. Warnings in Rust should be treated as design feedback, not background noise.
 
