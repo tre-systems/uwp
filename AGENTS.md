@@ -2,6 +2,28 @@
 
 Guidance for coding agents working in this repository.
 
+## Current Status
+
+**Planned work is complete.** Every roadmap section below has a v1
+shipped end-to-end:
+
+- Cleanup Backlog → renderer decomposition shipped; one conditional
+  follow-on (narrow the whole-struct param bridge) waits on Rust-side
+  invariants.
+- Design & UX Backlog → all 20 items shipped (see commit refs below).
+- Subsector Roadmap → phases 1-7 shipped; phase 8 is the doc's own
+  "Optional: WebGPU port", conditional on perf / consistency need.
+- World Surface Map Roadmap → phases 1-7 shipped; phase 8 is the
+  matching optional WGSL port.
+- Rust Compute Roadmap → 6 items shipped, 4 partial (v1 ships, the
+  extensions are conditional), 2 conditional (GPU integration of the
+  pre-bake; tectonics evolution).
+
+The remaining items in this file are *conditional future ideas* the
+project may pick up when a specific need surfaces. The doc's own rule
+applies: don't do them speculatively.
+
+
 ## Product Intent
 
 UWP is intended to support Cepheus Engine / legacy 2d6-style games. The app should generate and visualize whole stellar systems for play, not just pretty standalone planets.
