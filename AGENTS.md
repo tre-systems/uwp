@@ -225,6 +225,20 @@ Presentation layer work — `src/components/`, `src/styles.css`, `src/app.tsx`, 
 
 20. **Surface hex inspector.** `SurfaceMapEditor` reuses the inspector shape for per-hex terrain / latitude / temperature / elevation, with a "Main starport sits here" callout when the selected cell is the starport. → `6785193`
 
+21. **Editable seed inputs.** Both the Subsector and System panels expose the raw seed as a text field that commits on Enter or blur and accepts hex (`0xCAFE`). Pairs with `1`/`2`/`3`/`4` keyboard shortcuts on the view toggle (suppressed inside inputs / modals). → `fc1661a`
+
+22. **Body inspector.** Click any row in the System editor's planet table to expand a derived-properties strip — radius, surface gravity, density, escape velocity, year length, day length, eccentricity, inclination — plus a per-moon list with sizes and orbital radii. Reroll dismisses the expansion so stale numbers can't flash. → `3611bc1`
+
+23. **Subsector text export.** `subsectorToText` renders a legacy 2d6-Map-style fixed-width table (Name / Hex / UWP / Bases / Codes / Zone / PBG / Allegiance). The Subsector panel ships two buttons that copy it to the clipboard or download it as a `.tab` file. → `c82e36f`
+
+24. **Card export — main-world stats block.** Detail-mode `Planet card` PNGs now include the body inspector numbers (radius, gravity, density, escape velocity, year, day) so a player handout is one click away. → `a922868`
+
+25. **Hover tooltip — year and day.** System-view hover already showed mass / orbit / temperature; the second-line sub-meta now also surfaces orbital period (days / months / years) and rotation period (minutes / hours / days). → `2c394b4`
+
+26. **System time scrubber.** Pause / 1× / 5× / 20× cluster in the System editor drives a simulation clock the renderer reads instead of wall-clock time. Detail-view scenes always advance at 1× so clouds and waves never freeze when the system is paused. Picking uses the same sim clock so hover / click stay aligned with the visible planet position. → `631badb`
+
+27. **Glossary expansion.** Bases, Travel zone, Jump route, PBG entries added so a player coming in cold doesn't have to leave the app to read the Cepheus SRD. → `8f9e7df`
+
 ### Open
 
 No items currently open. New UX work proposals belong in this section. When picking up an item, mark it in commit messages so it stays traceable.
