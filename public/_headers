@@ -1,0 +1,44 @@
+# Cloudflare Workers Assets reads this file at deploy time and applies the
+# headers to matching requests. The point is to make production testing
+# reliable immediately after a deploy: hashed asset files cache forever
+# (their filenames change on every build), and the unhashed entry points
+# (index.html, the service worker, the manifest) revalidate on every load
+# so a returning user picks up the new build on first request.
+
+# Hashed JS / CSS / WASM under /assets/ — Vite includes the content hash
+# in the filename, so a content change means a new URL. Safe to cache
+# forever; the immutable directive tells the browser to skip even
+# revalidation requests.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Workbox runtime — has a hash in the filename like
+# workbox-9c191d2f.js, so also safe to cache forever.
+/workbox-*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service worker — must revalidate on every navigation so a new SW is
+# picked up immediately. Combined with VitePWA's autoUpdate +
+# skipWaiting + clientsClaim, this gives us instant turnover after a
+# deploy without users having to hard-refresh.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+/registerSW.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Web app manifest — small, infrequently changes, but never long-cache
+# (PWA tooling checks it on install / update).
+/manifest.webmanifest
+  Cache-Control: no-cache, must-revalidate
+
+# Entry HTML — always revalidate so the user gets the current index.html
+# (which in turn loads the current hashed JS bundle).
+/
+  Cache-Control: no-cache, must-revalidate
+/index.html
+  Cache-Control: no-cache, must-revalidate
+
+# Site icon — moderately cached but not forever, since icon updates
+# happen occasionally.
+/icon.svg
+  Cache-Control: public, max-age=86400

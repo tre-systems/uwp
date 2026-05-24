@@ -80,14 +80,15 @@ cp /tmp/wasm-pack-v0.14.0-aarch64-apple-darwin/wasm-pack ~/.cargo/bin/
 | `npm run preview`       | serve the production `dist/` locally                        |
 | `npm run typecheck`     | TypeScript only (also rebuilds dev WASM for .d.ts)          |
 | `npm test`              | Vitest unit tests for the TS layer                          |
+| `npm run test:e2e`      | Playwright smoke tests against the production preview        |
 | `npm run verify:fast`   | fast local gate used by the Husky pre-commit hook           |
-| `npm run verify`        | full CI-equivalent gate used by the Husky pre-push hook     |
+| `npm run verify`        | full local gate used by the Husky pre-push hook             |
 | `npm run deploy`        | full release build + `wrangler deploy`                      |
 
 Husky installs Git hooks via `npm install`. The pre-commit hook runs the fast
 gate: TS unit tests, Rust format, and native Rust check. The pre-push hook runs
 the full gate: tests, typecheck, audit, Rust format/check/test/clippy for native
-and wasm targets, then the production build.
+and wasm targets, the production build, then the Playwright smoke suite.
 
 Shader changes need `npm run build:wasm:dev` (or full `npm run dev`) then a
 manual browser reload — Vite HMR can't reload a WASM module.
@@ -99,6 +100,45 @@ To validate WGSL syntax without a full WASM build:
 ```bash
 cargo test --manifest-path crates/planet-render/Cargo.toml shaders_parse_and_validate
 ```
+
+## Deployment
+
+`main` auto-deploys to <https://uwp.tre.systems> via the CI workflow in
+`.github/workflows/ci.yml`. Every push to `main` runs the full check suite,
+then a separate `deploy` job downloads the build artifact and runs
+`wrangler deploy`. PRs do not deploy.
+
+Required GitHub Actions secrets on the repo:
+
+- `CLOUDFLARE_API_TOKEN` — Workers Edit scope on the `uwp` worker.
+- `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
+
+A manual deploy from a developer machine is still supported via
+`npm run deploy`; it rebuilds and pushes the local working tree.
+
+### Verifying the live build after deploy
+
+Every build is stamped with a build ID composed from the commit SHA (when
+built in CI) or the local git short SHA (when built locally). The ID is:
+
+- Logged to the browser console on startup: `UWP build <id>`.
+- Exposed as `window.__UWP_BUILD_ID` for manual or automated probing.
+
+Once a CI deploy completes, opening <https://uwp.tre.systems> in a fresh
+browser tab should immediately serve the new build because:
+
+- Hashed JS/CSS/WASM filenames force a network fetch on content change.
+- `public/_headers` instructs Cloudflare to serve `index.html`, `sw.js`,
+  `registerSW.js`, and `manifest.webmanifest` with `Cache-Control:
+  no-cache`, so the entry document and service worker are always
+  revalidated.
+- VitePWA's service worker is configured with `skipWaiting` +
+  `clientsClaim`, so a new SW activates and takes over open tabs on first
+  load rather than waiting for every tab to close.
+
+If a returning user still sees an old build, the fastest diagnostic is to
+read `window.__UWP_BUILD_ID` in the console — that exposes the running
+build regardless of how it was loaded.
 
 ## Browser support
 
