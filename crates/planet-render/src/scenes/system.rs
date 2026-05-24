@@ -141,15 +141,17 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     }
 
     let mut planet_positions = [[0.0f32; 3]; MAX_SYSTEM_PLANETS];
+    let kick = binary_kick(sys, time);
     for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
-        let omega = (0.04 / planet.orbit_au.powf(1.5)).min(0.50);
-        let theta = planet.phase_rad + time * omega;
-        let r = display_orbit_r[i];
-        let pos = [r * theta.cos(), 0.0, r * theta.sin()];
+        let a_disp = display_orbit_r[i];
+        let pos = planet_world_position(planet, a_disp, kick, time);
         let disp_r = planet_disp_r[i];
         let col = schematic_color_for(planet.body_type, planet.in_habitable_zone);
         out.planets[i * 2] = [pos[0], pos[1], pos[2], disp_r];
-        out.planets[i * 2 + 1] = [col[0], col[1], col[2], r];
+        // Slot w still carries the semi-major axis so the shader draws the
+        // schematic orbital ring at the average radius rather than the
+        // moving instantaneous radius.
+        out.planets[i * 2 + 1] = [col[0], col[1], col[2], a_disp];
         let tilt = ((planet.seed as f32 * 1.7e-5).sin() * 0.45) + 0.1;
         let seed_f = ((planet.seed % 9973) as f32) / 9973.0 * 1000.0;
         out.planet_meta[i] = [planet.body_type.as_shader_id(), seed_f, tilt, 0.0];
@@ -238,6 +240,48 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     out
 }
 
+/// Compute a planet's instantaneous Kepler position at `time` given the
+/// already-spaced display semi-major axis. Kept as a separate fn so the
+/// renderer (uniforms_for) and the picker (pick_planet) stay in sync.
+pub fn planet_world_position(
+    planet: &crate::system::Planet,
+    a_disp: f32,
+    binary_kick: Option<f32>,
+    time: f32,
+) -> [f32; 3] {
+    let omega = (0.04 / planet.orbit_au.powf(1.5)).min(0.50);
+    let mean_anomaly = planet.phase_rad + time * omega;
+
+    let mut e = (planet.eccentricity * 0.4).min(0.35);
+    if let Some(k) = binary_kick {
+        let kick = k * 0.04 * (1.0 / (1.0 + planet.orbit_au * 0.5));
+        e = (e + kick).clamp(0.0, 0.55);
+    }
+
+    let mut e_anom = mean_anomaly;
+    for _ in 0..5 {
+        let f = e_anom - e * e_anom.sin() - mean_anomaly;
+        let fp = 1.0 - e * e_anom.cos();
+        e_anom -= f / fp.max(1e-6);
+    }
+    let s_half = (e_anom * 0.5).sin();
+    let c_half = (e_anom * 0.5).cos();
+    let nu = 2.0 * ((1.0 + e).sqrt() * s_half).atan2((1.0 - e).sqrt() * c_half);
+
+    let arg_peri = ((planet.seed as f32 * 1.123e-4).sin()) * std::f32::consts::TAU;
+    let theta = nu + arg_peri;
+    let r_kepler = a_disp * (1.0 - e * e_anom.cos());
+    [r_kepler * theta.cos(), 0.0, r_kepler * theta.sin()]
+}
+
+/// Sample the binary companion's phase-driven eccentricity kick at `time`.
+/// Returns `None` for single-star systems.
+pub fn binary_kick(sys: &SolarSystem, time: f32) -> Option<f32> {
+    let c = sys.companion.as_ref()?;
+    let omega_b = (0.018 / c.separation_au.powf(1.5)).min(0.20);
+    Some((c.phase_rad + time * omega_b).sin())
+}
+
 /// Result of a ray-pick against the system view. `index` is the planet
 /// index inside `SolarSystem::planets`; the renderer client surfaces
 /// the rest of the metadata through `getSystem`.
@@ -293,6 +337,7 @@ pub fn pick_planet(
     let n_p = sys.planets.len().min(MAX_SYSTEM_PLANETS);
     let mut best: Option<PickHit> = None;
     let mut prev_outer_edge = star_disp + gap;
+    let kick = binary_kick(sys, time);
     for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
         let real_r = planet.orbit_au * SCENE_UNITS_PER_AU;
         let p_radius = display_radius_for(planet.body_type, planet.radius_earth, system_scale);
@@ -300,9 +345,8 @@ pub fn pick_planet(
         let r = real_r.max(needed_r);
         prev_outer_edge = r + p_radius + gap;
 
-        let omega = (0.04 / planet.orbit_au.powf(1.5)).min(0.50);
-        let theta = planet.phase_rad + time * omega;
-        let centre = Vec3::new(r * theta.cos(), 0.0, r * theta.sin());
+        let pos = planet_world_position(planet, r, kick, time);
+        let centre = Vec3::new(pos[0], pos[1], pos[2]);
 
         // Slight padding around the rendered disc lets the user grab a
         // small planet without millimetre precision, but stays tight
