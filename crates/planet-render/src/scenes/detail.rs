@@ -75,3 +75,77 @@ pub fn create_atmosphere_bind_group(
         ],
     })
 }
+
+pub struct DetailRenderPass<'a> {
+    pub background_pipeline: &'a wgpu::RenderPipeline,
+    pub planet_pipeline: &'a wgpu::RenderPipeline,
+    pub atmosphere_pipeline: &'a wgpu::RenderPipeline,
+    pub vertex_buffer: &'a wgpu::Buffer,
+    pub index_buffer: &'a wgpu::Buffer,
+    pub num_indices: u32,
+    pub uniforms_bind_group: &'a wgpu::BindGroup,
+    pub atmosphere_bind_group: &'a wgpu::BindGroup,
+    pub scene_view: &'a wgpu::TextureView,
+    pub depth_view: &'a wgpu::TextureView,
+}
+
+pub fn encode_render(
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    pass_input: DetailRenderPass<'_>,
+) {
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("scene_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: pass_input.scene_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: pass_input.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        pass.set_pipeline(pass_input.background_pipeline);
+        pass.set_bind_group(0, pass_input.uniforms_bind_group, &[]);
+        pass.draw(0..3, 0..1);
+
+        pass.set_pipeline(pass_input.planet_pipeline);
+        pass.set_bind_group(0, pass_input.uniforms_bind_group, &[]);
+        pass.set_vertex_buffer(0, pass_input.vertex_buffer.slice(..));
+        pass.set_index_buffer(pass_input.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..pass_input.num_indices, 0, 0..1);
+    }
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("atmosphere_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_pipeline(pass_input.atmosphere_pipeline);
+        pass.set_bind_group(0, pass_input.uniforms_bind_group, &[]);
+        pass.set_bind_group(1, pass_input.atmosphere_bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+}

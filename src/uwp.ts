@@ -1,12 +1,12 @@
 export interface UwpDigits {
   starport: string  // A, B, C, D, E, X
-  size: number      // 0..10 (A)
-  atm: number       // 0..15 (F)
-  hydro: number     // 0..10 (A)
-  pop: number       // 0..12 (C)
-  gov: number       // 0..15 (F)
-  law: number       // 0..15 (F)
-  tech: number      // 0..15 (F)
+  size: number      // continuous 0..10, rounded to 0..A in UWP output
+  atm: number       // continuous 0..15, rounded to 0..F in UWP output
+  hydro: number     // continuous 0..10, rounded to 0..A in UWP output
+  pop: number       // continuous 0..12, rounded to 0..C in UWP output
+  gov: number       // continuous 0..15, rounded to 0..F in UWP output
+  law: number       // continuous 0..15, rounded to 0..F in UWP output
+  tech: number      // continuous 0..15, rounded to 0..F in UWP output
 }
 
 export const defaultUwp: UwpDigits = {
@@ -34,8 +34,9 @@ function hexValue(c: string): number {
 }
 
 export function uwpHex(n: number): string {
-  if (n < 10) return String(n)
-  return String.fromCharCode('A'.charCodeAt(0) + n - 10)
+  const digit = Math.max(0, Math.min(15, Math.round(n)))
+  if (digit < 10) return String(digit)
+  return String.fromCharCode('A'.charCodeAt(0) + digit - 10)
 }
 
 export function uwpToCode(u: UwpDigits): string {

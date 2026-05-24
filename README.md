@@ -33,9 +33,11 @@ Live: <https://uwp.tre.systems>
 ┌────────────────────────────────────────────────────────────────┐
 │  crates/planet-render/  (Rust + wgpu)                          │
 │                                                                │
-│  domain system.rs: physically plausible stars, planets, belts  │
+│  wasm_api.rs: typed browser boundary                           │
+│  gpu.rs: device, surface and render pipeline setup             │
+│  domain/system.rs: plausible stars, planets, belts             │
 │  scenes/system.rs: system uniform packing + camera fitting     │
-│  scenes/detail.rs: detail-scene mesh quality policy            │
+│  scenes/detail.rs: detail targets + detail render pass         │
 │                                                                │
 │  Detail mode: scene HDR target → atmosphere/tonemap swapchain  │
 │    background.wgsl + planet.wgsl + atmosphere.wgsl             │
@@ -81,6 +83,8 @@ cp /tmp/wasm-pack-v0.14.0-aarch64-apple-darwin/wasm-pack ~/.cargo/bin/
 
 Shader changes need `npm run build:wasm:dev` (or full `npm run dev`) then a
 manual browser reload — Vite HMR can't reload a WASM module.
+WGSL chunks can be shared with `#include "chunks/name.wgsl"`; the renderer
+validates the expanded shaders in Rust tests.
 
 To validate WGSL syntax without a full WASM build:
 
@@ -92,4 +96,6 @@ cargo test --manifest-path crates/planet-render/Cargo.toml shaders_parse_and_val
 
 WebGPU is required. Chrome / Edge 113+ and Safari 18+ have it on by default;
 Firefox needs `dom.webgpu.enabled` flipped. The renderer logs a clear message
-to the on-page error overlay if `navigator.gpu` isn't available.
+to the on-page error overlay if `navigator.gpu` isn't available. Runtime
+frame-time monitoring can also downshift render quality on devices that start
+slower than their initial capability profile suggested.

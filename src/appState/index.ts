@@ -19,6 +19,7 @@ export type ViewMode = 'detail' | 'system'
 export interface RendererControls {
   rerollPlanet(index: number, seed?: number): void
   getSystem(): SolarSystem | null
+  setParams(params: Params): void
 }
 
 export const errorMessage = signal<string | null>(null)
@@ -63,17 +64,21 @@ export function setSystemSnapshot(system: SolarSystem | null) {
   currentSystem.value = system
 }
 
+export function setParamsSnapshot(nextParams: Params) {
+  params.value = nextParams
+}
+
 export function rerollPlanet(index: number) {
   rendererControls?.rerollPlanet(index)
   currentSystem.value = rendererControls?.getSystem() ?? currentSystem.value
 }
 
 export function updateParams(patch: Partial<Params>) {
-  params.value = { ...params.value, ...patch }
+  setParams({ ...params.value, ...patch })
 }
 
 export function reset() {
-  params.value = { ...defaultParams }
+  setParams({ ...defaultParams })
 }
 
 export function applyUwp(code: string): boolean {
@@ -107,5 +112,13 @@ export function resetUwp() {
 }
 
 export function randomize() {
-  params.value = randomizeParams(params.value)
+  setParams(randomizeParams(params.value))
+}
+
+function setParams(nextParams: Params) {
+  if (rendererControls) {
+    rendererControls.setParams(nextParams)
+  } else {
+    setParamsSnapshot(nextParams)
+  }
 }

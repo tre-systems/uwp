@@ -20,6 +20,23 @@ export interface RenderProfileHints {
   userAgent?: string
 }
 
+export interface FrameTimeDownshiftState {
+  profile: RenderProfile
+  observedFrames: number
+  slowFrames: number
+}
+
+export interface FrameTimeDownshiftOptions {
+  warmupFrames?: number
+  consecutiveSlowFrames?: number
+  slowFrameBudgetMultiplier?: number
+}
+
+export interface FrameTimeDownshiftResult {
+  state: FrameTimeDownshiftState
+  changed: boolean
+}
+
 const HIGH: RenderProfile = {
   name: 'high',
   dprCap: 2,
@@ -47,6 +64,18 @@ const LOW: RenderProfile = {
   meshQuality: 0.45,
 }
 
+const PROFILES: Record<RenderProfileName, RenderProfile> = {
+  high: HIGH,
+  balanced: BALANCED,
+  low: LOW,
+}
+
+const DEFAULT_DOWNSHIFT_OPTIONS: Required<FrameTimeDownshiftOptions> = {
+  warmupFrames: 30,
+  consecutiveSlowFrames: 8,
+  slowFrameBudgetMultiplier: 1.8,
+}
+
 export function detectRenderProfile(hints = browserRenderHints()): RenderProfile {
   const minSide = Math.min(hints.width, hints.height)
   const touch = (hints.maxTouchPoints ?? 0) > 0 || hints.coarsePointer === true
@@ -72,6 +101,58 @@ export function detectRenderProfile(hints = browserRenderHints()): RenderProfile
   if (pressure >= 4) return LOW
   if (pressure >= 2) return BALANCED
   return HIGH
+}
+
+export function renderProfileByName(name: RenderProfileName): RenderProfile {
+  return PROFILES[name]
+}
+
+export function lowerRenderProfile(profile: RenderProfile): RenderProfile {
+  if (profile.name === 'high') return BALANCED
+  if (profile.name === 'balanced') return LOW
+  return LOW
+}
+
+export function createFrameTimeDownshiftState(profile: RenderProfile): FrameTimeDownshiftState {
+  return {
+    profile,
+    observedFrames: 0,
+    slowFrames: 0,
+  }
+}
+
+export function nextRenderProfileForFrameTime(
+  state: FrameTimeDownshiftState,
+  frameTimeMs: number,
+  options: FrameTimeDownshiftOptions = {},
+): FrameTimeDownshiftResult {
+  if (!Number.isFinite(frameTimeMs) || frameTimeMs <= 0 || state.profile.name === 'low') {
+    return { state, changed: false }
+  }
+
+  const opts = { ...DEFAULT_DOWNSHIFT_OPTIONS, ...options }
+  const observedFrames = state.observedFrames + 1
+  if (observedFrames <= opts.warmupFrames) {
+    return {
+      state: { ...state, observedFrames, slowFrames: 0 },
+      changed: false,
+    }
+  }
+
+  const targetFrameMs = 1000 / state.profile.targetFps
+  const slowFrameMs = targetFrameMs * opts.slowFrameBudgetMultiplier
+  const slowFrames = frameTimeMs > slowFrameMs ? state.slowFrames + 1 : 0
+  if (slowFrames < opts.consecutiveSlowFrames) {
+    return {
+      state: { ...state, observedFrames, slowFrames },
+      changed: false,
+    }
+  }
+
+  return {
+    state: createFrameTimeDownshiftState(lowerRenderProfile(state.profile)),
+    changed: true,
+  }
 }
 
 export function canvasPixelSize(

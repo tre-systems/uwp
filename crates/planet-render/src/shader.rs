@@ -4,8 +4,15 @@ pub fn shader_with_common(source: &'static str) -> wgpu::ShaderSource<'static> {
     wgpu::ShaderSource::Wgsl(Cow::Owned(format!(
         "{}\n{}",
         include_str!("shaders/common.wgsl"),
-        source
+        expand_includes(source)
     )))
+}
+
+fn expand_includes(source: &'static str) -> String {
+    source.replace(
+        "#include \"chunks/agx.wgsl\"",
+        include_str!("shaders/chunks/agx.wgsl"),
+    )
 }
 
 #[cfg(test)]

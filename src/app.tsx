@@ -1,6 +1,6 @@
 import { Canvas } from './components/Canvas'
 import { ControlPanel } from './components/ControlPanel'
-import { errorMessage, viewMode } from './state'
+import { errorMessage, setViewMode, viewMode } from './appState'
 
 export function App() {
   const error = errorMessage.value
@@ -22,7 +22,7 @@ export function App() {
       <button
         class="view-toggle"
         title={mode === 'detail' ? 'Switch to system overview' : 'Switch to the main world'}
-        onClick={() => { viewMode.value = mode === 'detail' ? 'system' : 'detail' }}
+        onClick={() => setViewMode(mode === 'detail' ? 'system' : 'detail')}
       >
         {mode === 'detail' ? '☉ System' : '◉ Main World'}
       </button>

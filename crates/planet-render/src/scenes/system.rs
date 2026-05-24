@@ -195,6 +195,33 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     out
 }
 
+pub fn encode_render(
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    pipeline: &wgpu::RenderPipeline,
+    uniforms_bind_group: &wgpu::BindGroup,
+    system_bind_group: &wgpu::BindGroup,
+) {
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("system_pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, uniforms_bind_group, &[]);
+    pass.set_bind_group(1, system_bind_group, &[]);
+    pass.draw(0..3, 0..1);
+}
+
 fn star_display_radius(sys: &SolarSystem, system_scale: f32) -> f32 {
     (system_scale * 0.045 * sys.star.radius_solar.max(0.3).powf(0.35)).max(0.04)
 }

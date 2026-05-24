@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseUwp, parseUwpDigits, uwpToCode } from './uwp'
+import { parseUwp, parseUwpDigits, uwpHex, uwpToCode } from './uwp'
 
 describe('parseUwpDigits', () => {
   it('parses a complete UWP code into editable digit state', () => {
@@ -48,6 +48,21 @@ describe('parseUwpDigits', () => {
       pop: 12,
       tech: 15,
     })
+  })
+
+  it('rounds continuous values when projecting to UWP code digits', () => {
+    expect(uwpHex(8.49)).toBe('8')
+    expect(uwpHex(8.5)).toBe('9')
+    expect(uwpToCode({
+      starport: 'A',
+      size: 7.6,
+      atm: 5.5,
+      hydro: 6.8,
+      pop: 8.5,
+      gov: 7.1,
+      law: 4.2,
+      tech: 12.6,
+    })).toBe('A867974-D')
   })
 })
 

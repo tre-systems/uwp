@@ -4,6 +4,7 @@ import {
   params,
   registerRendererControls,
   setErrorMessage,
+  setParamsSnapshot,
   setSystemSeed,
   setSystemSnapshot,
   setViewMode,
@@ -11,7 +12,14 @@ import {
   viewMode,
   type ViewMode,
 } from '../appState'
-import { canvasPixelSize, detectRenderProfile, type RenderProfile } from '../renderProfile'
+import {
+  canvasPixelSize,
+  createFrameTimeDownshiftState,
+  detectRenderProfile,
+  nextRenderProfileForFrameTime,
+  type FrameTimeDownshiftState,
+  type RenderProfile,
+} from '../renderProfile'
 import type { SolarSystem } from '../domain/system'
 
 let wasmReady: Promise<void> | null = null
@@ -36,7 +44,8 @@ export class RendererClient {
   private planet: Planet | null = null
   private animationFrame = 0
   private cancelled = false
-  private readonly profile: RenderProfile
+  private profile: RenderProfile
+  private downshiftState: FrameTimeDownshiftState
   private readonly disposers: Array<() => void> = []
   private readonly resizeObserver: ResizeObserver
   private debugHandle: Window['uwp'] | null = null
@@ -45,6 +54,7 @@ export class RendererClient {
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.profile = detectRenderProfile()
+    this.downshiftState = createFrameTimeDownshiftState(this.profile)
     this.resizeObserver = new ResizeObserver(this.sizeCanvas)
   }
 
@@ -112,9 +122,6 @@ export class RendererClient {
   private installEffects() {
     this.disposers.push(
       effect(() => {
-        this.planet?.setParams(this.renderParams())
-      }),
-      effect(() => {
         this.planet?.setViewMode(viewMode.value)
       }),
       effect(() => {
@@ -129,6 +136,7 @@ export class RendererClient {
     registerRendererControls({
       rerollPlanet: (index, seed) => this.rerollPlanet(index, seed),
       getSystem: () => this.getSystem(),
+      setParams: (nextParams) => this.setParams(nextParams),
     })
     this.debugHandle = {
       setMode: (mode) => {
@@ -145,13 +153,14 @@ export class RendererClient {
 
   private startFrameLoop() {
     let lastRenderMs = 0
-    const minFrameMs = this.profile.targetFps >= 59 ? 0 : 1000 / this.profile.targetFps
     const loop = (time: number) => {
       if (!this.planet || this.cancelled) return
+      const minFrameMs = this.profile.targetFps >= 59 ? 0 : 1000 / this.profile.targetFps
       if (minFrameMs > 0 && time - lastRenderMs < minFrameMs) {
         this.animationFrame = requestAnimationFrame(loop)
         return
       }
+      const frameTimeMs = lastRenderMs > 0 ? time - lastRenderMs : 0
       lastRenderMs = time
       try {
         this.planet.render(time)
@@ -159,9 +168,25 @@ export class RendererClient {
         setErrorMessage(String(err))
         return
       }
+      this.sampleFrameTime(frameTimeMs)
       this.animationFrame = requestAnimationFrame(loop)
     }
     this.animationFrame = requestAnimationFrame(loop)
+  }
+
+  private setParams(nextParams: typeof params.value) {
+    setParamsSnapshot(nextParams)
+    this.planet?.setParams(this.renderParams())
+  }
+
+  private sampleFrameTime(frameTimeMs: number) {
+    const result = nextRenderProfileForFrameTime(this.downshiftState, frameTimeMs)
+    this.downshiftState = result.state
+    if (!result.changed) return
+
+    this.profile = result.state.profile
+    this.sizeCanvas()
+    this.planet?.setParams(this.renderParams())
   }
 
   private readonly sizeCanvas = () => {

@@ -54,12 +54,13 @@ As complexity grows, avoid putting more responsibility into `Canvas.tsx`, `Contr
 
 Keep Preact for the panel — it's the right size of tool for a sidebar of sliders, hot-reloads in milliseconds, and adds ~10 KB to the bundle. A Rust UI framework would add 100–300 KB of WASM runtime, break HMR, and reimplement DOM abstractions the JS ecosystem has already polished. The Rust↔JS bridge for UI events is not a performance bottleneck and is not worth optimising away.
 
-Instead, move the **state ownership boundary** into Rust without moving the rendering of widgets:
+The **state ownership boundary** should keep moving toward Rust without moving the rendering of widgets:
 
-- Rust owns the canonical `PlanetParams`, `SolarSystem`, and any future authored state. JS never holds a writable copy; it reads snapshots.
-- All mutations cross the FFI as typed, named methods on `Planet` (`setSize(8)`, `setSystemSeed(0x1234)`, `rerollPlanet(2, seed)`). No `serde-wasm-bindgen` round-tripping of whole structs back from JS.
-- Snapshots flow back via small reactive signals (`currentSystem`, `currentParams`), refreshed after each mutation. Components subscribe to the snapshots they need.
-- This pattern is already partly in place for system view (`systemSeed` → `setSystemSeed` → `getSystem` snapshot → panel re-renders). Extend it to the UWP/world-state side: replace the JS-side `params` signal as a writable source with a `currentParams` snapshot derived from Rust.
+- Rust owns the live renderer state: `PlanetParams`, `SolarSystem`, camera, GPU resources, and any future authored state.
+- JS app state exposes snapshots and command actions. Product components call actions; they do not call the WASM object or `window.uwp` directly.
+- Parameter mutations are centralized through `appState` and delegated to the renderer client when the renderer exists. The `params` signal is a UI snapshot, not a component-owned mutable source.
+- System snapshots flow back after mutations (`setSystemSeed`, `rerollPlanet`) so components subscribe to state instead of polling the renderer.
+- Future work should replace the remaining whole-struct `setParams` bridge with narrower typed setters when the Rust domain model has enough invariants to justify the extra API surface.
 
 Wins from this: Rust enforces invariants (no impossible UWP states, no orphaned `PlanetParams`), the JS panel becomes a pure view layer, type safety improves without losing iteration speed, and the FFI cost stays in the right places (interaction-time, not frame-time).
 
@@ -75,7 +76,7 @@ Desired module shape:
 - `src/appState/`: signals or a small reducer/store containing typed app state, actions, and derived selectors. UI components should call actions, not mutate scattered signals directly.
 - `src/rendererClient/`: a typed facade for the WASM `Planet` object. It should own renderer lifecycle, `setParams`, `setViewMode`, `setSystemSeed`, `rerollPlanet`, snapshots, resize, frame loop, and error handling.
 - `src/components/`: presentation components split by task: shell, render canvas, UWP editor, continuous world controls, system summary, planet table, performance/quality controls.
-- `crates/planet-render/src/gpu/`: device, surface, target textures, pipeline creation, bind groups.
+- `crates/planet-render/src/gpu.rs`: device, surface, pipeline creation, bind groups.
 - `crates/planet-render/src/scenes/detail/`: detail planet render pass, uniforms, camera behavior, and detail-scene packing.
 - `crates/planet-render/src/scenes/system/`: system overview pass, visual orbit compression, system uniform packing, camera fitting.
 - `crates/planet-render/src/domain/`: physical system generation and serializable domain structs, kept as pure as practical.
@@ -130,21 +131,28 @@ Refactor priority should follow pain: type/contracts first, command boundaries s
 
 ## Current Refactor Baseline
 
-The first architecture pass has established the intended boundaries:
+The requested refactor baseline is now in place:
 
 - TypeScript domain DTOs live in `src/domain/system/`.
-- Cepheus/UWP entry points are available through `src/domain/cepheus/`.
-- Continuous main-world projection helpers live in `src/domain/mainWorld/`.
+- Cepheus/UWP entry points and trade code derivation live in `src/domain/cepheus/`.
+- Continuous main-world projection helpers and tests live in `src/domain/mainWorld/`.
 - App signals and named actions live in `src/appState/`; `src/state.ts` is a compatibility re-export.
-- WASM lifecycle, resize, frame loop, render profiles, snapshots, and renderer commands live in `src/rendererClient/`.
+- App-state tests cover renderer command delegation and snapshot refresh.
+- WASM lifecycle, resize, frame loop, adaptive render profiles, snapshots, and renderer commands live in `src/rendererClient/`.
 - `Canvas.tsx` is now only the canvas mount point.
+- `ControlPanel.tsx` is a shell; UWP code, starport, world profile, society, view controls, and system table live in focused components.
 - Product UI calls typed actions such as `rerollPlanet(index)` instead of `window.uwp`; the window handle remains debug-only.
+- UWP sliders can hold intermediate values; UWP output rounds/buckets those values into Cepheus-compatible digits.
+- Runtime frame-time monitoring can downshift from high → balanced → low render profiles on slow devices.
 - Rust system-view uniform packing and camera fitting live in `crates/planet-render/src/scenes/system.rs`.
-- Rust detail-scene mesh quality and HDR/depth target helpers live in `crates/planet-render/src/scenes/detail.rs`.
+- Rust detail-scene mesh quality, HDR/depth target helpers, and detail render-pass encoding live in `crates/planet-render/src/scenes/detail.rs`.
+- Rust GPU/surface/pipeline setup lives in `crates/planet-render/src/gpu.rs`.
+- Rust physical system generation lives in `crates/planet-render/src/domain/system.rs`.
+- The wasm-bindgen boundary lives in `crates/planet-render/src/wasm_api.rs`.
 - A Rust uniform layout test pins the `SystemUniforms` shader contract.
-- `SystemEditor.tsx` owns system summary/table presentation instead of growing `ControlPanel.tsx`.
+- WGSL chunk inclusion is supported through `shader_with_common`; the shared AGX tonemap lives in `shaders/chunks/agx.wgsl`.
 
-Next refactor work should continue extracting GPU/pipeline setup and the full detail-scene render pass from `renderer.rs`, then split the remaining UWP editor controls out of `ControlPanel.tsx`.
+The remaining large items in this file are product roadmap work rather than cleanup debt: stronger Rust-side authored-world invariants, optional generated bindings, and the Rust compute roadmap below.
 
 ## Type And Contract Rules
 

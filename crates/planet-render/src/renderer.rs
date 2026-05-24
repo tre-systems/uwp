@@ -4,10 +4,10 @@ use web_sys::HtmlCanvasElement;
 use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
-use crate::mesh::{cubesphere, Vertex};
+use crate::gpu;
+use crate::mesh::cubesphere;
 use crate::params::PlanetParams;
 use crate::scenes::{detail as detail_scene, system as system_scene};
-use crate::shader::shader_with_common;
 use crate::system::{generate as generate_system, SolarSystem};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,62 +90,15 @@ impl Renderer {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn new(canvas: HtmlCanvasElement, mesh_quality: f32) -> Result<Self, String> {
-        let width = canvas.width().max(1);
-        let height = canvas.height().max(1);
-
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::BROWSER_WEBGPU,
-            ..Default::default()
-        });
-
-        let surface = instance
-            .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
-            .map_err(|e| format!("create_surface: {e}"))?;
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .ok_or_else(|| {
-                "No suitable GPU adapter found. This browser may not support WebGPU.".to_string()
-            })?;
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("planet-render-device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )
-            .await
-            .map_err(|e| format!("request_device: {e}"))?;
-
-        let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(wgpu::TextureFormat::is_srgb)
-            .unwrap_or(caps.formats[0]);
-        let alpha_mode = caps.alpha_modes[0];
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width,
-            height,
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
+        let gpu::GpuContext {
+            surface,
+            device,
+            queue,
+            config,
+        } = gpu::create_context(canvas).await?;
+        let width = config.width;
+        let height = config.height;
+        let format = config.format;
 
         // Mesh
         let mesh = cubesphere(detail_scene::mesh_resolution(mesh_quality));
@@ -169,19 +122,7 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        let uniforms_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("uniforms_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let uniforms_layout = gpu::create_uniform_layout(&device);
 
         let uniforms_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("uniforms_bind_group"),
@@ -190,52 +131,6 @@ impl Renderer {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
             }],
-        });
-
-        let scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("scene_layout"),
-            bind_group_layouts: &[&uniforms_layout],
-            push_constant_ranges: &[],
-        });
-
-        // Bind group used by the atmosphere pass to sample the scene HDR target.
-        let atmosphere_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("atmosphere_layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Depth,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
-        let atmosphere_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("atmosphere_pipeline_layout"),
-            bind_group_layouts: &[&uniforms_layout, &atmosphere_bind_group_layout],
-            push_constant_ranges: &[],
         });
 
         // System overview: one extra uniform block packed with star + planet
@@ -268,194 +163,8 @@ impl Renderer {
                 resource: system_uniform_buffer.as_entire_binding(),
             }],
         });
-        let system_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("system_pipeline_layout"),
-            bind_group_layouts: &[&uniforms_layout, &system_uniform_layout],
-            push_constant_ranges: &[],
-        });
-
-        // Shaders
-        let planet_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("planet.wgsl"),
-            source: shader_with_common(include_str!("shaders/planet.wgsl")),
-        });
-        let background_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("background.wgsl"),
-            source: shader_with_common(include_str!("shaders/background.wgsl")),
-        });
-        let atmosphere_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("atmosphere.wgsl"),
-            source: shader_with_common(include_str!("shaders/atmosphere.wgsl")),
-        });
-        let system_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("system.wgsl"),
-            source: shader_with_common(include_str!("shaders/system.wgsl")),
-        });
-
-        let vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x3,
-            }],
-        };
-
-        let planet_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("planet_pipeline"),
-            layout: Some(&scene_layout),
-            vertex: wgpu::VertexState {
-                module: &planet_shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[vertex_layout],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &planet_shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: detail_scene::SCENE_FORMAT,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        let background_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("background_pipeline"),
-            layout: Some(&scene_layout),
-            vertex: wgpu::VertexState {
-                module: &background_shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &background_shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: detail_scene::SCENE_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                // Background now writes per-pixel depth for raymarched
-                // moons / rings / satellites so the planet mesh occludes them
-                // correctly (and they occlude each other).
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        // System pipeline: fullscreen triangle, writes directly to swapchain
-        // (does its own tonemap). No depth attachment — the shader composites
-        // background + star + planets internally via ray-sphere tests.
-        let system_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("system_pipeline"),
-            layout: Some(&system_layout),
-            vertex: wgpu::VertexState {
-                module: &system_shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &system_shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        // Atmosphere pipeline: fullscreen triangle, samples the HDR scene target.
-        let atmosphere_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("atmosphere_pipeline"),
-            layout: Some(&atmosphere_layout),
-            vertex: wgpu::VertexState {
-                module: &atmosphere_shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &atmosphere_shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipelines =
+            gpu::create_pipelines(&device, format, &uniforms_layout, &system_uniform_layout);
 
         let depth_view = detail_scene::create_depth_view(&device, width, height);
         let scene_view = detail_scene::create_scene_view(&device, width, height);
@@ -471,7 +180,7 @@ impl Renderer {
         });
         let atmosphere_bind_group = detail_scene::create_atmosphere_bind_group(
             &device,
-            &atmosphere_bind_group_layout,
+            &pipelines.atmosphere_bind_group_layout,
             &scene_view,
             &scene_sampler,
             &depth_view,
@@ -497,10 +206,10 @@ impl Renderer {
             device,
             queue,
             config,
-            planet_pipeline,
-            background_pipeline,
-            atmosphere_pipeline,
-            system_pipeline,
+            planet_pipeline: pipelines.planet,
+            background_pipeline: pipelines.background,
+            atmosphere_pipeline: pipelines.atmosphere,
+            system_pipeline: pipelines.system,
             vertex_buffer,
             index_buffer,
             num_indices,
@@ -510,7 +219,7 @@ impl Renderer {
             system_bind_group,
             scene_view,
             scene_sampler,
-            atmosphere_bind_group_layout,
+            atmosphere_bind_group_layout: pipelines.atmosphere_bind_group_layout,
             atmosphere_bind_group,
             depth_view,
             camera,
@@ -653,7 +362,22 @@ impl Renderer {
 
         match self.view_mode {
             ViewMode::Detail => {
-                self.encode_detail_render(&mut encoder, &view);
+                detail_scene::encode_render(
+                    &mut encoder,
+                    &view,
+                    detail_scene::DetailRenderPass {
+                        background_pipeline: &self.background_pipeline,
+                        planet_pipeline: &self.planet_pipeline,
+                        atmosphere_pipeline: &self.atmosphere_pipeline,
+                        vertex_buffer: &self.vertex_buffer,
+                        index_buffer: &self.index_buffer,
+                        num_indices: self.num_indices,
+                        uniforms_bind_group: &self.uniforms_bind_group,
+                        atmosphere_bind_group: &self.atmosphere_bind_group,
+                        scene_view: &self.scene_view,
+                        depth_view: &self.depth_view,
+                    },
+                );
             }
             ViewMode::System => {
                 // Push the latest system layout (planet positions move every
@@ -661,95 +385,19 @@ impl Renderer {
                 let sys_u = system_scene::uniforms_for(&self.system, time);
                 self.queue
                     .write_buffer(&self.system_uniform_buffer, 0, bytemuck::bytes_of(&sys_u));
-                self.encode_system_render(&mut encoder, &view);
+                system_scene::encode_render(
+                    &mut encoder,
+                    &view,
+                    &self.system_pipeline,
+                    &self.uniforms_bind_group,
+                    &self.system_bind_group,
+                );
             }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
         Ok(())
-    }
-
-    fn encode_detail_render(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-        // Pass 1: render planet + background into the HDR scene texture.
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("scene_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.scene_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            pass.set_pipeline(&self.background_pipeline);
-            pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
-            pass.draw(0..3, 0..1);
-
-            pass.set_pipeline(&self.planet_pipeline);
-            pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..self.num_indices, 0, 0..1);
-        }
-
-        // Pass 2: raymarched atmosphere + tonemap, samples scene_view and writes the swapchain.
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("atmosphere_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.atmosphere_pipeline);
-            pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
-            pass.set_bind_group(1, &self.atmosphere_bind_group, &[]);
-            pass.draw(0..3, 0..1);
-        }
-    }
-
-    fn encode_system_render(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-        // Single fullscreen pass directly to swapchain. The system shader
-        // does its own raymarched composite + tonemap.
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("system_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        pass.set_pipeline(&self.system_pipeline);
-        pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
-        pass.set_bind_group(1, &self.system_bind_group, &[]);
-        pass.draw(0..3, 0..1);
     }
 
     fn build_uniforms(&self, time: f32) -> Uniforms {

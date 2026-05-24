@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { canvasPixelSize, detectRenderProfile } from './renderProfile'
+import {
+  canvasPixelSize,
+  createFrameTimeDownshiftState,
+  detectRenderProfile,
+  nextRenderProfileForFrameTime,
+  renderProfileByName,
+} from './renderProfile'
 
 describe('detectRenderProfile', () => {
   it('keeps ordinary desktop-class devices on high quality', () => {
@@ -74,5 +80,89 @@ describe('canvasPixelSize', () => {
       width: 2560,
       height: 1440,
     })
+  })
+})
+
+describe('nextRenderProfileForFrameTime', () => {
+  it('waits through the warmup window before counting slow frames', () => {
+    const initial = createFrameTimeDownshiftState(renderProfileByName('high'))
+    const result = nextRenderProfileForFrameTime(initial, 60, {
+      warmupFrames: 2,
+      consecutiveSlowFrames: 1,
+    })
+
+    expect(result.changed).toBe(false)
+    expect(result.state.profile.name).toBe('high')
+    expect(result.state.observedFrames).toBe(1)
+    expect(result.state.slowFrames).toBe(0)
+  })
+
+  it('downshifts after sustained slow frames', () => {
+    let state = createFrameTimeDownshiftState(renderProfileByName('high'))
+
+    let result = nextRenderProfileForFrameTime(state, 60, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 2,
+    })
+    expect(result.changed).toBe(false)
+    state = result.state
+
+    result = nextRenderProfileForFrameTime(state, 60, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 2,
+    })
+
+    expect(result.changed).toBe(true)
+    expect(result.state.profile.name).toBe('balanced')
+    expect(result.state.observedFrames).toBe(0)
+    expect(result.state.slowFrames).toBe(0)
+  })
+
+  it('resets slow-frame pressure after a recovered frame', () => {
+    let state = createFrameTimeDownshiftState(renderProfileByName('high'))
+
+    let result = nextRenderProfileForFrameTime(state, 60, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 2,
+    })
+    state = result.state
+
+    result = nextRenderProfileForFrameTime(state, 16, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 2,
+    })
+
+    expect(result.changed).toBe(false)
+    expect(result.state.profile.name).toBe('high')
+    expect(result.state.slowFrames).toBe(0)
+  })
+
+  it('can step a balanced profile down to low', () => {
+    let state = createFrameTimeDownshiftState(renderProfileByName('balanced'))
+
+    let result = nextRenderProfileForFrameTime(state, 80, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 2,
+    })
+    state = result.state
+
+    result = nextRenderProfileForFrameTime(state, 80, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 2,
+    })
+
+    expect(result.changed).toBe(true)
+    expect(result.state.profile.name).toBe('low')
+  })
+
+  it('does not downshift below the low profile', () => {
+    const initial = createFrameTimeDownshiftState(renderProfileByName('low'))
+    const result = nextRenderProfileForFrameTime(initial, 120, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 1,
+    })
+
+    expect(result.changed).toBe(false)
+    expect(result.state.profile.name).toBe('low')
   })
 })
