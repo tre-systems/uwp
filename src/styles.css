@@ -1,12 +1,134 @@
+/* ===========================================================================
+   Design tokens.
+
+   These custom properties are the single source of truth for the UWP panel's
+   chrome, type, spacing, motion, and feedback colours. Components should
+   reference tokens (`var(--color-text)`, `var(--space-4)`) rather than
+   hard-coding values, so theme tweaks live in one place.
+
+   Layering convention:
+     - --surface-0 is the deepest layer (canvas/page background).
+     - --surface-1 is the panel chrome.
+     - --surface-2 is a raised control at rest.
+     - --surface-3 is a raised control on hover / focus.
+
+   The block at the bottom of :root preserves the legacy aliases
+   (`--bg`, `--panel`, …) so components that haven't migrated yet still work.
+   Migrate them opportunistically; do not bulk-rewrite.
+   ========================================================================= */
 :root {
-  --bg: #05070d;
-  --panel: rgba(10, 14, 22, 0.62);
-  --panel-border: rgba(255, 255, 255, 0.07);
-  --text: #d8dde7;
-  --text-dim: #8d96a8;
-  --accent: #6ea4ff;
-  --accent-soft: rgba(110, 164, 255, 0.18);
-  --rail: rgba(255, 255, 255, 0.10);
+  /* Background and surface layers */
+  --color-bg:           #05070d;
+  --surface-0:          rgba(  5,   7,  13, 1.00);
+  --surface-1:          rgba( 10,  14,  22, 0.62);
+  --surface-1-solid:    rgba( 10,  14,  22, 0.78);
+  --surface-2:          rgba(255, 255, 255, 0.04);
+  --surface-2-hover:    rgba(255, 255, 255, 0.08);
+  --surface-3:          rgba(255, 255, 255, 0.10);
+
+  /* Text */
+  --color-text:         #d8dde7;
+  --color-text-dim:     #8d96a8;
+  --color-text-muted:   rgba(255, 255, 255, 0.45);
+  --color-text-strong:  rgba(255, 255, 255, 0.95);
+
+  /* Accent (blue) — used for active state, focus, highlights */
+  --color-accent:        #6ea4ff;
+  --color-accent-soft:   rgba(110, 164, 255, 0.18);
+  --color-accent-hover:  rgba(110, 164, 255, 0.32);
+  --color-accent-border: rgba(110, 164, 255, 0.50);
+  --color-accent-glow:   rgba(110, 164, 255, 0.10);
+
+  /* Semantic colours */
+  --color-danger:           rgba(255, 110, 110, 0.45);
+  --color-success:          rgba(110, 220, 150, 0.75);
+  --color-warning:          rgba(255, 200, 110, 0.80);
+  --color-main-world:       rgba(170, 220, 255, 0.95);
+  --color-main-world-star:  rgba(255, 220, 120, 0.95);
+
+  /* Borders / dividers */
+  --border-panel:    rgba(255, 255, 255, 0.07);
+  --border-control:  rgba(255, 255, 255, 0.10);
+  --border-strong:   rgba(255, 255, 255, 0.18);
+  --border-divider:  rgba(255, 255, 255, 0.05);
+  --rail:            rgba(255, 255, 255, 0.10);
+
+  /* Spacing — 2-px base scale; pick the smallest that reads well */
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5: 10px;
+  --space-6: 14px;
+  --space-7: 18px;
+  --space-8: 24px;
+
+  /* Type scale — px-based, intentionally compact for a dense control panel */
+  --type-xs:   10px;
+  --type-sm:   11px;
+  --type-body: 12px;
+  --type-base: 13px;
+  --type-lg:   14px;
+  --type-xl:   18px;
+
+  /* Corner radius scale */
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  8px;
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+
+  /* Motion durations and easing */
+  --motion-fast:   140ms;
+  --motion-base:   160ms;
+  --motion-medium: 200ms;
+  --motion-slow:   280ms;
+  --motion-ease:   cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Elevation shadows */
+  --shadow-panel:  0 16px 48px rgba(0, 0, 0, 0.55);
+  --shadow-button: 0  4px 16px rgba(0, 0, 0, 0.35);
+
+  /* Focus ring — applied to :focus-visible across interactive elements */
+  --focus-ring: 0 0 0 2px rgba(110, 164, 255, 0.65);
+
+  /* Font stacks */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Backdrop filter — extracted so the panel and toggle share one definition */
+  --backdrop-blur: blur(18px) saturate(140%);
+
+  /* Legacy aliases — kept so components migrate one at a time, not in bulk */
+  --bg:           var(--color-bg);
+  --panel:        var(--surface-1);
+  --panel-border: var(--border-panel);
+  --text:         var(--color-text);
+  --text-dim:     var(--color-text-dim);
+  --accent:       var(--color-accent);
+  --accent-soft:  var(--color-accent-soft);
+}
+
+/* Respect the user's reduced-motion preference globally. Components can opt
+   back in by using shorter explicit durations, but the default is "barely
+   any motion at all" for users who asked for that. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible keyboard focus ring on every interactive element. Mouse clicks
+   don't trigger :focus-visible, so this stays out of the way for pointer
+   users while keeping keyboard / switch users oriented. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 * { box-sizing: border-box; }
