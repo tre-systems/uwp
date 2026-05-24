@@ -1,7 +1,9 @@
 import {
   currentSurfaceMap,
+  pointAtSurface,
   selectedSurfaceHex,
   setSelectedSurfaceHex,
+  setViewMode,
 } from '../appState'
 import {
   hexCoordLabel,
@@ -68,6 +70,10 @@ export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps)
 }
 
 function SurfaceHexDetail({ hex, starportSelected }: { hex: SurfaceHex; starportSelected: boolean }) {
+  const showOnGlobe = () => {
+    pointAtSurface(hex.latitude_deg, hex.longitude_deg)
+    setViewMode('detail')
+  }
   return (
     <section>
       <h2>Hex {hexCoordLabel(hex.coord)}</h2>
@@ -99,6 +105,9 @@ function SurfaceHexDetail({ hex, starportSelected }: { hex: SurfaceHex; starport
           </div>
         )}
       </dl>
+      <div class="sys-actions">
+        <button onClick={showOnGlobe}>Show on globe</button>
+      </div>
     </section>
   )
 }

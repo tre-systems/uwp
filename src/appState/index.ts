@@ -42,6 +42,8 @@ export interface RendererControls {
   pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null
   /** Generate a Cepheus hex world map for the current main world. */
   getSurfaceMap(): SurfaceMap | null
+  /** Rotate the detail-view globe to face a surface (lat, lon) in degrees. */
+  pointAtSurface(latDeg: number, lonDeg: number): void
 }
 
 /** Hovered-body snapshot consumed by tooltips. Stays null when nothing
@@ -192,6 +194,25 @@ export function refreshSurfaceMap(): void {
   const map = rendererControls?.getSurfaceMap() ?? null
   currentSurfaceMap.value = map
   selectedSurfaceHex.value = null
+}
+
+/** Rotate the detail-view globe to face a surface (lat, lon). */
+export function pointAtSurface(latDeg: number, lonDeg: number): void {
+  rendererControls?.pointAtSurface(latDeg, lonDeg)
+}
+
+/**
+ * Pick a surface hex and rotate the globe to face it. If the user then
+ * switches to Main World view the rendered globe is already aimed at
+ * the chosen hex.
+ */
+export function selectAndFocusSurfaceHex(coord: SurfaceHexCoord): void {
+  setSelectedSurfaceHex(coord)
+  const map = currentSurfaceMap.value
+  if (!map) return
+  const hex = map.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
+  if (!hex) return
+  pointAtSurface(hex.latitude_deg, hex.longitude_deg)
 }
 
 /**

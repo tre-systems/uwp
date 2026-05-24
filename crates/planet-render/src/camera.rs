@@ -52,6 +52,25 @@ impl Camera {
         self.pitch = (self.pitch + dy).clamp(-1.45, 1.45);
     }
 
+    /// Point the camera at a surface latitude / longitude. Does not change
+    /// distance. Returns the spin angle needed to put the requested
+    /// longitude on the camera-facing meridian — the caller sets the
+    /// renderer's `rotation_t` to that value to land the chosen hex in
+    /// the centre of the frame.
+    pub fn point_at(&mut self, lat_deg: f32, lon_deg: f32) -> f32 {
+        let lat = lat_deg.to_radians();
+        // Camera sits at (yaw, pitch) on a sphere; look-at is origin. To
+        // face the latitude `lat`, pitch should match that latitude.
+        self.pitch = lat.clamp(-1.45, 1.45);
+        // Bring the longitude to face the camera: standard convention is
+        // longitude 0 sits at +Z, camera-default yaw is 0.6 so we offset.
+        self.yaw = 0.0;
+        // Return the spin angle that puts the requested longitude on the
+        // +Z meridian (which is where yaw=0 looks). Negate so eastward
+        // longitudes spin the planet right-to-left as the user expects.
+        -lon_deg.to_radians()
+    }
+
     pub fn dolly(&mut self, delta: f32, planet_radius: f32) {
         // Min distance scales with the rendered planet so the camera never
         // clips inside a super-Earth and we can still zoom right in on an

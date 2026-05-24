@@ -30,6 +30,7 @@ describe('appState renderer command boundary', () => {
       },
       pickSystemPlanet: () => null,
       getSurfaceMap: () => null,
+      pointAtSurface: () => undefined,
     })
 
     updateParams({ sun_angle: 0.25 })
@@ -52,6 +53,7 @@ describe('appState renderer command boundary', () => {
       setParams: () => undefined,
       pickSystemPlanet: () => null,
       getSurfaceMap: () => null,
+      pointAtSurface: () => undefined,
     })
 
     rerollPlanet(2)

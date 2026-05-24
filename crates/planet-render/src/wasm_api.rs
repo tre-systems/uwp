@@ -86,6 +86,14 @@ impl Planet {
         }
     }
 
+    /// Orient the detail view's globe so the requested surface coordinates
+    /// (lat/lon in degrees) sit at the centre of the frame. Stops the
+    /// auto-rotation so the hex doesn't drift past while the user looks.
+    #[wasm_bindgen(js_name = pointAtSurface)]
+    pub fn point_at_surface(&mut self, lat_deg: f32, lon_deg: f32) {
+        self.inner.point_at_surface(lat_deg, lon_deg);
+    }
+
     /// Generate a Cepheus-style hex world map for the main world of the
     /// current system. Returns the serialised SurfaceMap or null if the
     /// system has no qualifying main world.

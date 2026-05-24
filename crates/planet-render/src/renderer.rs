@@ -275,6 +275,17 @@ impl Renderer {
         self.detail_uniforms_dirty = true;
     }
 
+    /// Orient the globe so the requested surface (lat, lon) sits at the
+    /// centre of the detail-view frame. Pauses the auto-rotation so the
+    /// chosen point doesn't drift past, then sets `rotation_t` to the
+    /// camera's reported spin offset.
+    pub fn point_at_surface(&mut self, lat_deg: f32, lon_deg: f32) {
+        let spin = self.camera.point_at(lat_deg, lon_deg);
+        self.rotation_t = spin;
+        self.params.auto_rotate = 0.0;
+        self.detail_uniforms_dirty = true;
+    }
+
     pub fn zoom(&mut self, delta: f32) {
         match self.view_mode {
             ViewMode::Detail => self.camera.dolly(delta, self.params.planet_radius),

@@ -145,6 +145,10 @@ export class RendererClient {
     return (planet.getSurfaceMap() as SurfaceMap | null | undefined) ?? null
   }
 
+  pointAtSurface(latDeg: number, lonDeg: number): void {
+    this.planet?.pointAtSurface(latDeg, lonDeg)
+  }
+
   private renderParams() {
     return { ...params.value, render_quality: this.profile.shaderQuality }
   }
@@ -182,6 +186,7 @@ export class RendererClient {
       setParams: (nextParams) => this.setParams(nextParams),
       pickSystemPlanet: (x, y, t) => this.pickSystemPlanet(x, y, t),
       getSurfaceMap: () => this.getSurfaceMap(),
+      pointAtSurface: (lat, lon) => this.pointAtSurface(lat, lon),
     })
     this.debugHandle = {
       setMode: (mode) => {

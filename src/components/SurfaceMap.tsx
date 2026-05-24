@@ -1,7 +1,7 @@
 import {
   currentSurfaceMap,
+  selectAndFocusSurfaceHex,
   selectedSurfaceHex,
-  setSelectedSurfaceHex,
 } from '../appState'
 import {
   hexCoordLabel,
@@ -130,11 +130,11 @@ function SurfaceHexCell({ hex, cx, cy, selected, isStarport, settlement }: CellP
       tabIndex={0}
       role="button"
       aria-label={label}
-      onClick={() => setSelectedSurfaceHex(coord)}
+      onClick={() => selectAndFocusSurfaceHex(coord)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          setSelectedSurfaceHex(coord)
+          selectAndFocusSurfaceHex(coord)
         }
       }}
     >
