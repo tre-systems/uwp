@@ -448,7 +448,7 @@ Phases 1-6 are shipped on a climate-driven v1 (`6785193`). The original spec ass
 
 6. **SVG surface hex map UI.** *Shipped → `6785193`.* `SurfaceMap.tsx` renders the 512-hex grid with a fixed terrain palette, starport star, city dots scaled by tier, focus rings, click-to-select. `SurfaceMapEditor.tsx` surfaces grid stats and a per-hex inspector. `ViewModeToggle` becomes a 4-way segmented control with Surface disabled until a main world exists.
 
-7. **Globe ↔ surface bridge.** Future — camera-rotation helper + `pointCameraAt(lat, lon)` so clicking a hex spins the rendered globe to point at it.
+7. **Globe ↔ surface bridge.** *Shipped → `e3eb716`.* `Camera::point_at` aims the detail-view camera at a (lat, lon); `Renderer::point_at_surface` applies the spin to `rotation_t` and pauses auto-rotate so the target stays still. Wired through `pointAtSurface` and `selectAndFocusSurfaceHex` on `appState`; clicking a hex in the SVG focuses the globe immediately, and the inspector grows a "Show on globe" button that aims + switches to Main World in one click.
 
 8. **Optional WebGPU port.** Future — port the data path to a WGSL fullscreen-triangle scene once the SVG UX is stable.
 
