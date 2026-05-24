@@ -5,6 +5,42 @@ import {
   viewMode,
 } from './appState'
 import { deriveTradeCodes, tradeCodeName } from './domain/cepheus'
+import type { Planet } from './domain/system/types'
+
+const EARTH_RADIUS_KM = 6371
+const EARTH_ESC_VEL_KMS = 11.186
+const EARTH_DENSITY_GCC = 5.514
+
+// Same derivation used by the on-screen body inspector. Duplicated
+// rather than imported because the inspector is a Preact component;
+// keeping the formula here keeps the exporter independent of the
+// component tree.
+function mainWorldStats(p: Planet, starMassSolar: number): string[] {
+  const yearYears = Math.sqrt(Math.pow(p.orbit_au, 3) / Math.max(starMassSolar, 0.01))
+  const dayHours = p.day_seconds / 3600
+  const gravityG = p.mass_earth / Math.max(p.radius_earth * p.radius_earth, 1e-6)
+  const densityGcc = (p.mass_earth / Math.max(Math.pow(p.radius_earth, 3), 1e-6)) * EARTH_DENSITY_GCC
+  const escVelKms = EARTH_ESC_VEL_KMS * Math.sqrt(p.mass_earth / Math.max(p.radius_earth, 1e-6))
+  const radiusKm = p.radius_earth * EARTH_RADIUS_KM
+  const yearLabel = yearYears < 0.05
+    ? `${(yearYears * 365.25).toFixed(1)} d`
+    : yearYears < 1
+      ? `${(yearYears * 12).toFixed(2)} mo`
+      : `${yearYears.toFixed(2)} yr`
+  const dayLabel = dayHours < 1
+    ? `${(dayHours * 60).toFixed(0)} min`
+    : dayHours > 100
+      ? `${(dayHours / 24).toFixed(1)} d`
+      : `${dayHours.toFixed(1)} h`
+  return [
+    `Radius: ${radiusKm.toFixed(0)} km`,
+    `Gravity: ${gravityG.toFixed(2)} g`,
+    `Density: ${densityGcc.toFixed(2)} g/cc`,
+    `Escape velocity: ${escVelKms.toFixed(1)} km/s`,
+    `Year: ${yearLabel}`,
+    `Day: ${dayLabel}`,
+  ]
+}
 
 // PNG export pipeline.
 //
@@ -158,6 +194,30 @@ function paintMetadata(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
       cursorY += 20
     }
     cursorY += 8
+
+    // Main world derived stats - the body inspector's numbers, but
+    // formatted as a labelled list so the card reads like a Cepheus
+    // referee handout. Only painted in detail mode where the planet
+    // render IS the main world; subsector/system cards already have
+    // enough scaffolding.
+    if (mode === 'detail') {
+      const mwIndex = sys.main_world >= 0 ? sys.main_world : 0
+      const mw = sys.planets[mwIndex]
+      if (mw) {
+        const stats = mainWorldStats(mw, star.mass_solar)
+        ctx.fillStyle = 'rgba(141, 150, 168, 1)'
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, Inter, sans-serif'
+        ctx.fillText('MAIN WORLD', x, cursorY + 12)
+        cursorY += 22
+        ctx.fillStyle = 'rgba(216, 221, 231, 0.85)'
+        ctx.font = '13px -apple-system, BlinkMacSystemFont, Inter, sans-serif'
+        for (const line of stats) {
+          ctx.fillText(line, x, cursorY + 14)
+          cursorY += 20
+        }
+        cursorY += 8
+      }
+    }
   }
 
   if (tradeCodes.length > 0) {
