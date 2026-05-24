@@ -10,9 +10,12 @@ import {
   subsectorSeed,
 } from '../appState'
 import { SeedField } from './SeedField'
+import { useState } from 'preact/hooks'
 import {
   hexLabel,
+  subsectorToText,
   uwpToCode,
+  type Subsector,
   type SubsectorHex,
 } from '../domain/subsector'
 import { deriveTradeCodes, tradeCodeName } from '../domain/cepheus'
@@ -90,10 +93,51 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
             aria-label="Subsector seed"
           />
         </div>
+        {sub && <SubsectorExportRow subsector={sub} disabled={disabled} />}
       </section>
 
       {selectedDetail && <HexDetailSection hex={selectedDetail} />}
     </>
+  )
+}
+
+function SubsectorExportRow({ subsector, disabled }: { subsector: Subsector; disabled: boolean }) {
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(subsectorToText(subsector))
+      setStatus('copied')
+      setTimeout(() => setStatus('idle'), 1500)
+    } catch {
+      setStatus('failed')
+      setTimeout(() => setStatus('idle'), 2000)
+    }
+  }
+
+  const download = () => {
+    const text = subsectorToText(subsector)
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `subsector-${systemName(subsector.seed).toLowerCase()}-${subsector.seed}.tab`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1500)
+  }
+
+  const copyLabel = status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : 'Copy as text'
+  return (
+    <div class="sys-actions sys-export-row">
+      <button type="button" onClick={copy} disabled={disabled} title="Copy subsector as plain-text table">
+        {copyLabel}
+      </button>
+      <button type="button" onClick={download} disabled={disabled} title="Download as .tab file">
+        Download .tab
+      </button>
+    </div>
   )
 }
 

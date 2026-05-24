@@ -279,6 +279,22 @@ html, body, #app {
   gap: 10px;
   margin-top: 10px;
 }
+.sys-export-row { margin-top: 6px; }
+.sys-export-row button {
+  font-size: 11px;
+  padding: 4px 10px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.sys-export-row button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.sys-export-row button:disabled { opacity: 0.5; cursor: not-allowed; }
 .sys-seed {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.45);
