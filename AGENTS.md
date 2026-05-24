@@ -50,6 +50,19 @@ The project should stay split into clear layers:
 
 As complexity grows, avoid putting more responsibility into `Canvas.tsx`, `ControlPanel.tsx`, or `renderer.rs`. They are already pressure points. Prefer extracting cohesive modules before adding large features.
 
+### State Ownership
+
+Keep Preact for the panel — it's the right size of tool for a sidebar of sliders, hot-reloads in milliseconds, and adds ~10 KB to the bundle. A Rust UI framework would add 100–300 KB of WASM runtime, break HMR, and reimplement DOM abstractions the JS ecosystem has already polished. The Rust↔JS bridge for UI events is not a performance bottleneck and is not worth optimising away.
+
+Instead, move the **state ownership boundary** into Rust without moving the rendering of widgets:
+
+- Rust owns the canonical `PlanetParams`, `SolarSystem`, and any future authored state. JS never holds a writable copy; it reads snapshots.
+- All mutations cross the FFI as typed, named methods on `Planet` (`setSize(8)`, `setSystemSeed(0x1234)`, `rerollPlanet(2, seed)`). No `serde-wasm-bindgen` round-tripping of whole structs back from JS.
+- Snapshots flow back via small reactive signals (`currentSystem`, `currentParams`), refreshed after each mutation. Components subscribe to the snapshots they need.
+- This pattern is already partly in place for system view (`systemSeed` → `setSystemSeed` → `getSystem` snapshot → panel re-renders). Extend it to the UWP/world-state side: replace the JS-side `params` signal as a writable source with a `currentParams` snapshot derived from Rust.
+
+Wins from this: Rust enforces invariants (no impossible UWP states, no orphaned `PlanetParams`), the JS panel becomes a pure view layer, type safety improves without losing iteration speed, and the FFI cost stays in the right places (interaction-time, not frame-time).
+
 ## Target Refactor Design
 
 Refactor toward an architecture where the app is a system generator with a renderer attached, not a renderer that happens to expose some game data.
@@ -164,6 +177,34 @@ Next refactor work should continue extracting GPU/pipeline setup and the full de
 - Prefer measured simplification over piling more branches into already-heavy shaders.
 - Do not let UI blur/backdrop effects compete with WebGPU on mobile.
 - If WebGPU is unavailable or unstable, the app should eventually provide a simpler fallback view rather than only an error.
+
+## Rust Compute Roadmap
+
+The current CPU-side workload is trivial — mesh once at startup, microseconds per frame for uniform packing, sub-millisecond for system generation. Almost all the work is in WGSL on the GPU. For Rust to keep earning its place beyond "wgpu is the best WebGPU library," the next features that genuinely need it should land on the CPU side.
+
+These are the high-ROI Rust compute opportunities, roughly in priority order. Don't do them speculatively — pick the next one when a feature actually needs it.
+
+1. **Procedural surface pre-bake.** Biggest win by a wide margin. `planet.wgsl` currently recomputes 7-octave FBM + plate-tectonics Voronoi + crater layers + biome blending per fragment per frame, which is wasteful — the surface doesn't change while you orbit. Bake six 2k×2k cube-map faces (heightmap + biome + feature mask) per seed in Rust with `rayon`. Shader becomes cheap texture lookups; per-pixel budget drops 5–10×, freeing space for finer detail, real river networks, or higher resolution at the same framerate. Natural pre-bake step for any modern planet renderer.
+
+2. **Climate / habitability simulation.** Coarse-grid energy-balance model (latitude bands × day-night × axial tilt × ocean heat capacity × atmospheric circulation) run once per system or when params change. Output a temperature and precipitation field that the surface shader samples to place biomes physically rather than from noise. Vastly more believable continents; sub-second compute on CPU.
+
+3. **Tectonics simulation.** Run plate motion + uplift + erosion for N timesteps to produce real continents, mountain belts, ocean basins. Replace the noise-derived continents with a physically-motivated heightmap. Heavy compute, exactly where Rust shines.
+
+4. **Multi-scatter atmosphere LUT** (Bruneton & Neyret 2008 / Hillaire 2020). The full method precomputes a 4D scattering LUT once per atmosphere config. We currently raymarch single-scattering per fragment with a constant multi-scatter hack. Real LUT gives proper Earth-from-orbit blue rim, twilight bands, and is dramatically cheaper at render time. Rust precomputes on parameter change, stores into GPU textures.
+
+5. **Asteroid belt as real particles.** Currently a noise-mottled band. Spawn 5–50k actual particles with orbital elements (eccentricity, inclination, Kirkwood gaps from mean-motion resonance with the nearest gas giant), integrate them on CPU, render as a sprite/point buffer. Looks dramatically better and is physically motivated.
+
+6. **Hover / click ray-pick.** Required for "hover a planet to see its name, click to fly there." Project planet positions to screen space (or ray-test against the bodies) on CPU each frame. The data is right there; pick the nearest hit and feed it to the UI as a signal.
+
+7. **N-body / Kepler propagator with binary perturbations.** Real Kepler propagator with binary-induced eccentricity oscillations and mean-motion resonance lockup. Replaces the current fixed circular ω. Few thousand ops per frame.
+
+8. **Star spectral synthesis.** Replace the polynomial blackbody-color fit with a proper Planck integral × CIE color-matching for per-class star colors and limb chromaticity. Pre-compute per spectral type into a small table.
+
+9. **Long-timescale stability check.** Add a Wisdom-Holman or Mercury-style integrator that runs each generated system forward by ~100 Myr as a unit test, verifying no system flies apart. Catches edge cases the per-pair Hill stability test misses.
+
+10. **Image / animation export.** Offscreen rendering at custom resolution, animation timelines, batch-rendering all planets in a system to a sprite atlas for fast switching. Rust orchestrates an offscreen render with different uniform parameters and ships PNG bytes back to JS.
+
+When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
 
 ## Verification
 
