@@ -190,12 +190,25 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let single = sun_intensity *
         (in_scatter_r * beta_r * phase_r + in_scatter_m * beta_m * phase_m);
 
-    // Hillaire-style multi-scatter approximation: a constant fraction of the
-    // single-scatter response, representing the second-order skylight bounce.
-    // Real LUT-based MS adds 20–40 % depending on view angle; this constant
-    // scales the in-scattering uniformly and lifts the dim side of the
-    // atmosphere without a precomputed LUT.
-    let scatter = single * (1.0 + 0.12);
+    // Multi-scatter approximation (Hillaire 2020 simplified).
+    //
+    // The full method precomputes a 2D MS LUT keyed on (sun zenith, height)
+    // - we approximate it inline. Multi-scatter brightens with optical
+    // depth (more atmosphere -> more bounces) and with sun-above-horizon
+    // (most bounced light comes from the lit hemisphere). The 1 - exp form
+    // saturates as the atmosphere thickens, matching the closed-form
+    // single+multi geometric series. Net effect: thicker / sunlit limbs
+    // gain proper sky-blue lift, twilight terminators stay soft, and a
+    // night-side viewer still gets the bright crescent rim instead of a
+    // hard cut to black.
+    let od_view_len = length(od_view);
+    let sun_above = clamp(sun_dir.y * 0.5 + 0.5, 0.0, 1.0);
+    let ms_strength = (1.0 - exp(-od_view_len * 0.85)) * (0.65 + 0.35 * sun_above);
+    // Multi-scatter is itself Rayleigh-tinted but with the phase function
+    // averaged out (skylight is roughly isotropic), so we drop the
+    // mu-dependent factor and just modulate beta_r alone.
+    let ms_ambient = sun_intensity * in_scatter_r * beta_r * ms_strength * (1.0 / (4.0 * PI));
+    let scatter = single + ms_ambient * 0.55;
 
     // Final transmittance for the planet color through the atmosphere column we traversed.
     let final_trans = exp(-(beta_r * od_view.x + beta_m * od_view.y + beta_o * od_view.z));
