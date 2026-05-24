@@ -1,3 +1,4 @@
+import { Breadcrumb } from './components/Breadcrumb'
 import { Canvas } from './components/Canvas'
 import { ControlPanel } from './components/ControlPanel'
 import { LoadingOverlay } from './components/LoadingOverlay'
@@ -31,6 +32,7 @@ export function App() {
       {status === 'loading' && <LoadingOverlay />}
       {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
       {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
+      <Breadcrumb />
       <ViewModeToggle />
       <ControlPanel />
       {status === 'ready' && <OnboardingHint />}
