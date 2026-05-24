@@ -906,10 +906,16 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 /* Glossary modal -----------------------------------------------------*/
 .glossary-trigger {
-  width: 26px;
+  /* Hard size so it never stretches to flex:1 when it's alone in the
+     panel-actions bar (Subsector / Surface / System views have no
+     Randomize / Reset siblings, so the default flex:1 would otherwise
+     make a square `?` button span the whole row). */
+  flex: 0 0 auto !important;
+  width: 32px;
   padding: 0 !important;
   font-weight: 700;
   font-size: var(--type-base);
+  margin-left: auto;
 }
 .glossary-backdrop {
   position: fixed;
