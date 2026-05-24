@@ -259,29 +259,26 @@ creates a natural landing zone for future climate/biome/tectonics work.
 
 ## Rust Compute Roadmap
 
-The current CPU-side workload is trivial — mesh once at startup, microseconds per frame for uniform packing, sub-millisecond for system generation. Almost all the work is in WGSL on the GPU. For Rust to keep earning its place beyond "wgpu is the best WebGPU library," the next features that genuinely need it should land on the CPU side.
+The roadmap started as ten high-ROI Rust compute opportunities; v1 is now shipped end-to-end. Three items are still tagged as *Partial* — a usable form ships today and the listed extension is conditional on a specific need surfacing. Two items remain *Conditional* — they're big enough that the doc's own rule applies: don't do them speculatively, pick them up when a feature actually needs them.
 
-These are the high-ROI Rust compute opportunities, roughly in priority order. Don't do them speculatively — pick the next one when a feature actually needs it.
+### Shipped
 
-1. **Procedural surface pre-bake.** Still future. The Surface Map roadmap is now shipped on a climate-driven v1 (`6785193`) that doesn't require this pre-bake — the globe and the hex map agree on broad bands but not per-pixel noise. Pre-baking the existing 7-octave FBM + plate Voronoi + crater layers + biome stack into six cube-map faces per seed would (a) collapse per-fragment shader cost 5-10×, (b) let the surface hex map sample exactly what the globe shader draws, (c) unblock tectonics (item 3) which iterates over the heightmap. Sequence: port the WGSL noise stack to Rust, rayon-parallelise across faces, upload as a 6-face GPU cube-map, modify `planet.wgsl` to sample instead of compute.
+- **6. Hover / click ray-pick** → `26d014f`. `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; `Canvas.tsx` routes pointermove + click; `HoverTooltip` surfaces class/orbit/mass/Teq.
+- **7. N-body / Kepler propagator with binary perturbations** → `4ae34ac`. Newton-iterated Kepler propagation with seed-derived argument of periapsis + `binary_kick` Kozai-Lidov approximation.
+- **8. Star spectral synthesis** → `1d64044`. `domain::blackbody::blackbody_srgb` integrates Planck radiance against the CIE 1931 colour-matching functions; normalised sRGB output.
+- **9. Long-timescale stability check** → `0319df2`. `domain::stability` runs Chambers mutual-Hill, MMR avoidance, and Holman-Wiegert envelope checks. Regression test asserts ≥ 55 % of seeds pass.
 
-2. **Climate / habitability simulation.** *Partial → `6e35769`.* Seasonal axial-tilt sampling (four orbital-phase samples, subsolar-latitude shifted by obliquity) is in; mean temperatures are now cosine-zenith averages over the year rather than a static latitude factor. Still future: precipitation bands (latitude-dependent Hadley / Ferrel / polar cells), ocean heat capacity (sea-fraction-weighted thermal inertia), a shader-facing biome field uploaded as a small texture so `planet.wgsl` can colour continents physically instead of from fbm.
+### Partial (extensible)
 
-3. **Tectonics simulation.** Run plate motion + uplift + erosion for N timesteps to produce real continents, mountain belts, ocean basins. Replace the noise-derived continents with a physically-motivated heightmap. Heavy compute, exactly where Rust shines.
+- **2. Climate / habitability simulation** → `6e35769`. Seasonal axial-tilt sampling shipped (four orbital-phase samples per latitude band). Extensions when needed: precipitation bands (Hadley / Ferrel / polar cells), ocean heat capacity, shader-facing biome texture.
+- **4. Multi-scatter atmosphere LUT** → `033a2c0`. Inline Hillaire-style multi-scatter approximation shipped; the 2D MS LUT itself would move per-fragment optical-depth onto a precomputed texture for a smaller render-time cost, but the visual gap is already closed.
+- **5. Asteroid belt as real particles** → `0a4cf28`. Shader-side slab integration with two grain scales, azimuthal streaks, Kirkwood gaps, out-of-plane thickness shipped. Full CPU particle simulation would replace the shader belt with instanced billboards if a future feature (eg. inspector-clickable rocks) needs per-rock identity.
+- **10. Image / animation export** → `9042cdd`. PNG frame-grab + 2D-composited planet card shipped. A Rust offscreen render path would let the user request resolutions higher than the viewport, animation timelines, or video; not needed for the current single-frame PNG export.
 
-4. **Multi-scatter atmosphere LUT** (Bruneton & Neyret 2008 / Hillaire 2020). *Partial → `033a2c0`.* The atmosphere shader now does an inline Hillaire-style multi-scatter approximation that varies with optical depth and sun zenith — thicker / sunlit limbs gain a proper sky-blue lift, twilight terminators stay soft. The full 2D MS LUT remains future work; it would move the per-fragment cost of light-direction optical depth onto a precomputed texture.
+### Conditional (deferred — pick up when a downstream feature demands it)
 
-5. **Asteroid belt as real particles.** *Partial → `0a4cf28`.* The shader now does a slab integration with two grain scales, azimuthal streaks following orbital direction, Kirkwood-style depletion gaps, and out-of-plane thickness. Full CPU particle simulation with per-rock orbital elements remains future work; the shader version reads as discrete particles instead of a smear.
-
-6. **Hover / click ray-pick.** *Shipped → `26d014f`.* `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; the WASM API exposes `pickSystemPlanet`, Canvas.tsx routes pointermove + click through it, and `HoverTooltip` surfaces class/orbit/mass/Teq next to the cursor.
-
-7. **N-body / Kepler propagator with binary perturbations.** *Shipped → `4ae34ac`.* `scenes::system::planet_world_position` does Newton-iterated Kepler propagation (mean → eccentric → true anomaly) with seed-derived argument of periapsis, plus a `binary_kick` Kozai-Lidov approximation that pumps inner-planet eccentricity in time with the companion's orbital phase. Damped to keep orbits inside the spacing slot.
-
-8. **Star spectral synthesis.** *Shipped → `1d64044`.* `domain::blackbody::blackbody_srgb` integrates Planck radiance against the CIE 1931 colour-matching functions at 10 nm resolution, then converts to linear sRGB and normalises to unit max. Used everywhere the generator previously called the polynomial fit; tests pin solar/M-dwarf/B-type qualitative results plus invariants.
-
-9. **Long-timescale stability check.** *Shipped → `0319df2`.* `domain::stability` runs the analytic envelope checks (Chambers et al. mutual Hill radius, MMR avoidance for gas giants, Holman-Wiegert binary envelope) that the equivalent 100 Myr N-body run would expose. A regression test asserts >= 55 % of randomly-generated systems pass; tightening that threshold is the natural follow-on for compute roadmap item 7.
-
-10. **Image / animation export.** *Partial → `9042cdd`.* Frame-grab via `canvas.toBlob()` and a 2D-composited planet card (snapshot + UWP/star/trade-codes block) both download from the panel. Full Rust offscreen rendering (animation timeline, higher resolution than viewport, video) remains future work.
+- **1. Procedural surface pre-bake.** The Surface Map roadmap is shipped on a climate-driven v1 (`6785193`) that doesn't require the pre-bake — the globe and the hex map agree on broad bands but not per-pixel noise. Pre-baking the WGSL noise stack into a 6-face cube-map per seed would let the surface hex map sample exactly what the globe shader draws and collapse the per-fragment shader cost ~5-10×. Sequence: port the WGSL noise to Rust, rayon-parallelise faces, upload as a 6-face GPU cube-map, switch `planet.wgsl` to sample. Pick up if (a) the globe ↔ surface visual drift becomes a complaint, or (b) tectonics (compute item 3) is being worked on, or (c) profiling shows the globe shader is the frame-time bottleneck on a target device.
+- **3. Tectonics simulation.** Plate motion + uplift + erosion iterated for N steps to produce real continents and mountain belts, replacing the noise-derived heightmap. Hard prerequisite: item 1 (pre-bake), since the simulation outputs a heightmap that needs to be sampled by the shader and shared by the surface map.
 
 When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
 
@@ -359,7 +356,7 @@ Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
 7. **Navigation polish.** *Shipped → `ab4d689`.* `Breadcrumb.tsx` renders a centre-top pill walking Subsector / Hex / System / Main World with clickable crumbs; `Esc` pops one level.
 
-8. **Optional: WebGPU subsector renderer.** Port the data path to a WGSL fullscreen-triangle scene (`scenes/subsector.rs` + `subsector.wgsl`), then restyle the view to match the WebGPU look (shared starfield backdrop, AGX tonemap consistency). Only worth doing once the SVG version has stable UX.
+8. **Optional: WebGPU subsector renderer.** *Conditional — deferred.* Port the data path to a WGSL fullscreen-triangle scene, then restyle the view to match the WebGPU look. The SVG version's UX is stable and looks consistent with the rest of the panel; this only becomes worth doing if the SVG hits a perf wall on very large sectors or if shared-backdrop visual consistency is requested.
 
 9. **Trade codes column in the system panel.** *Shipped → `9e4b7bf`.* System editor renders the main world's trade codes as accented chips with `<abbr>` tooltips, so the Cepheus game data is visible without bouncing back to the subsector view.
 
@@ -450,7 +447,7 @@ Phases 1-6 are shipped on a climate-driven v1 (`6785193`). The original spec ass
 
 7. **Globe ↔ surface bridge.** *Shipped → `e3eb716`.* `Camera::point_at` aims the detail-view camera at a (lat, lon); `Renderer::point_at_surface` applies the spin to `rotation_t` and pauses auto-rotate so the target stays still. Wired through `pointAtSurface` and `selectAndFocusSurfaceHex` on `appState`; clicking a hex in the SVG focuses the globe immediately, and the inspector grows a "Show on globe" button that aims + switches to Main World in one click.
 
-8. **Optional WebGPU port.** Future — port the data path to a WGSL fullscreen-triangle scene once the SVG UX is stable.
+8. **Optional WebGPU port.** *Conditional — deferred.* Same shape as subsector phase 8: only worth doing if the SVG version hits a perf or visual-consistency limit.
 
 ### Phase 1 Acceptance Criteria
 
