@@ -1193,33 +1193,85 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
+  /* Subtle outline so adjacent same-terrain hexes still read as
+     distinct cells without dominating the colour fills. Classic
+     Cepheus Book 3 surface map uses a thin black hex border. */
   stroke: rgba(0, 0, 0, 0.55);
-  stroke-width: 0.5;
-  transition: filter var(--motion-fast), stroke var(--motion-fast);
+  stroke-width: 0.6;
+  transition: stroke var(--motion-fast), filter var(--motion-fast);
 }
-.surface-hex:hover .surface-hex-shape { filter: brightness(1.15); stroke: rgba(255, 255, 255, 0.4); }
-.surface-hex:focus-visible .surface-hex-shape { stroke: var(--color-accent); stroke-width: 1.4; outline: none; }
+.surface-hex:hover .surface-hex-shape {
+  filter: brightness(1.12);
+  stroke: rgba(255, 255, 255, 0.55);
+}
+.surface-hex:focus-visible .surface-hex-shape {
+  stroke: var(--color-accent);
+  stroke-width: 1.4;
+  outline: none;
+}
 .surface-selected .surface-hex-shape {
   stroke: var(--color-accent);
   stroke-width: 1.6;
 }
+/* Coastline: land hexes that touch ocean draw a heavier dark outline
+   so continents read as distinct shapes on the map. Pure visual
+   convention from the canonical legacy 2d6 world maps. */
+.surface-hex.surface-coast .surface-hex-shape {
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 1.2;
+}
+
+/* Single-glyph terrain symbol centred in each hex. Subdued so the
+   colour does the heavy lifting at a glance, while the glyph
+   disambiguates similar-coloured terrain types (Hill vs Mountain). */
+.surface-glyph {
+  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 8.5px;
+  font-weight: 500;
+  fill: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.surface-ocean .surface-glyph,
+.surface-shoreline .surface-glyph,
+.surface-volcanic .surface-glyph { fill: rgba(255, 255, 255, 0.75); }
+.surface-ice .surface-glyph { fill: rgba(0, 0, 0, 0.45); }
+
 .surface-marker {
-  font-size: 11px;
-  fill: rgba(255, 230, 160, 1);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  fill: #ffd86a;
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.7;
+  paint-order: stroke fill;
   pointer-events: none;
 }
 .surface-starport { font-weight: 700; }
 .surface-city {
-  fill: rgba(255, 255, 255, 0.92);
-  stroke: rgba(0, 0, 0, 0.5);
-  stroke-width: 0.5;
+  fill: rgba(255, 255, 255, 0.95);
+  stroke: rgba(0, 0, 0, 0.8);
+  stroke-width: 0.6;
   pointer-events: none;
 }
-.surface-city-3 { fill: rgba(255, 230, 160, 1); }
-.surface-city-2 { fill: rgba(255, 255, 255, 0.92); }
-.surface-city-1 { fill: rgba(220, 220, 230, 0.85); }
+.surface-city-3 { fill: #ffe9a0; }
+.surface-city-2 { fill: rgba(255, 255, 255, 0.95); }
+.surface-city-1 { fill: rgba(220, 220, 230, 0.88); }
 .surface-city-0 { fill: rgba(180, 180, 200, 0.70); }
+
+/* Settlement / starport name labels below the marker. Two paint
+   passes (stroke then fill) act as a backlight so the label stays
+   readable over any terrain colour. */
+.surface-label {
+  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  fill: #ffffff;
+  stroke: rgba(0, 0, 0, 0.9);
+  stroke-width: 2.2;
+  paint-order: stroke fill;
+  pointer-events: none;
+}
+.surface-label-tier-3 { font-size: 8.5px; font-weight: 700; }
+.surface-label-tier-2 { font-size: 7.5px; }
 
 .sys-empty { color: var(--text-dim); font-style: italic; }
 
