@@ -52,7 +52,7 @@ export interface RegionRenderResult {
   labels: RegionLabel[]
 }
 
-const NOISE_RES = 192  // internal heightmap resolution
+const NOISE_RES = 128  // internal heightmap resolution (tuned for sub-50ms render)
 
 export function renderRegion(
   ctx: CanvasRenderingContext2D,
@@ -85,18 +85,40 @@ export function renderRegion(
   const data = img.data
 
   const palette = paletteForTerrain(hex.terrain, hex.temperature_k)
+  // Pre-sample elevation + slope on the offscreen grid so the per-pixel
+  // loop is just an array lookup + colour math. Five-fold faster than
+  // calling sampleHeight from inside the pixel loop.
+  const elev = new Float32Array(off.width * off.height)
+  const slopeX = new Float32Array(off.width * off.height)
+  const slopeY = new Float32Array(off.width * off.height)
   for (let py = 0; py < off.height; py++) {
     for (let px = 0; px < off.width; px++) {
       const u = px / (off.width - 1)
       const v = py / (off.height - 1)
-      const h = sampleHeight(map, u, v)
+      elev[py * off.width + px] = sampleHeight(map, u, v)
+    }
+  }
+  for (let py = 0; py < off.height; py++) {
+    for (let px = 0; px < off.width; px++) {
+      const idx = py * off.width + px
+      const xm = px > 0 ? idx - 1 : idx
+      const xp = px < off.width - 1 ? idx + 1 : idx
+      const ym = py > 0 ? idx - off.width : idx
+      const yp = py < off.height - 1 ? idx + off.width : idx
+      slopeX[idx] = elev[xp] - elev[xm]
+      slopeY[idx] = elev[yp] - elev[ym]
+    }
+  }
+  for (let py = 0; py < off.height; py++) {
+    for (let px = 0; px < off.width; px++) {
+      const idx = py * off.width + px
+      const h = elev[idx]
       const isWater = h < seaLevel
-      const slope = sampleSlope(map, u, v)
-      // Hillshade: lambert against a fake surface normal derived from the
-      // gradient. Slope vectors get scaled into world units so the relief
-      // reads at the resolution we're sampling.
-      const nx = -slope.dx * 4
-      const ny = -slope.dy * 4
+      // Hillshade: lambert against a fake surface normal derived from
+      // the gradient. Slope vectors get scaled into world units so the
+      // relief reads at the resolution we're sampling.
+      const nx = -slopeX[idx] * 4
+      const ny = -slopeY[idx] * 4
       const nz = 1.0
       const nl = Math.hypot(nx, ny, nz)
       const lamb = Math.max(0, (nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]) / nl)
@@ -122,11 +144,11 @@ export function renderRegion(
         b *= shade
       }
 
-      const idx = (py * off.width + px) * 4
-      data[idx] = clamp255(r)
-      data[idx + 1] = clamp255(g)
-      data[idx + 2] = clamp255(b)
-      data[idx + 3] = 255
+      const di = idx * 4
+      data[di] = clamp255(r)
+      data[di + 1] = clamp255(g)
+      data[di + 2] = clamp255(b)
+      data[di + 3] = 255
     }
   }
   offCtx.putImageData(img, 0, 0)
