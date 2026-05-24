@@ -1132,6 +1132,42 @@ label.color input[type="color"]::-webkit-color-swatch {
 .zone-tag-amber { background: rgba(255, 200, 110, 0.22); color: rgba(255, 220, 160, 1); }
 .zone-tag-red { background: rgba(255, 110, 110, 0.22); color: rgba(255, 180, 180, 1); }
 
+/* Export panel -----------------------------------------------------*/
+.export-row {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.export-btn {
+  flex: 1 1 0;
+  padding: 8px 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-control);
+  background: var(--surface-2);
+  color: var(--color-text);
+  font: 500 var(--type-body) inherit;
+  cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.export-btn:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+}
+.export-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.export-status {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--type-sm);
+  letter-spacing: 0.2px;
+}
+.export-status-ok { color: rgba(180, 245, 200, 1); }
+.export-status-error { color: rgba(255, 180, 180, 1); }
+.export-status-busy { color: var(--color-accent); }
+
 /* Hover tooltip ----------------------------------------------------*/
 .hover-tooltip {
   position: fixed;

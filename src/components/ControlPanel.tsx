@@ -15,6 +15,7 @@ import {
   viewMode,
 } from '../appState'
 import { AboutModal } from './AboutModal'
+import { ExportPanel } from './ExportPanel'
 import { GlossaryModal } from './GlossaryModal'
 import { SocietyEditor } from './SocietyEditor'
 import { SubsectorEditor } from './SubsectorEditor'
@@ -101,6 +102,8 @@ export function ControlPanel() {
         {mode === 'system' && (
           <PerformanceControls disabled={controlsDisabled} />
         )}
+
+        {mode !== 'subsector' && <ExportPanel disabled={controlsDisabled} />}
 
         <footer class="panel-footer">
           <span>Drag to orbit · scroll to zoom</span>
