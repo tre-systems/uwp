@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact'
-import { rerollPlanet, rerollSystemSeed, uwp } from '../appState'
+import { params, rerollPlanet, rerollSystemSeed, uwp } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
 import { systemName } from '../domain/names'
@@ -13,12 +13,18 @@ interface SystemEditorProps {
 export function SystemEditor({ system, disabled }: SystemEditorProps) {
   const star = system.star
   const comp = system.companion
-  const mainWorld = system.main_world >= 0 ? system.planets[system.main_world] : null
   // Trade codes are derived from the authored UWP digits, which currently
   // represent the user-edited main world. Once the renderer-side main-world
   // reconciliation lands these will track the generated world automatically.
   const tradeCodes = deriveTradeCodes(uwp.value)
   const name = systemName(system.seed)
+  // For the user, the "main world" is the one they're authoring in the
+  // UWP/Detail editor, not the unrelated rocky body the climate model
+  // happened to pick. Surface those values directly so the System and
+  // Surface views agree on what the player's world looks like.
+  const authoredParams = params.value
+  const authoredWaterPct = (authoredParams.sea_level * 100).toFixed(0)
+  const authoredHabitability = uwpHabitabilityEstimate(uwp.value)
   return (
     <>
       <section>
@@ -41,20 +47,15 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
           </MetaRow>
           <MetaRow label="Snow line">{system.snow_line_au.toFixed(2)} AU</MetaRow>
           <MetaRow label="Age">{system.age_gyr.toFixed(1)} Gyr</MetaRow>
-          {mainWorld && (
-            <MetaRow label="Main world climate">
-              {mainWorld.climate.mean_surface_temp_k.toFixed(0)} K mean ·
-              {' '}water {(mainWorld.climate.liquid_water_fraction * 100).toFixed(0)}%
-            </MetaRow>
-          )}
-          {mainWorld && (
-            <div class="sys-meta-row sys-meta-bar">
-              <dt>Habitability</dt>
-              <dd>
-                <HabitabilityBar value={mainWorld.climate.habitability} />
-              </dd>
-            </div>
-          )}
+          <MetaRow label="Main world (UWP)">
+            Hydrographics {uwp.value.hydro} · {authoredWaterPct}% water
+          </MetaRow>
+          <div class="sys-meta-row sys-meta-bar">
+            <dt>Habitability</dt>
+            <dd>
+              <HabitabilityBar value={authoredHabitability} />
+            </dd>
+          </div>
         </dl>
         {tradeCodes.length > 0 && <TradeCodeChips codes={tradeCodes} />}
 
@@ -139,6 +140,17 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
       )}
     </>
   )
+}
+
+/// Rough habitability score from the user's UWP digits. Mirrors the
+/// system editor's previous Rust-side bar so a tweak to atmosphere /
+/// hydrographics / pop visibly updates the chip.
+function uwpHabitabilityEstimate(u: import('../uwp').UwpDigits): number {
+  const atmFit = u.atm >= 4 && u.atm <= 9 ? 1.0 : u.atm === 3 || u.atm === 13 ? 0.4 : 0
+  const hydroFit = u.hydro >= 2 && u.hydro <= 9 ? 1.0 : 0.3
+  const sizeFit = u.size >= 4 && u.size <= 10 ? 1.0 : 0.5
+  const popBoost = u.pop >= 5 ? 0.15 : 0
+  return Math.min(1, 0.85 * atmFit * hydroFit * sizeFit + popBoost)
 }
 
 function MetaRow({ label, children }: { label: string; children: ComponentChildren }) {
