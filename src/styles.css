@@ -1003,11 +1003,10 @@ label.color input[type="color"]::-webkit-color-swatch {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Cover the planet-canvas completely - the map needs a calm reading
-     surface, not a half-transparent ghost of the WebGPU view. */
-  background:
-    radial-gradient(ellipse at center, rgba(10, 14, 24, 0.92), rgba(2, 4, 8, 0.985)),
-    var(--color-bg);
+  /* Pure black field matches the canonical legacy 2d6 Map look and
+     keeps the hex grid + jump-route greens as the only chromatic
+     content on the page. */
+  background: #000000;
   padding: 72px var(--space-7) var(--space-7);
   z-index: 5;
   overflow: auto;
@@ -1033,31 +1032,42 @@ label.color input[type="color"]::-webkit-color-swatch {
   text-align: center;
 }
 
+/* Subsector hex map - styled after the classic legacy 2d6 Map. The
+   background sits on the .subsector-overlay (true black); the hex
+   shapes contribute only their thin grey outline. Selection draws an
+   accent ring; travel zones (Amber / Red) become a coloured stroke
+   ring on the hex shape itself rather than a fill, matching the
+   legacy 2d6 Map's visual vocabulary. */
 .hex-cell .hex-shape {
-  stroke: rgba(255, 255, 255, 0.18);
+  stroke: rgba(255, 255, 255, 0.22);
   stroke-width: 0.8;
-  fill: rgba(255, 255, 255, 0.02);
-  transition: fill var(--motion-fast), stroke var(--motion-fast);
+  fill: transparent;
+  transition: stroke var(--motion-fast);
 }
 .hex-cell.hex-occupied { cursor: pointer; }
-.hex-cell.hex-occupied:hover .hex-shape { fill: rgba(255, 255, 255, 0.07); }
-.hex-cell.hex-occupied:focus-visible .hex-shape { stroke: var(--color-accent); stroke-width: 1.5; outline: none; }
-.hex-cell.hex-selected .hex-shape {
-  fill: var(--color-accent-soft);
+.hex-cell.hex-occupied:hover .hex-shape { stroke: rgba(255, 255, 255, 0.55); }
+.hex-cell.hex-occupied:focus-visible .hex-shape {
   stroke: var(--color-accent);
-  stroke-width: 1.5;
+  stroke-width: 1.6;
+  outline: none;
 }
-.hex-cell.zone-amber .hex-shape { fill: rgba(255, 200, 110, 0.08); }
-.hex-cell.zone-amber:hover .hex-shape { fill: rgba(255, 200, 110, 0.16); }
-.hex-cell.zone-amber.hex-selected .hex-shape {
-  fill: rgba(255, 200, 110, 0.22);
-  stroke: rgba(255, 200, 110, 0.85);
+.hex-cell.hex-selected .hex-shape {
+  stroke: var(--color-accent);
+  stroke-width: 1.8;
 }
-.hex-cell.zone-red .hex-shape { fill: rgba(255, 110, 110, 0.10); }
-.hex-cell.zone-red:hover .hex-shape { fill: rgba(255, 110, 110, 0.18); }
-.hex-cell.zone-red.hex-selected .hex-shape {
-  fill: rgba(255, 110, 110, 0.24);
-  stroke: rgba(255, 110, 110, 0.85);
+/* Travel zones render as coloured rings around the hex (canon
+   legacy 2d6 Map: amber/red border with no fill). */
+.hex-cell.zone-amber .hex-shape {
+  stroke: rgba(255, 198, 60, 0.95);
+  stroke-width: 1.6;
+}
+.hex-cell.zone-red .hex-shape {
+  stroke: rgba(230, 56, 56, 0.95);
+  stroke-width: 1.8;
+}
+.hex-cell.zone-amber:hover .hex-shape,
+.hex-cell.zone-red:hover .hex-shape {
+  stroke-width: 2.2;
 }
 
 .jump-route {
@@ -1065,12 +1075,13 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-linecap: round;
 }
 .jump-route-1 {
-  stroke: rgba(110, 220, 150, 0.65);
-  stroke-width: 1.4;
+  /* Bright green to match the canonical legacy 2d6 Map's main lines. */
+  stroke: rgba(78, 200, 102, 0.85);
+  stroke-width: 1.6;
 }
 .jump-route-2 {
-  stroke: rgba(255, 200, 110, 0.4);
-  stroke-width: 1;
+  stroke: rgba(255, 200, 110, 0.55);
+  stroke-width: 1.1;
   stroke-dasharray: 3 3;
 }
 
@@ -1087,45 +1098,74 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 .hex-system-dot {
   fill: var(--color-text-strong);
-  filter: drop-shadow(0 0 4px rgba(255, 220, 160, 0.55));
 }
-.hex-cell.port-a .hex-system-dot { fill: rgba(255, 240, 180, 1); }
-.hex-cell.port-b .hex-system-dot { fill: rgba(220, 230, 255, 1); }
+.hex-cell.port-a .hex-system-dot { fill: #ffffff; }
+.hex-cell.port-b .hex-system-dot { fill: rgba(235, 245, 255, 1); }
 .hex-cell.port-c .hex-system-dot { fill: rgba(200, 220, 255, 0.9); }
-.hex-cell.port-d .hex-system-dot { fill: rgba(200, 200, 220, 0.8); }
-.hex-cell.port-e .hex-system-dot { fill: rgba(180, 180, 200, 0.6); }
-.hex-cell.port-x .hex-system-dot { fill: rgba(150, 80, 80, 0.7); }
+.hex-cell.port-d .hex-system-dot { fill: rgba(180, 195, 215, 0.85); }
+.hex-cell.port-e .hex-system-dot { fill: rgba(170, 180, 195, 0.7); }
+.hex-cell.port-x .hex-system-dot {
+  fill: transparent;
+  stroke: rgba(200, 80, 80, 0.9);
+  stroke-width: 1.0;
+}
 
-.hex-uwp,
-.hex-uwp-row2 {
+/* Coordinate label - tiny, dim, top-centre of every hex (occupied or
+   empty) so the user can read addresses without them dominating. */
+.hex-label {
+  font-family: var(--font-mono);
+  font-size: 6px;
+  fill: rgba(255, 255, 255, 0.32);
+  pointer-events: none;
+  letter-spacing: 0.4px;
+}
+
+/* Starport letter - sits to the upper-left of the system dot, classic
+   legacy 2d6 convention. Red-zone hexes flag the port letter red. */
+.hex-starport {
   font-family: var(--font-mono);
   font-size: 9px;
+  font-weight: 600;
   fill: var(--color-text-strong);
   pointer-events: none;
 }
-.hex-uwp-row2 { font-size: 8px; fill: var(--color-text); }
-.hex-label {
-  font-family: var(--font-mono);
-  font-size: 7px;
-  fill: var(--text-dim);
-  pointer-events: none;
-  letter-spacing: 0.5px;
-}
-.hex-flags {
-  font-size: 8px;
-  fill: rgba(255, 220, 160, 0.85);
+.hex-starport-warn { fill: rgba(255, 110, 110, 1); }
+
+/* World name - canonical legacy 2d6 small-caps below the dot. */
+.hex-name {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Helvetica Neue', sans-serif;
+  font-size: 6.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  fill: var(--color-text-strong);
   pointer-events: none;
 }
+.hex-name-warn { fill: rgba(255, 110, 110, 1); }
+
+/* Gas-giant glyph: hollow ring just below name. */
+.hex-gas-giant {
+  fill: transparent;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 0.9;
+}
+
+/* Asteroid-belt glyph cluster (three tiny dots). */
+.hex-belt-glyph circle {
+  fill: rgba(255, 255, 255, 0.65);
+}
+
+/* Base symbols sit across the upper third of the hex. Naval star is
+   bright; Scout triangle, Research diamond and Aid ring follow in
+   muted accent tints. */
 .hex-base {
-  font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   pointer-events: none;
 }
-.base-naval { fill: rgba(140, 180, 255, 1); }
-.base-scout { fill: rgba(255, 200, 140, 1); }
-.base-research { fill: rgba(180, 255, 200, 1); }
-.base-Aid { fill: rgba(255, 180, 220, 1); }
+.base-naval { fill: #ffffff; }
+.base-scout { fill: rgba(255, 215, 140, 1); }
+.base-research { fill: rgba(170, 230, 255, 1); }
+.base-Aid { fill: rgba(255, 200, 230, 1); }
 
 /* Surface map ------------------------------------------------------*/
 .surface-map {
