@@ -1,12 +1,14 @@
-// Rendered-map background for the Surface view.
+// Rendered-map background for the Surface view, projected through
+// the same 20-face icosahedral net the hex grid sits on.
 //
-// The Rust side already produces a 192x96 plate-tectonics + value-noise
-// heightmap (`generateSurfacePrebake`); this function turns that heightmap
-// into an equirectangular RGBA image - ocean depth shaded by elevation,
-// land coloured by elevation + latitude, polar caps near the poles, and a
-// cheap hillshade so continents read with relief. Returned as a data URL
-// so it can sit in an SVG `<image>` element and ride the SVG's pan / zoom
-// gestures without separate transform plumbing.
+// For each pixel in the output canvas we map (x, y) → barycentric in
+// the containing triangle → 3D point on the unit sphere → (lat, lon)
+// → sample the Rust pre-bake. Pixels outside the net stay transparent
+// so the canvas itself reads as an "unfolded icosahedron." Because
+// every adjacent pair of flat triangles shares its edge on the
+// icosahedron, continents flow continuously across fold lines.
+
+import { netToSphere, NET_WIDTH, NET_HEIGHT } from '../domain/icosahedron'
 
 export interface PreBake {
   lon_cells: number
@@ -24,17 +26,22 @@ interface RenderOptions {
   /** Mean equilibrium temperature in Kelvin; shifts the land palette
    *  toward hot / temperate / cold biomes. */
   meanTempK: number
-  /** Output image size. The heightmap is bilinearly sampled. */
+  /** Output image size. The icosahedral net is rendered into a canvas
+   *  matching the net's aspect ratio (5 : 2√3 ≈ 1.44). Width controls
+   *  the resolution. */
   width: number
-  height: number
 }
 
 export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): string {
-  const { width, height } = opts
+  // Map the icosahedral net's intrinsic dimensions (NET_WIDTH ×
+  // NET_HEIGHT in pixels) to the caller's canvas resolution.
+  const width = opts.width
+  const height = Math.round(width * NET_HEIGHT / NET_WIDTH)
+  const scaleNetToPx = width / NET_WIDTH
+
   const heightmap = prebake.heightmap instanceof Float32Array
     ? prebake.heightmap
     : Float32Array.from(prebake.heightmap)
-
   const seaLevel = quantile(heightmap, clamp(opts.waterFraction, 0, 1))
 
   const canvas = document.createElement('canvas')
@@ -44,58 +51,58 @@ export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): 
   const img = ctx.createImageData(width, height)
   const data = img.data
 
-  // Hillshade direction matches the planet shader convention so the
-  // map looks lit from the same side as the globe.
   const sunDir: [number, number, number] = [-0.55, -0.55, 0.62]
 
-  const lonCells = prebake.lon_cells
-  const latCells = prebake.lat_cells
-
-  // Cache sampling - we sample at the output resolution but read from
-  // the 192x96 source via bilinear. Precompute lat/lon for each row /
-  // column to avoid repeating the trig.
-  const lonAt = new Float32Array(width)
-  for (let x = 0; x < width; x++) lonAt[x] = x / width
-  const latAt = new Float32Array(height)
-  for (let y = 0; y < height; y++) latAt[y] = y / Math.max(1, height - 1)
-
-  // Pre-sample the heightmap onto the output grid in one pass so the
-  // shading loop can read neighbours cheaply for hillshade.
+  // First pass: project every pixel and sample the heightmap. We
+  // capture the sphere coords so the hillshade pass can read
+  // neighbours along the spherical surface instead of the flat
+  // canvas grid (where adjacent pixels can belong to different
+  // icosahedral faces).
   const elev = new Float32Array(width * height)
+  const inside = new Uint8Array(width * height)
+  const latArr = new Float32Array(width * height)
   for (let y = 0; y < height; y++) {
-    const v = latAt[y]
     for (let x = 0; x < width; x++) {
-      elev[y * width + x] = sampleBilinear(heightmap, lonCells, latCells, latAt[y], lonAt[x])
-      void v
+      const netX = x / scaleNetToPx
+      const netY = y / scaleNetToPx
+      const proj = netToSphere(netX, netY)
+      const idx = y * width + x
+      if (!proj) continue
+      inside[idx] = 1
+      latArr[idx] = proj.lat
+      elev[idx] = sampleBilinear(heightmap, prebake.lon_cells, prebake.lat_cells, proj.lat, proj.lon)
     }
   }
 
   const hot = opts.meanTempK > 305
   const cold = opts.meanTempK < 255
 
+  // Second pass: shade. Hillshade uses local flat-canvas gradients
+  // (cheap, slightly wrong across fold lines but visually fine since
+  // both sides of a fold are still elevation samples from the same
+  // sphere).
   for (let y = 0; y < height; y++) {
-    const latNorm = latAt[y]
-    // latNorm runs 0 at north pole → 1 at south pole. Absolute
-    // latitude in degrees:
-    const latDeg = (1 - 2 * latNorm) * 90
-    const absLat = Math.abs(latDeg)
-    const iceWeight = smoothstep(opts.iceLatitudeDeg - 8, opts.iceLatitudeDeg + 2, absLat)
-
     for (let x = 0; x < width; x++) {
       const idx = y * width + x
+      if (!inside[idx]) {
+        data[idx * 4 + 3] = 0
+        continue
+      }
       const h = elev[idx]
       const isWater = h <= seaLevel
+      const latRad = latArr[idx]
+      const absLat = Math.abs(latRad) * 180 / Math.PI
+      const iceWeight = smoothstep(opts.iceLatitudeDeg - 8, opts.iceLatitudeDeg + 2, absLat)
 
-      // Slope for hillshade. Wrap in longitude (sphere), clamp in
-      // latitude (poles).
-      const xL = (x - 1 + width) % width
-      const xR = (x + 1) % width
-      const yU = Math.max(0, y - 1)
-      const yD = Math.min(height - 1, y + 1)
-      const dx = elev[y * width + xR] - elev[y * width + xL]
-      const dy = elev[yD * width + x] - elev[yU * width + x]
-      // Slope amp scales with grid resolution; tuned empirically so the
-      // continents have ~20% intensity variation across mid-elevation.
+      // Slope: prefer in-face neighbours; if neighbour is outside the
+      // net (zero) reuse our own elevation so the hillshade goes flat
+      // at fold edges instead of going crazy.
+      const xL = x > 0 && inside[idx - 1] ? idx - 1 : idx
+      const xR = x < width - 1 && inside[idx + 1] ? idx + 1 : idx
+      const yU = y > 0 && inside[idx - width] ? idx - width : idx
+      const yD = y < height - 1 && inside[idx + width] ? idx + width : idx
+      const dx = elev[xR] - elev[xL]
+      const dy = elev[yD] - elev[yU]
       const nx = -dx * 60
       const ny = -dy * 60
       const nz = 1
@@ -105,24 +112,13 @@ export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): 
 
       let r: number, g: number, b: number
       if (isWater) {
-        // Depth: 0 = at sea level, 1 = deepest point in this bake.
-        const depthMin = -1
-        const depth = clamp((seaLevel - h) / Math.max(0.0001, seaLevel - depthMin), 0, 1)
+        const depth = clamp((seaLevel - h) / Math.max(0.0001, seaLevel + 1), 0, 1)
         ;[r, g, b] = oceanColor(depth, cold)
       } else {
-        // Land: relative elevation above sea level, mapped through a
-        // latitude-aware palette.
-        const elevMax = 1
-        const land = clamp((h - seaLevel) / Math.max(0.0001, elevMax - seaLevel), 0, 1)
+        const land = clamp((h - seaLevel) / Math.max(0.0001, 1 - seaLevel), 0, 1)
         ;[r, g, b] = landColor(land, absLat, hot, cold)
-        // Hillshade only on land - oceans keep their depth gradient.
-        r *= shade
-        g *= shade
-        b *= shade
+        r *= shade; g *= shade; b *= shade
       }
-
-      // Polar ice caps: gradually replace whatever we'd draw with a
-      // bright tundra / ice tone above the ice latitude.
       if (iceWeight > 0) {
         const [ir, ig, ib] = isWater ? [200, 220, 235] : [220, 230, 240]
         r = r * (1 - iceWeight) + ir * iceWeight

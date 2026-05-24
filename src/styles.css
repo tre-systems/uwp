@@ -1534,27 +1534,39 @@ label.color input[type="color"]::-webkit-color-swatch {
   text-align: center;
   padding: var(--space-7);
 }
-/* Rendered planet-surface background painted from the Rust pre-bake.
-   Sits behind the hex grid and rides the same SVG viewBox, so pan /
-   zoom keeps both layers aligned. */
+/* Rendered planet-surface background painted from the Rust pre-bake
+   and projected through the icosahedral net. Sits behind the hex
+   grid and rides the same SVG viewBox, so pan / zoom keeps both
+   layers aligned. */
 .surface-bg-image {
-  opacity: 0.85;
+  opacity: 0.9;
   pointer-events: none;
 }
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
-  /* Subtle outline so adjacent same-terrain hexes still read as
-     distinct cells without dominating the colour fills. Hex fills
-     drop to ~40% opacity so the rendered background shows through;
-     the terrain glyphs and outlines still convey the classification
-     at a glance. */
-  fill-opacity: 0.42;
-  stroke: rgba(0, 0, 0, 0.55);
+  fill-opacity: 0.38;
+  stroke: rgba(0, 0, 0, 0.35);
   stroke-width: 0.6;
   transition: stroke var(--motion-fast), filter var(--motion-fast), fill-opacity var(--motion-fast);
 }
-.surface-hex:hover .surface-hex-shape { fill-opacity: 0.65; }
-.surface-selected .surface-hex-shape { fill-opacity: 0.75; }
+.surface-hex:hover .surface-hex-shape { fill-opacity: 0.6; stroke: rgba(255, 255, 255, 0.55); }
+.surface-selected .surface-hex-shape { fill-opacity: 0.75; stroke: var(--color-accent); stroke-width: 1.6; }
+
+/* Fold lines: heavy black strokes along every triangle edge in the
+   icosahedral net. Two layered passes so the line reads as inked
+   even when an adjacent face's edge is on top. */
+.surface-fold-lines polygon {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.surface-starport-group { pointer-events: none; }
+.surface-starport-halo {
+  fill: rgba(0, 0, 0, 0.6);
+}
 .surface-hex:hover .surface-hex-shape {
   filter: brightness(1.12);
   stroke: rgba(255, 255, 255, 0.55);
