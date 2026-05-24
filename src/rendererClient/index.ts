@@ -2,14 +2,17 @@ import { effect } from '@preact/signals'
 import init, { Planet } from '../../pkg/planet_render'
 import {
   params,
+  renderQualityMode,
   registerRendererControls,
   setErrorMessage,
   setParamsSnapshot,
+  setRenderPerformanceSnapshot,
   setSystemSeed,
   setSystemSnapshot,
   setViewMode,
   systemSeed,
   viewMode,
+  type RenderQualityMode,
   type ViewMode,
 } from '../appState'
 import {
@@ -17,6 +20,7 @@ import {
   createFrameTimeDownshiftState,
   detectRenderProfile,
   nextRenderProfileForFrameTime,
+  renderProfileByName,
   type FrameTimeDownshiftState,
   type RenderProfile,
 } from '../renderProfile'
@@ -51,6 +55,10 @@ export class RendererClient {
   private debugHandle: Window['uwp'] | null = null
   private lastPointer = { x: 0, y: 0 }
   private dragging = false
+  private fpsSampleStartMs = 0
+  private fpsSampleFrames = 0
+  private lastFps = 0
+  private lastFrameMs = 0
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.profile = detectRenderProfile()
@@ -82,6 +90,7 @@ export class RendererClient {
       this.refreshSystemSnapshot()
       this.installEffects()
       this.installControls()
+      this.publishPerformanceSnapshot(0, 0)
       this.startFrameLoop()
     } catch (err) {
       console.error(err)
@@ -123,6 +132,9 @@ export class RendererClient {
     this.disposers.push(
       effect(() => {
         this.planet?.setViewMode(viewMode.value)
+      }),
+      effect(() => {
+        this.applyRenderQualityMode(renderQualityMode.value)
       }),
       effect(() => {
         if (!this.planet) return
@@ -169,6 +181,7 @@ export class RendererClient {
         return
       }
       this.sampleFrameTime(frameTimeMs)
+      this.sampleFps(time)
       this.animationFrame = requestAnimationFrame(loop)
     }
     this.animationFrame = requestAnimationFrame(loop)
@@ -180,13 +193,60 @@ export class RendererClient {
   }
 
   private sampleFrameTime(frameTimeMs: number) {
+    if (renderQualityMode.value !== 'auto') return
     const result = nextRenderProfileForFrameTime(this.downshiftState, frameTimeMs)
     this.downshiftState = result.state
     if (!result.changed) return
 
     this.profile = result.state.profile
     this.sizeCanvas()
+    this.planet?.setMeshQuality(this.profile.meshQuality)
     this.planet?.setParams(this.renderParams())
+    this.publishPerformanceSnapshot()
+  }
+
+  private sampleFps(time: number) {
+    if (this.fpsSampleStartMs === 0) {
+      this.fpsSampleStartMs = time
+      this.fpsSampleFrames = 0
+      return
+    }
+
+    this.fpsSampleFrames += 1
+    const elapsedMs = time - this.fpsSampleStartMs
+    if (elapsedMs < 500) return
+
+    const fps = (this.fpsSampleFrames * 1000) / elapsedMs
+    this.publishPerformanceSnapshot(fps, 1000 / Math.max(fps, 1))
+    this.fpsSampleStartMs = time
+    this.fpsSampleFrames = 0
+  }
+
+  private applyRenderQualityMode(mode: RenderQualityMode) {
+    const nextProfile = mode === 'auto' ? detectRenderProfile() : renderProfileByName(mode)
+    this.profile = nextProfile
+    this.downshiftState = createFrameTimeDownshiftState(nextProfile)
+    this.fpsSampleStartMs = 0
+    this.fpsSampleFrames = 0
+    this.sizeCanvas()
+    this.planet?.setMeshQuality(nextProfile.meshQuality)
+    this.planet?.setParams(this.renderParams())
+    this.publishPerformanceSnapshot()
+  }
+
+  private publishPerformanceSnapshot(fps = this.lastFps, frameMs = this.lastFrameMs) {
+    this.lastFps = fps
+    this.lastFrameMs = frameMs
+    setRenderPerformanceSnapshot({
+      mode: renderQualityMode.value,
+      profile: this.profile.name,
+      fps,
+      frameMs,
+      targetFps: this.profile.targetFps,
+      shaderQuality: this.profile.shaderQuality,
+      pixelWidth: this.canvas.width,
+      pixelHeight: this.canvas.height,
+    })
   }
 
   private readonly sizeCanvas = () => {
@@ -196,6 +256,7 @@ export class RendererClient {
     if (this.canvas.width !== size.width) this.canvas.width = size.width
     if (this.canvas.height !== size.height) this.canvas.height = size.height
     this.planet?.resize(size.width, size.height)
+    this.publishPerformanceSnapshot()
   }
 
   private installInputHandlers() {

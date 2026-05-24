@@ -16,6 +16,7 @@ import {
 import { SocietyEditor } from './SocietyEditor'
 import { StarportEditor } from './StarportEditor'
 import { SystemEditor } from './SystemEditor'
+import { PerformanceControls } from './PerformanceControls'
 import { UwpCodeEditor } from './UwpCodeEditor'
 import { ViewControls } from './ViewControls'
 import { WorldProfileEditor } from './WorldProfileEditor'
@@ -74,7 +75,12 @@ export function ControlPanel() {
             <WorldProfileEditor uwp={u} disabled={controlsDisabled} onFieldChange={setUwpField} />
             <SocietyEditor uwp={u} disabled={controlsDisabled} onFieldChange={setUwpField} />
             <ViewControls params={p} disabled={controlsDisabled} onParamsChange={updateParams} />
+            <PerformanceControls disabled={controlsDisabled} />
           </>
+        )}
+
+        {mode === 'system' && (
+          <PerformanceControls disabled={controlsDisabled} />
         )}
 
         <footer class="panel-footer">

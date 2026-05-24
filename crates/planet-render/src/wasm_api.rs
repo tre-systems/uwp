@@ -28,6 +28,11 @@ impl Planet {
         self.inner.resize(width.max(1), height.max(1));
     }
 
+    #[wasm_bindgen(js_name = setMeshQuality)]
+    pub fn set_mesh_quality(&mut self, mesh_quality: f32) {
+        self.inner.set_mesh_quality(mesh_quality);
+    }
+
     pub fn drag(&mut self, dx: f32, dy: f32) {
         self.inner.drag(dx, dy);
     }

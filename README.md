@@ -80,7 +80,14 @@ cp /tmp/wasm-pack-v0.14.0-aarch64-apple-darwin/wasm-pack ~/.cargo/bin/
 | `npm run preview`       | serve the production `dist/` locally                        |
 | `npm run typecheck`     | TypeScript only (also rebuilds dev WASM for .d.ts)          |
 | `npm test`              | Vitest unit tests for the TS layer                          |
+| `npm run verify:fast`   | fast local gate used by the Husky pre-commit hook           |
+| `npm run verify`        | full CI-equivalent gate used by the Husky pre-push hook     |
 | `npm run deploy`        | full release build + `wrangler deploy`                      |
+
+Husky installs Git hooks via `npm install`. The pre-commit hook runs the fast
+gate: TS unit tests, Rust format, and native Rust check. The pre-push hook runs
+the full gate: tests, typecheck, audit, Rust format/check/test/clippy for native
+and wasm targets, then the production build.
 
 Shader changes need `npm run build:wasm:dev` (or full `npm run dev`) then a
 manual browser reload — Vite HMR can't reload a WASM module.

@@ -27,6 +27,12 @@ greenhouse warming, water inventory, ice-albedo feedback, aridity, liquid
 water fraction, and habitability scoring. Main-world selection uses this
 computed score.
 
+Renderer ownership is split by scene: `renderer.rs` coordinates WebGPU
+surfaces, frame dispatch, camera input, and mode switching; `scenes/detail.rs`
+owns detail uniforms, mesh buffers, HDR/depth targets, and the detail render
+passes; `scenes/system.rs` owns system uniforms, system GPU resources, orbit
+compression, and the system render pass.
+
 ## Pipeline overview (Detail mode)
 
 The detail renderer is **two passes** writing into two render targets:

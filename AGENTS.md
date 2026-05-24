@@ -146,31 +146,32 @@ The requested refactor baseline is now in place:
 - Product UI calls typed actions such as `rerollPlanet(index)` instead of `window.uwp`; the window handle remains debug-only.
 - UWP sliders can hold intermediate values; UWP output rounds/buckets those values into Cepheus-compatible digits.
 - Runtime frame-time monitoring can downshift from high → balanced → low render profiles on slow devices.
+- The Performance panel exposes the effective render profile, FPS, frame time, target FPS, render-target size, shader quality, and manual Auto/High/Balanced/Low overrides.
 - Rust system-view uniform packing and camera fitting live in `crates/planet-render/src/scenes/system.rs`.
-- Rust detail-scene mesh quality, HDR/depth target helpers, and detail render-pass encoding live in `crates/planet-render/src/scenes/detail.rs`.
+- Rust detail-scene uniform packing, mesh quality, HDR/depth target helpers, and detail render-pass encoding live in `crates/planet-render/src/scenes/detail.rs`.
 - Rust GPU/surface/pipeline setup lives in `crates/planet-render/src/gpu.rs`.
 - Rust physical system generation lives in `crates/planet-render/src/domain/system.rs`.
 - The wasm-bindgen boundary lives in `crates/planet-render/src/wasm_api.rs`.
-- A Rust uniform layout test pins the `SystemUniforms` shader contract.
+- Rust uniform layout tests pin the detail and system shader contracts.
 - WGSL chunk inclusion is supported through `shader_with_common`; the shared AGX tonemap lives in `shaders/chunks/agx.wgsl`.
 
 The remaining large items in this file are product roadmap work rather than cleanup debt: stronger Rust-side authored-world invariants, optional generated bindings, and the Rust compute roadmap below.
 
 ## Cleanup Backlog
 
-Small follow-ups identified in review that the main refactor pass left behind. None are blockers; they're the next layer of the same architectural intent and should be picked up before any large new feature lands.
+The cleanup pass completed the renderer decomposition items that were blocking
+larger Rust compute work:
 
-1. **Lift detail-scene state out of `renderer.rs`.** The `Uniforms` struct, `build_uniforms`, `seed_to_tilt`, `seed_offsets`, `vec3_to_v4`, and the detail-mode camera clamp in `set_view_mode` are all detail-scene concerns currently sitting in the coordinator. Move them into `scenes/detail.rs` as `DetailUniforms` + `detail::uniforms_for(&PlanetParams, &Camera, time)` so `renderer.rs` becomes a pure scene dispatcher (~250 lines instead of ~500). Mirror the boundary `scenes/system.rs` already keeps.
+- Detail uniforms, detail camera fitting, seed-derived tilt/offset packing, and detail mesh buffer creation live in `scenes/detail.rs`.
+- System uniform buffer/layout/bind-group creation lives in `scenes/system.rs`.
+- Detail and system uniform layout tests pin the WGSL contracts.
+- `recompute_planet_climate` refreshes climate summaries after planet mutation, and `reroll_planet` calls it even though current rerolls are surface-seed-only.
 
-2. **Move system uniform buffer creation into `scenes/system.rs`.** Lines 138–165 of `renderer.rs` build the `system_uniform_buffer`, `system_uniform_layout`, and `system_bind_group` inline. Wrap them in `scenes::system::create_resources(&device) -> SystemResources { buffer, layout, bind_group }` so each scene owns its full GPU resource set, matching the `gpu::create_pipelines` factory shape.
+Remaining cleanup debt:
 
-3. **Add a detail uniform layout test.** `scenes/system.rs` has `system_uniform_contract_stays_shader_aligned`; the detail `Uniforms` struct has no equivalent. Add a matching size/alignment test so detail shader contract drift is caught as a Rust unit-test failure rather than at WebGPU validation time. This is the concrete shape AGENTS.md refactor step 8 asks for.
+1. **Dirty-flag the detail uniform rebuild.** `detail::uniforms_for` still reconstructs the entire detail uniform struct each frame even when nothing but `time` and `rotation_t` have changed. Microsecond cost today, so this is cosmetic; revisit when CPU-side compute (pre-baked surfaces, tectonics, climate sampling per-frame) starts using real budget.
 
-4. **Climate recompute on planet mutation.** `ClimateSummary` is currently computed once during `generate()` and stored on the planet. `Renderer::reroll_planet` rewrites the seed but does not refresh the climate snapshot, so the panel shows stale habitability for rerolled bodies. Re-run `climate::estimate` inside `reroll_planet` and in any future per-planet setter that changes mass/orbit/body-type/temperature.
-
-5. **Dirty-flag the detail uniform rebuild.** `build_uniforms` reconstructs the entire detail `Uniforms` struct each frame even when nothing but `time` and `rotation_t` have changed. Microsecond cost today, so this is cosmetic; revisit when CPU-side compute (pre-baked surfaces, tectonics, climate sampling per-frame) starts using real budget.
-
-The State Ownership note above covers the largest remaining boundary leak (`setParams` whole-struct transfer) — pick that up at the same time as the per-planet setter work in item 4 to avoid touching the FFI surface twice.
+2. **Narrow the remaining whole-struct parameter bridge.** `wasm_api::set_params` still accepts a complete `PlanetParams` deserialised from JS. Pick this up when Rust-side authored-world invariants exist and per-field validation has real semantics.
 
 ## Rust Compute Baseline
 

@@ -9,12 +9,25 @@ import {
 } from '../uwp'
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
 import type { SolarSystem } from '../domain/system'
+import type { RenderProfileName } from '../renderProfile'
 
 export * from '../params'
 export * from '../domain/cepheus'
 export { paramsPatchFromUwp, paramsPatchFromUwpDigits }
 
 export type ViewMode = 'detail' | 'system'
+export type RenderQualityMode = 'auto' | RenderProfileName
+
+export interface RenderPerformanceSnapshot {
+  mode: RenderQualityMode
+  profile: RenderProfileName
+  fps: number
+  frameMs: number
+  targetFps: number
+  shaderQuality: number
+  pixelWidth: number
+  pixelHeight: number
+}
 
 export interface RendererControls {
   rerollPlanet(index: number, seed?: number): void
@@ -29,6 +42,17 @@ export const params = signal<Params>({ ...defaultParams })
 export const viewMode = signal<ViewMode>('detail')
 export const systemSeed = signal<number>(1337)
 export const currentSystem = signal<SolarSystem | null>(null)
+export const renderQualityMode = signal<RenderQualityMode>('auto')
+export const renderPerformance = signal<RenderPerformanceSnapshot>({
+  mode: 'auto',
+  profile: 'high',
+  fps: 0,
+  frameMs: 0,
+  targetFps: 60,
+  shaderQuality: 1,
+  pixelWidth: 0,
+  pixelHeight: 0,
+})
 
 let rendererControls: RendererControls | null = null
 
@@ -50,6 +74,14 @@ export function togglePanel() {
 
 export function setViewMode(mode: ViewMode) {
   viewMode.value = mode
+}
+
+export function setRenderQualityMode(mode: RenderQualityMode) {
+  renderQualityMode.value = mode
+}
+
+export function setRenderPerformanceSnapshot(snapshot: RenderPerformanceSnapshot) {
+  renderPerformance.value = snapshot
 }
 
 export function setSystemSeed(seed: number) {

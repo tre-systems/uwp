@@ -36,6 +36,48 @@ pub struct SystemUniforms {
     pub stars_meta: [f32; 4],
 }
 
+pub struct SystemResources {
+    pub uniform_buffer: wgpu::Buffer,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+    pub bind_group: wgpu::BindGroup,
+}
+
+pub fn create_resources(device: &wgpu::Device) -> SystemResources {
+    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("system_uniforms"),
+        size: std::mem::size_of::<SystemUniforms>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("system_uniform_layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("system_bind_group"),
+        layout: &bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        }],
+    });
+
+    SystemResources {
+        uniform_buffer,
+        bind_group_layout,
+        bind_group,
+    }
+}
+
 pub fn camera_fit_distance(sys: &SolarSystem) -> f32 {
     let outer_orbit = sys
         .planets

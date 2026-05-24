@@ -346,6 +346,10 @@ fn habitability_score(p: &Planet) -> f32 {
     }
 }
 
+pub(crate) fn recompute_planet_climate(planet: &mut Planet) {
+    planet.climate = climate::estimate(planet);
+}
+
 /// Per-body-class moon count, sampled to vaguely match Solar System values
 /// (Saturn 146, Jupiter 95, Uranus 28, Neptune 16, Earth 1, Mars 2, Venus 0).
 /// Capped well below true counts because system view can only fit so many.
@@ -688,7 +692,7 @@ pub fn generate(seed: u32) -> SolarSystem {
                     climate: ClimateSummary::dead(),
                 };
                 planet.moons = generate_moons(&mut rng, &planet);
-                planet.climate = climate::estimate(&planet);
+                recompute_planet_climate(&mut planet);
                 planets.push(planet);
                 prev_was_giant = true;
             }
@@ -713,7 +717,7 @@ pub fn generate(seed: u32) -> SolarSystem {
                     climate: ClimateSummary::dead(),
                 };
                 planet.moons = generate_moons(&mut rng, &planet);
-                planet.climate = climate::estimate(&planet);
+                recompute_planet_climate(&mut planet);
                 planets.push(planet);
                 prev_was_giant = false;
             }
@@ -738,7 +742,7 @@ pub fn generate(seed: u32) -> SolarSystem {
                     climate: ClimateSummary::dead(),
                 };
                 planet.moons = generate_moons(&mut rng, &planet);
-                planet.climate = climate::estimate(&planet);
+                recompute_planet_climate(&mut planet);
                 planets.push(planet);
                 prev_was_giant = false;
             }
@@ -868,6 +872,32 @@ mod tests {
             let tr_avg = tr_moons as f32 / tr_count as f32;
             assert!(gg_avg > tr_avg * 2.0, "gg_avg={gg_avg} tr_avg={tr_avg}");
         }
+    }
+
+    #[test]
+    fn recompute_planet_climate_refreshes_summary() {
+        let mut planet = Planet {
+            orbit_au: 1.0,
+            eccentricity: 0.0,
+            inclination_deg: 0.0,
+            mass_earth: 1.0,
+            radius_earth: 1.0,
+            body_type: BodyType::Terrestrial,
+            temperature_k: 255.0,
+            phase_rad: 0.0,
+            day_seconds: 86_400.0,
+            seed: 1,
+            in_habitable_zone: true,
+            moons: vec![],
+            climate: ClimateSummary::dead(),
+        };
+
+        recompute_planet_climate(&mut planet);
+        assert!(planet.climate.habitability > 0.35);
+
+        planet.body_type = BodyType::GasGiant;
+        recompute_planet_climate(&mut planet);
+        assert_eq!(planet.climate.habitability, 0.0);
     }
 
     #[test]

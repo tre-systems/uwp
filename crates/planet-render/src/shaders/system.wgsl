@@ -29,7 +29,7 @@ const BT_FROZEN: f32      = 7.0;
 // Packed system data. Layout matches `SystemUniforms` in scenes/system.rs.
 //   planets[2i  ]: xyz = world position,   w = display radius
 //   planets[2i+1]: xyz = base palette tint, w = orbital radius
-//   planet_meta[i]: x = body_type, y = seed, z = axial tilt (rad), w = ring_outer (0 if none)
+//   planet_meta[i]: x = body_type, y = seed, z = axial tilt (rad), w = unused
 //   moons[i]      : xyz = world position,  w = display radius (sign = icy flag)
 //   belts[i]      : x = inner_au, y = outer_au, z = density, w = unused
 //   companion     : xyz = position, w = display radius (0 = no companion)

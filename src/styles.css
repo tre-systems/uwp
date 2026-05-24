@@ -385,6 +385,54 @@ input[type="range"]::-moz-range-thumb {
   min-height: 14px;
 }
 
+.quality-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.quality-btn {
+  min-width: 0;
+  padding: 7px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms;
+}
+.quality-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.quality-btn.active {
+  background: var(--accent-soft);
+  border-color: rgba(110, 164, 255, 0.5);
+}
+.quality-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.perf-grid {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) minmax(0, 1.5fr);
+  gap: 5px 10px;
+  font-size: 11px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.perf-grid span {
+  color: var(--text-dim);
+}
+.perf-grid strong {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 500;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 label.color {
   display: flex;
   align-items: center;

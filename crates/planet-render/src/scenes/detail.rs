@@ -1,5 +1,45 @@
+use bytemuck::{Pod, Zeroable};
+use glam::{Mat4, Quat, Vec3};
+use wgpu::util::DeviceExt;
+
+use crate::camera::Camera;
+use crate::mesh::cubesphere;
+use crate::params::PlanetParams;
+
 pub const PLANET_RES: u32 = 200;
 pub const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct DetailUniforms {
+    pub view_proj: [[f32; 4]; 4],
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub model: [[f32; 4]; 4],
+    pub camera_pos: [f32; 4],
+    pub sun_dir: [f32; 4],
+    pub ocean_color: [f32; 4],
+    pub land_color: [f32; 4],
+    pub mountain_color: [f32; 4],
+    pub sand_color: [f32; 4],
+    pub snow_color: [f32; 4],
+    pub atmosphere_color: [f32; 4],
+    /// xyz = noise seed offset, w = ice_latitude
+    pub seed_block: [f32; 4],
+    /// x = sea_level, y = mountain_amp, z = noise_freq, w = noise_octaves
+    pub planet_params: [f32; 4],
+    /// x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
+    pub misc: [f32; 4],
+    /// x = width, y = height, z = aspect, w = planet_radius
+    pub resolution: [f32; 4],
+    /// x = crater_density, y = population_intensity, z = vegetation_richness, w = atm_banding
+    pub world_features: [f32; 4],
+}
+
+pub struct DetailMesh {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub num_indices: u32,
+}
 
 pub fn mesh_resolution(quality: f32) -> u32 {
     if quality < 0.55 {
@@ -9,6 +49,133 @@ pub fn mesh_resolution(quality: f32) -> u32 {
     } else {
         PLANET_RES
     }
+}
+
+pub fn create_mesh_buffers(device: &wgpu::Device, quality: f32) -> DetailMesh {
+    let mesh = cubesphere(mesh_resolution(quality));
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("vertex_buffer"),
+        contents: bytemuck::cast_slice(&mesh.vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("index_buffer"),
+        contents: bytemuck::cast_slice(&mesh.indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+
+    DetailMesh {
+        vertex_buffer,
+        index_buffer,
+        num_indices: mesh.indices.len() as u32,
+    }
+}
+
+pub fn camera_fit_distance(current_distance: f32, planet_radius: f32) -> f32 {
+    let distance = current_distance.clamp((planet_radius * 1.4).max(0.25), planet_radius * 60.0);
+    if distance > 6.0 {
+        3.0
+    } else {
+        distance
+    }
+}
+
+pub fn uniforms_for(
+    params: &PlanetParams,
+    camera: &Camera,
+    time: f32,
+    rotation_t: f32,
+    width: u32,
+    height: u32,
+) -> DetailUniforms {
+    // Spin around the planet's local Y, then apply a seed-derived tilt so
+    // each world has its own axial inclination instead of standing bolt-upright.
+    // Quat multiply applies right-to-left: spin first, tilt wraps the result.
+    let (tilt_axis, tilt_angle) = seed_to_tilt(params.seed);
+    let tilt = Quat::from_axis_angle(tilt_axis, tilt_angle);
+    let spin = Quat::from_rotation_y(rotation_t);
+    let model = Mat4::from_quat(tilt * spin);
+    let view_proj = camera.view_proj();
+    let inv_view_proj = view_proj.inverse();
+    let cam_pos = camera.position();
+
+    let sun_yaw = params.sun_angle * std::f32::consts::TAU;
+    // The UI's default/randomized angle range is authored around the viewer-facing side.
+    let sun_dir = Vec3::new(-sun_yaw.cos() * 0.85, 0.32, -sun_yaw.sin() * 0.85).normalize();
+
+    let seed = seed_offsets(params.seed);
+
+    DetailUniforms {
+        view_proj: view_proj.to_cols_array_2d(),
+        inv_view_proj: inv_view_proj.to_cols_array_2d(),
+        model: model.to_cols_array_2d(),
+        camera_pos: [cam_pos.x, cam_pos.y, cam_pos.z, 1.0],
+        sun_dir: [sun_dir.x, sun_dir.y, sun_dir.z, 0.0],
+        ocean_color: vec3_to_v4(params.ocean_color),
+        land_color: vec3_to_v4(params.land_color),
+        mountain_color: vec3_to_v4(params.mountain_color),
+        sand_color: vec3_to_v4(params.sand_color),
+        snow_color: vec3_to_v4(params.snow_color),
+        atmosphere_color: vec3_to_v4(params.atmosphere_color),
+        seed_block: [seed[0], seed[1], seed[2], params.ice_latitude],
+        planet_params: [
+            params.sea_level,
+            params.mountain_height,
+            params.noise_frequency,
+            params.noise_octaves as f32,
+        ],
+        misc: [
+            params.atmosphere_density,
+            time,
+            params.cloud_coverage,
+            params.render_quality.clamp(0.0, 1.0),
+        ],
+        resolution: [
+            width as f32,
+            height as f32,
+            camera.aspect,
+            params.planet_radius,
+        ],
+        world_features: [
+            params.crater_density,
+            params.population_intensity,
+            params.vegetation_richness,
+            params.atm_banding,
+        ],
+    }
+}
+
+fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {
+    [c[0], c[1], c[2], 1.0]
+}
+
+/// Derive a per-seed axial tilt (axis in the XZ plane + angle 0..~35 deg) so
+/// each world leans in its own direction.
+fn seed_to_tilt(seed: u32) -> (Vec3, f32) {
+    let mut s = seed.wrapping_mul(2246822519).wrapping_add(0x9E3779B9);
+    let mut h = || -> f32 {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        ((s >> 8) as f32) / 16_777_216.0
+    };
+    let angle = h() * 35f32.to_radians();
+    let dir = h() * std::f32::consts::TAU;
+    (Vec3::new(dir.cos(), 0.0, dir.sin()), angle)
+}
+
+/// Hash a u32 seed into three independent noise offsets so each seed produces
+/// a unique-looking planet.
+fn seed_offsets(seed: u32) -> [f32; 3] {
+    let mut s = seed.wrapping_mul(2654435761).wrapping_add(1);
+    let mut out = [0.0_f32; 3];
+    for o in &mut out {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        *o = (s as f32 / u32::MAX as f32) * 1000.0 - 500.0;
+    }
+    out
 }
 
 pub fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
@@ -147,5 +314,17 @@ pub fn encode_render(
         pass.set_bind_group(0, pass_input.uniforms_bind_group, &[]);
         pass.set_bind_group(1, pass_input.atmosphere_bind_group, &[]);
         pass.draw(0..3, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DetailUniforms;
+
+    #[test]
+    fn detail_uniform_contract_stays_shader_aligned() {
+        assert_eq!(std::mem::size_of::<DetailUniforms>(), 400);
+        assert_eq!(std::mem::align_of::<DetailUniforms>(), 4);
+        assert_eq!(std::mem::size_of::<DetailUniforms>() % 16, 0);
     }
 }
