@@ -1,9 +1,10 @@
 import type { ComponentChildren } from 'preact'
-import { params, rerollPlanet, rerollSystemSeed, uwp } from '../appState'
+import { params, rerollPlanet, rerollSystemSeed, setSystemSeed, uwp } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
 import { systemName } from '../domain/names'
 import { BodyTypeIcon, bodyTypeLabel } from './Icon'
+import { SeedField } from './SeedField'
 
 interface SystemEditorProps {
   system: SolarSystem
@@ -74,7 +75,12 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
           <button onClick={rerollSystemSeed} disabled={disabled}>
             New system
           </button>
-          <span class="sys-seed">seed {system.seed}</span>
+          <SeedField
+            value={system.seed}
+            disabled={disabled}
+            onChange={setSystemSeed}
+            aria-label="System seed"
+          />
         </div>
       </section>
 

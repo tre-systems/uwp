@@ -285,6 +285,44 @@ html, body, #app {
   font-variant-numeric: tabular-nums;
 }
 
+.seed-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+.seed-field-label {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.seed-field input {
+  width: 9ch;
+  padding: 3px 6px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-control, rgba(255, 255, 255, 0.12));
+  border-radius: 4px;
+  color: var(--color-text, #e8e8e8);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+  transition: border-color 120ms, background 120ms;
+}
+.seed-field input:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.seed-field input:focus {
+  border-color: var(--accent, #6ea8ff);
+  background: rgba(255, 255, 255, 0.06);
+}
+.seed-field input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .sys-table {
   width: 100%;
   border-collapse: collapse;

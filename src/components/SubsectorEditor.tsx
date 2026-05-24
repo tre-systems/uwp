@@ -4,10 +4,12 @@ import {
   selectedHex,
   setShowJumpRoutes,
   setSubsectorDensity,
+  setSubsectorSeed,
   showJumpRoutes,
   subsectorDensity,
   subsectorSeed,
 } from '../appState'
+import { SeedField } from './SeedField'
 import {
   hexLabel,
   uwpToCode,
@@ -81,7 +83,12 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
           <button onClick={rerollSubsectorSeed} disabled={disabled}>
             New subsector
           </button>
-          <span class="sys-seed">seed {seed}</span>
+          <SeedField
+            value={seed}
+            disabled={disabled}
+            onChange={setSubsectorSeed}
+            aria-label="Subsector seed"
+          />
         </div>
       </section>
 
