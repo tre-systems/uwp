@@ -163,19 +163,15 @@ export class RendererClient {
   }
 
   getSurfacePrebake(): { lon_cells: number; lat_cells: number; heightmap: Float32Array | number[] } | null {
-    // Pre-bake is keyed on the *main world's* per-planet seed (matches
-    // the existing surface_map::generate path) and the authored sea
-    // level so the rendered background tracks the slider the user is
-    // actually editing.
+    // The Rust surface_map::generate path uses params.seed (the visual
+    // appearance seed) - NOT the main world's per-planet seed - when
+    // it calls surface_prebake::generate. The background here has to
+    // use the same seed or the rendered continents won't line up with
+    // the hex grid's terrain classifications.
     const planet = this.planet
     if (!planet) return null
-    const system = this.getSystem()
-    if (!system || system.planets.length === 0) return null
-    const idx = system.main_world >= 0 ? system.main_world : 0
-    const mw = system.planets[idx]
-    if (!mw) return null
     try {
-      const bake = generateSurfacePrebake(mw.seed, params.value.sea_level)
+      const bake = generateSurfacePrebake(params.value.seed, params.value.sea_level)
       return bake as { lon_cells: number; lat_cells: number; heightmap: Float32Array | number[] }
     } catch (err) {
       console.warn('generateSurfacePrebake failed', err)
