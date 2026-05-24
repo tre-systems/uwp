@@ -5,6 +5,7 @@ import {
   detectRenderProfile,
   nextRenderProfileForFrameTime,
   renderProfileByName,
+  shouldThrottleRenderProfile,
 } from './renderProfile'
 
 describe('detectRenderProfile', () => {
@@ -80,6 +81,18 @@ describe('canvasPixelSize', () => {
       width: 2560,
       height: 1440,
     })
+  })
+})
+
+describe('render profile frame pacing', () => {
+  it('keeps balanced quality at the browser refresh cadence', () => {
+    expect(renderProfileByName('balanced').targetFps).toBe(60)
+    expect(shouldThrottleRenderProfile(renderProfileByName('balanced'))).toBe(false)
+  })
+
+  it('keeps low quality as the only intentionally throttled profile', () => {
+    expect(renderProfileByName('low').targetFps).toBe(30)
+    expect(shouldThrottleRenderProfile(renderProfileByName('low'))).toBe(true)
   })
 })
 

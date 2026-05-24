@@ -285,6 +285,7 @@ Both streams meet at three boundaries:
 ## Performance Principles
 
 - Mobile and low-power devices matter. Keep adaptive render profiles and continue pushing toward runtime downshifts when frame time is poor.
+- High and Balanced should render at the browser refresh cadence; Balanced buys performance through lower pixels/shader/mesh, not an awkward 45 fps cap. Low may cap to 30 fps when the device needs relief.
 - Prefer measured simplification over piling more branches into already-heavy shaders.
 - Do not let UI blur/backdrop effects compete with WebGPU on mobile.
 - If WebGPU is unavailable or unstable, the app should eventually provide a simpler fallback view rather than only an error.

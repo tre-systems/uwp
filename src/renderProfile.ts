@@ -50,7 +50,7 @@ const BALANCED: RenderProfile = {
   name: 'balanced',
   dprCap: 1.35,
   maxPixels: 1_600_000,
-  targetFps: 45,
+  targetFps: 60,
   shaderQuality: 0.68,
   meshQuality: 0.72,
 }
@@ -105,6 +105,10 @@ export function detectRenderProfile(hints = browserRenderHints()): RenderProfile
 
 export function renderProfileByName(name: RenderProfileName): RenderProfile {
   return PROFILES[name]
+}
+
+export function shouldThrottleRenderProfile(profile: RenderProfile): boolean {
+  return profile.name === 'low' && profile.targetFps < 59
 }
 
 export function lowerRenderProfile(profile: RenderProfile): RenderProfile {

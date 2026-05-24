@@ -43,7 +43,7 @@ export function PerformanceControls({ disabled = false }: PerformanceControlsPro
         <strong>{modeLabel}</strong>
         <span>FPS</span>
         <strong>{perf.fps > 0 ? perf.fps.toFixed(0) : '--'}</strong>
-        <span>Frame</span>
+        <span>Cadence</span>
         <strong>{perf.frameMs > 0 ? `${perf.frameMs.toFixed(1)} ms` : '--'}</strong>
         <span>Target</span>
         <strong>{perf.targetFps} fps</strong>

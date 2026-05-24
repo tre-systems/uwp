@@ -21,6 +21,7 @@ import {
   detectRenderProfile,
   nextRenderProfileForFrameTime,
   renderProfileByName,
+  shouldThrottleRenderProfile,
   type FrameTimeDownshiftState,
   type RenderProfile,
 } from '../renderProfile'
@@ -167,7 +168,7 @@ export class RendererClient {
     let lastRenderMs = 0
     const loop = (time: number) => {
       if (!this.planet || this.cancelled) return
-      const minFrameMs = this.profile.targetFps >= 59 ? 0 : 1000 / this.profile.targetFps
+      const minFrameMs = shouldThrottleRenderProfile(this.profile) ? 1000 / this.profile.targetFps : 0
       if (minFrameMs > 0 && time - lastRenderMs < minFrameMs) {
         this.animationFrame = requestAnimationFrame(loop)
         return

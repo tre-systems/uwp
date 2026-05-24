@@ -1,4 +1,5 @@
-import { rerollPlanet, rerollSystemSeed } from '../appState'
+import { rerollPlanet, rerollSystemSeed, uwp } from '../appState'
+import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
 
 interface SystemEditorProps {
@@ -10,6 +11,10 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
   const star = system.star
   const comp = system.companion
   const mainWorld = system.main_world >= 0 ? system.planets[system.main_world] : null
+  // Trade codes are derived from the authored UWP digits, which currently
+  // represent the user-edited main world. Once the renderer-side main-world
+  // reconciliation lands these will track the generated world automatically.
+  const tradeCodes = deriveTradeCodes(uwp.value)
   return (
     <>
       <section>
@@ -44,6 +49,7 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
               {' '}habitability {(mainWorld.climate.habitability * 100).toFixed(0)}%
             </div>
           )}
+          {tradeCodes.length > 0 && <TradeCodeChips codes={tradeCodes} />}
         </div>
 
         <div class="sys-actions">
@@ -104,5 +110,25 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
         </section>
       )}
     </>
+  )
+}
+
+function TradeCodeChips({ codes }: { codes: readonly TradeCode[] }) {
+  return (
+    <div class="trade-codes" aria-label="Trade codes for the main world">
+      <span class="trade-codes-label">Trade codes</span>
+      <span class="trade-codes-list">
+        {codes.map((code) => (
+          <abbr
+            key={code}
+            class="trade-chip"
+            title={tradeCodeName(code)}
+            tabIndex={0}
+          >
+            {code}
+          </abbr>
+        ))}
+      </span>
+    </div>
   )
 }

@@ -301,6 +301,42 @@ html, body, #app {
   padding: 2px 0;
 }
 
+.trade-codes {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.trade-codes-label {
+  font-size: var(--type-sm);
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+.trade-codes-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.trade-chip {
+  display: inline-block;
+  padding: 1px var(--space-3);
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-text-strong);
+  font: 600 var(--type-sm)/1.4 var(--font-mono);
+  letter-spacing: 0.6px;
+  text-decoration: none;
+  cursor: help;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.trade-chip:hover,
+.trade-chip:focus-visible {
+  background: var(--color-accent-hover);
+  outline: none;
+}
+
 .sys-reroll {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.15);
