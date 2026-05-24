@@ -80,6 +80,10 @@ pub fn camera_fit_distance(current_distance: f32, planet_radius: f32) -> f32 {
     }
 }
 
+/// Recompute the full uniform struct. Use this when params, camera, or
+/// resolution change. For per-frame updates that only advance `time` and
+/// `rotation_t`, prefer `patch_frame_dynamics` to skip the heavy work
+/// (sun direction, seed tilt, view-proj inverse, view-proj itself).
 pub fn uniforms_for(
     params: &PlanetParams,
     camera: &Camera,
@@ -143,6 +147,24 @@ pub fn uniforms_for(
             params.atm_banding,
         ],
     }
+}
+
+/// Patch the time-varying fields of a cached uniform struct. The expensive
+/// matrices and per-seed offsets stay the same; only the model matrix
+/// (rotation_t spin around the seed-derived tilt) and the `time` field in
+/// `misc` need to refresh each frame.
+pub fn patch_frame_dynamics(
+    uniforms: &mut DetailUniforms,
+    params: &PlanetParams,
+    rotation_t: f32,
+    time: f32,
+) {
+    let (tilt_axis, tilt_angle) = seed_to_tilt(params.seed);
+    let tilt = Quat::from_axis_angle(tilt_axis, tilt_angle);
+    let spin = Quat::from_rotation_y(rotation_t);
+    let model = Mat4::from_quat(tilt * spin);
+    uniforms.model = model.to_cols_array_2d();
+    uniforms.misc[1] = time;
 }
 
 fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {

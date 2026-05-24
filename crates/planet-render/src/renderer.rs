@@ -1,3 +1,4 @@
+use bytemuck::Zeroable;
 use web_sys::HtmlCanvasElement;
 
 use crate::camera::Camera;
@@ -47,6 +48,12 @@ pub struct Renderer {
 
     view_mode: ViewMode,
     system: SolarSystem,
+
+    // Detail-uniform cache. The full struct only needs rebuilding when
+    // params, camera, or canvas size change; per-frame work then patches
+    // the model matrix + time field via `detail_scene::patch_frame_dynamics`.
+    detail_uniforms_cache: detail_scene::DetailUniforms,
+    detail_uniforms_dirty: bool,
 }
 
 impl Renderer {
@@ -157,11 +164,14 @@ impl Renderer {
             last_time: 0.0,
             view_mode: ViewMode::Detail,
             system: initial_system,
+            detail_uniforms_cache: detail_scene::DetailUniforms::zeroed(),
+            detail_uniforms_dirty: true,
         })
     }
 
     pub fn set_params(&mut self, params: PlanetParams) {
         self.params = params;
+        self.detail_uniforms_dirty = true;
     }
 
     pub fn set_mesh_quality(&mut self, mesh_quality: f32) {
@@ -185,6 +195,7 @@ impl Renderer {
                 self.camera.distance = self.system_camera_fit_distance();
             }
         }
+        self.detail_uniforms_dirty = true;
     }
 
     pub fn set_system_seed(&mut self, seed: u32) {
@@ -237,10 +248,12 @@ impl Renderer {
             &self.depth_view,
         );
         self.camera.aspect = width as f32 / height as f32;
+        self.detail_uniforms_dirty = true;
     }
 
     pub fn drag(&mut self, dx: f32, dy: f32) {
         self.camera.orbit(dx * 0.005, dy * 0.005);
+        self.detail_uniforms_dirty = true;
     }
 
     pub fn zoom(&mut self, delta: f32) {
@@ -255,6 +268,7 @@ impl Renderer {
                     .clamp(0.10, (fit * 3.5).max(20.0));
             }
         }
+        self.detail_uniforms_dirty = true;
     }
 
     pub fn render(&mut self, time: f32) -> Result<(), String> {
@@ -266,16 +280,29 @@ impl Renderer {
         self.last_time = time;
         self.rotation_t += dt * self.params.auto_rotate;
 
-        let uniforms = detail_scene::uniforms_for(
-            &self.params,
-            &self.camera,
-            time,
-            self.rotation_t,
-            self.config.width,
-            self.config.height,
+        if self.detail_uniforms_dirty {
+            self.detail_uniforms_cache = detail_scene::uniforms_for(
+                &self.params,
+                &self.camera,
+                time,
+                self.rotation_t,
+                self.config.width,
+                self.config.height,
+            );
+            self.detail_uniforms_dirty = false;
+        } else {
+            detail_scene::patch_frame_dynamics(
+                &mut self.detail_uniforms_cache,
+                &self.params,
+                self.rotation_t,
+                time,
+            );
+        }
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::bytes_of(&self.detail_uniforms_cache),
         );
-        self.queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
