@@ -263,6 +263,8 @@ The roadmap started as ten high-ROI Rust compute opportunities; v1 is now shippe
 
 ### Shipped
 
+- **1. Procedural surface pre-bake** → `c3ffb12`. `domain::surface_prebake` produces a 192×96 lat/lon heightmap per seed by combining plate-tectonic uplift/rift with multi-octave value noise. `surface_map::generate` samples it for the hex map; `generateSurfacePrebake(seed, water)` exposes it for future shader bind-group work.
+- **3. Tectonics simulation** → `c3ffb12`. Shipped together with the pre-bake: 6-10 plate centres with tangential drift, convergence at boundaries drives uplift (mountains), divergence drives rifts (basins). Per-cell plate IDs preserved for future biome / colouring work.
 - **6. Hover / click ray-pick** → `26d014f`. `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; `Canvas.tsx` routes pointermove + click; `HoverTooltip` surfaces class/orbit/mass/Teq.
 - **7. N-body / Kepler propagator with binary perturbations** → `4ae34ac`. Newton-iterated Kepler propagation with seed-derived argument of periapsis + `binary_kick` Kozai-Lidov approximation.
 - **8. Star spectral synthesis** → `1d64044`. `domain::blackbody::blackbody_srgb` integrates Planck radiance against the CIE 1931 colour-matching functions; normalised sRGB output.
@@ -277,8 +279,8 @@ The roadmap started as ten high-ROI Rust compute opportunities; v1 is now shippe
 
 ### Conditional (deferred — pick up when a downstream feature demands it)
 
-- **1. Procedural surface pre-bake.** The Surface Map roadmap is shipped on a climate-driven v1 (`6785193`) that doesn't require the pre-bake — the globe and the hex map agree on broad bands but not per-pixel noise. Pre-baking the WGSL noise stack into a 6-face cube-map per seed would let the surface hex map sample exactly what the globe shader draws and collapse the per-fragment shader cost ~5-10×. Sequence: port the WGSL noise to Rust, rayon-parallelise faces, upload as a 6-face GPU cube-map, switch `planet.wgsl` to sample. Pick up if (a) the globe ↔ surface visual drift becomes a complaint, or (b) tectonics (compute item 3) is being worked on, or (c) profiling shows the globe shader is the frame-time bottleneck on a target device.
-- **3. Tectonics simulation.** Plate motion + uplift + erosion iterated for N steps to produce real continents and mountain belts, replacing the noise-derived heightmap. Hard prerequisite: item 1 (pre-bake), since the simulation outputs a heightmap that needs to be sampled by the shader and shared by the surface map.
+- **GPU integration of the pre-bake.** The pre-bake heightmap is computed and exposed; `planet.wgsl` still runs its own noise stack rather than sampling the baked data. Wiring the bake into a GPU cube-map (or 2D lat-lon texture), adding a bind-group entry, and switching the shader to sample would (a) make the rendered globe and the surface hex map agree at the pixel level and (b) collapse per-fragment shader cost ~5-10×. Sequence: copy the heightmap into a `wgpu::Texture`, expose the sampler in the planet bind-group, replace the FBM continent term in `planet.wgsl` with a texture sample.
+- **Tectonics evolution.** v1 ships a single-pass plate convergence/divergence model. Iterating it for N timesteps with simple erosion would produce more weathered terrain (smoothed mountain ranges, oxbow-like river valleys). Useful once the GPU pre-bake landing makes terrain detail visible on the globe.
 
 When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
 
