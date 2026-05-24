@@ -1,5 +1,5 @@
 import { effect } from '@preact/signals'
-import init, { Planet } from '../../pkg/planet_render'
+import init, { Planet, generateSurfacePrebake } from '../../pkg/planet_render'
 import {
   params,
   renderQualityMode,
@@ -162,6 +162,27 @@ export class RendererClient {
     this.planet?.pointAtSurface(latDeg, lonDeg)
   }
 
+  getSurfacePrebake(): { lon_cells: number; lat_cells: number; heightmap: Float32Array | number[] } | null {
+    // Pre-bake is keyed on the *main world's* per-planet seed (matches
+    // the existing surface_map::generate path) and the authored sea
+    // level so the rendered background tracks the slider the user is
+    // actually editing.
+    const planet = this.planet
+    if (!planet) return null
+    const system = this.getSystem()
+    if (!system || system.planets.length === 0) return null
+    const idx = system.main_world >= 0 ? system.main_world : 0
+    const mw = system.planets[idx]
+    if (!mw) return null
+    try {
+      const bake = generateSurfacePrebake(mw.seed, params.value.sea_level)
+      return bake as { lon_cells: number; lat_cells: number; heightmap: Float32Array | number[] }
+    } catch (err) {
+      console.warn('generateSurfacePrebake failed', err)
+      return null
+    }
+  }
+
   private renderParams() {
     return { ...params.value, render_quality: this.profile.shaderQuality }
   }
@@ -199,6 +220,7 @@ export class RendererClient {
       setParams: (nextParams) => this.setParams(nextParams),
       pickSystemPlanet: (x, y, t) => this.pickSystemPlanet(x, y, t),
       getSurfaceMap: () => this.getSurfaceMap(),
+      getSurfacePrebake: () => this.getSurfacePrebake(),
       pointAtSurface: (lat, lon) => this.pointAtSurface(lat, lon),
     })
     this.debugHandle = {

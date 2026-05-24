@@ -1,6 +1,9 @@
 import {
   currentSurfaceMap,
+  currentSystem,
+  getSurfacePrebake,
   openRegionView,
+  params,
   selectAndFocusSurfaceHex,
   selectedSurfaceHex,
 } from '../appState'
@@ -14,8 +17,9 @@ import {
   type Terrain,
 } from '../domain/surfaceMap'
 import { systemName } from '../domain/names'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { useMapGestures } from './useMapGestures'
+import { renderSurfaceBackground } from './surfaceMapBackground'
 
 // Classic Cepheus / legacy 2d6 Book 3 world surface map.
 //
@@ -94,8 +98,44 @@ export function SurfaceMap(_: SurfaceMapProps) {
   // Read from the signal so we re-render on map changes. The prop is kept
   // for symmetry with SubsectorMap and to make the call site clearer.
   const map = currentSurfaceMap.value
+  const system = currentSystem.value
   const containerRef = useRef<HTMLDivElement>(null)
   const gestures = useMapGestures(containerRef, SVG_W, SVG_H)
+
+  // Rendered planet-surface background painted from the Rust pre-bake.
+  // Recomputed when the main world seed, sea level, ice latitude, or
+  // mean temperature changes - all the inputs that move continents,
+  // shrink polar caps, or warp the biome ramp. Stored as a data URL
+  // so it can ride the SVG's pan / zoom alongside the hex grid.
+  const seed = map?.seed ?? 0
+  const seaLevel = params.value.sea_level
+  const iceLatitudeDeg = params.value.ice_latitude * 90
+  const mainWorld = system && system.main_world >= 0 ? system.planets[system.main_world] ?? null : null
+  const meanTempK = mainWorld?.climate.mean_surface_temp_k ?? mainWorld?.temperature_k ?? 288
+  const [bgUrl, setBgUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!map) {
+      setBgUrl(null)
+      return
+    }
+    const prebake = getSurfacePrebake()
+    if (!prebake) {
+      setBgUrl(null)
+      return
+    }
+    // Output resolution: a bit larger than the SVG viewBox so the
+    // bitmap looks sharp even when the user zooms in via the pan / zoom
+    // gestures. Render is synchronous (~50 ms) on a 768x384 canvas.
+    const url = renderSurfaceBackground(prebake, {
+      waterFraction: seaLevel,
+      iceLatitudeDeg,
+      meanTempK,
+      width: 768,
+      height: 384,
+    })
+    setBgUrl(url)
+  }, [seed, seaLevel, iceLatitudeDeg, meanTempK, map])
+
   if (!map) {
     return (
       <div class="surface-map surface-empty">
@@ -129,6 +169,18 @@ export function SurfaceMap(_: SurfaceMapProps) {
       onPointerCancel={gestures.handlers.onPointerCancel as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
     >
       <svg viewBox={gestures.viewBox} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Surface hex grid">
+        {bgUrl && (
+          <image
+            href={bgUrl}
+            x={0}
+            y={0}
+            width={SVG_W}
+            height={SVG_H}
+            preserveAspectRatio="none"
+            class="surface-bg-image"
+            aria-hidden="true"
+          />
+        )}
         {map.hexes.map((hex) => {
           const { x, y } = hexCenter(hex.coord.col, hex.coord.row)
           const key = `${hex.coord.col},${hex.coord.row}`

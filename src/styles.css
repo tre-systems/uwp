@@ -1534,15 +1534,27 @@ label.color input[type="color"]::-webkit-color-swatch {
   text-align: center;
   padding: var(--space-7);
 }
+/* Rendered planet-surface background painted from the Rust pre-bake.
+   Sits behind the hex grid and rides the same SVG viewBox, so pan /
+   zoom keeps both layers aligned. */
+.surface-bg-image {
+  opacity: 0.85;
+  pointer-events: none;
+}
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
   /* Subtle outline so adjacent same-terrain hexes still read as
-     distinct cells without dominating the colour fills. Classic
-     Cepheus Book 3 surface map uses a thin black hex border. */
+     distinct cells without dominating the colour fills. Hex fills
+     drop to ~40% opacity so the rendered background shows through;
+     the terrain glyphs and outlines still convey the classification
+     at a glance. */
+  fill-opacity: 0.42;
   stroke: rgba(0, 0, 0, 0.55);
   stroke-width: 0.6;
-  transition: stroke var(--motion-fast), filter var(--motion-fast);
+  transition: stroke var(--motion-fast), filter var(--motion-fast), fill-opacity var(--motion-fast);
 }
+.surface-hex:hover .surface-hex-shape { fill-opacity: 0.65; }
+.surface-selected .surface-hex-shape { fill-opacity: 0.75; }
 .surface-hex:hover .surface-hex-shape {
   filter: brightness(1.12);
   stroke: rgba(255, 255, 255, 0.55);

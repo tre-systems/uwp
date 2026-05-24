@@ -30,6 +30,7 @@ describe('appState renderer command boundary', () => {
       },
       pickSystemPlanet: () => null,
       getSurfaceMap: () => null,
+      getSurfacePrebake: () => null,
       pointAtSurface: () => undefined,
     })
 
@@ -53,6 +54,7 @@ describe('appState renderer command boundary', () => {
       setParams: () => undefined,
       pickSystemPlanet: () => null,
       getSurfaceMap: () => null,
+      getSurfacePrebake: () => null,
       pointAtSurface: () => undefined,
     })
 

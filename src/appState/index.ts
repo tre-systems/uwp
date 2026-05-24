@@ -31,6 +31,12 @@ export interface RenderPerformanceSnapshot {
   pixelHeight: number
 }
 
+export interface SurfacePrebake {
+  lon_cells: number
+  lat_cells: number
+  heightmap: Float32Array | number[]
+}
+
 export interface RendererControls {
   rerollPlanet(index: number, seed?: number): void
   getSystem(): SolarSystem | null
@@ -42,6 +48,11 @@ export interface RendererControls {
   pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null
   /** Generate a Cepheus hex world map for the current main world. */
   getSurfaceMap(): SurfaceMap | null
+  /** Generate the Rust-side surface pre-bake (plate-tectonics +
+   *  multi-octave noise heightmap) for the current main world. Used by
+   *  the Surface view to paint a rendered globe-like background under
+   *  the hex grid. */
+  getSurfacePrebake(): SurfacePrebake | null
   /** Rotate the detail-view globe to face a surface (lat, lon) in degrees. */
   pointAtSurface(latDeg: number, lonDeg: number): void
 }
@@ -211,6 +222,12 @@ export function refreshSurfaceMap(): void {
   const map = rendererControls?.getSurfaceMap() ?? null
   currentSurfaceMap.value = map
   selectedSurfaceHex.value = null
+}
+
+/** Fetch the Rust pre-bake heightmap for the current main world (used
+ *  to paint the Surface view's rendered background). */
+export function getSurfacePrebake(): SurfacePrebake | null {
+  return rendererControls?.getSurfacePrebake() ?? null
 }
 
 /** Rotate the detail-view globe to face a surface (lat, lon). */
