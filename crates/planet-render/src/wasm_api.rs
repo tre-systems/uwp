@@ -95,16 +95,39 @@ impl Planet {
     }
 
     /// Generate a Cepheus-style hex world map for the main world of the
-    /// current system. Returns the serialised SurfaceMap or null if the
-    /// system has no qualifying main world.
+    /// current system. The surface composition follows the user's
+    /// authored planet parameters (`sea_level`, `ice_latitude`, …) so the
+    /// hex grid always matches the planet the user is actually
+    /// rendering, not an unrelated Rust-side main-world candidate.
+    /// Returns null only when the system has no planets at all.
     #[wasm_bindgen(js_name = getSurfaceMap)]
     pub fn get_surface_map(&self) -> Result<JsValue, JsValue> {
         let system = self.inner.system();
-        if system.main_world < 0 {
+        if system.planets.is_empty() {
             return Ok(JsValue::NULL);
         }
-        let planet = &system.planets[system.main_world as usize];
-        let map = surface_map::generate(planet, &planet.climate, planet.seed);
+        let main_idx = if system.main_world >= 0 { system.main_world as usize } else { 0 };
+        let planet = &system.planets[main_idx];
+        let params = self.inner.params();
+
+        // Build a climate snapshot that overrides the water / ice fractions
+        // with the user-authored sea level + ice-latitude sliders. Detail
+        // renderer reads the same fields, so the two views stay in sync.
+        let mut climate = planet.climate;
+        let water = params.sea_level.clamp(0.0, 1.0);
+        climate.liquid_water_fraction = water;
+        climate.ice_fraction = (1.0 - params.ice_latitude).clamp(0.0, 1.0);
+        climate.aridity = (1.0 - water).clamp(0.0, 1.0);
+        // Mix the climate mean toward the UWP's implied temperature so the
+        // surface bands track when the user pulls the planet hot or cold.
+        // Modest weight - the model is still mostly stellar-flux driven.
+        let warmth_from_atm = params.atmosphere_density * 30.0;
+        if climate.mean_surface_temp_k.is_finite() && climate.mean_surface_temp_k > 0.0 {
+            climate.mean_surface_temp_k += warmth_from_atm * 0.3;
+        } else {
+            climate.mean_surface_temp_k = 270.0 + warmth_from_atm;
+        }
+        let map = surface_map::generate(planet, &climate, params.seed);
         serde_wasm_bindgen::to_value(&map).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

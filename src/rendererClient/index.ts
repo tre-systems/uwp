@@ -228,6 +228,12 @@ export class RendererClient {
   private setParams(nextParams: typeof params.value) {
     setParamsSnapshot(nextParams)
     this.planet?.setParams(this.renderParams())
+    // Surface map depends on sea_level / ice_latitude / atmosphere - both
+    // for hex terrain and inspector readouts. Refresh so the Surface view
+    // tracks the planet the user is editing.
+    if (this.planet) {
+      setSurfaceMapSnapshot(this.getSurfaceMap())
+    }
   }
 
   private sampleFrameTime(frameTimeMs: number) {

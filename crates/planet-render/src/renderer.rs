@@ -215,6 +215,13 @@ impl Renderer {
         &self.system
     }
 
+    /// Current authored planet parameters - exposed so the WASM layer can
+    /// derive UI-state-dependent surfaces (Surface map water/ice fractions)
+    /// from the same source the detail shader uses.
+    pub fn params(&self) -> &PlanetParams {
+        &self.params
+    }
+
     /// Project a canvas pixel to NDC and pick the system body underneath
     /// it. Returns the planet index or `None`. The view-mode gate lives
     /// in the JS layer; the renderer happily picks even when detail view
