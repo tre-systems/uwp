@@ -16,6 +16,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::climate::ClimateSummary;
+use super::surface_prebake::{self, PreBake};
 use super::system::{BodyType, Planet};
 
 pub const SURFACE_COLS: u8 = 32;
@@ -108,31 +109,14 @@ impl Rng {
     }
 }
 
-fn elevation_noise(col: u8, row: u8, seed: u32) -> f32 {
-    // Cheap value-noise with three octaves so terrain bands have a bit of
-    // texture without committing to a full simplex implementation. Output
-    // normalised to roughly [-1, 1]; callers map it onto 0..1 as needed.
-    let h = |x: i32, y: i32, salt: u32| -> f32 {
-        let mut z = ((x as i64).wrapping_mul(374_761_393)
-            ^ (y as i64).wrapping_mul(668_265_263)
-            ^ (seed as i64))
-            .wrapping_add(salt as i64) as u64;
-        z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        z ^= z >> 30;
-        z = z.wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z ^= z >> 27;
-        ((z >> 32) as f32 / u32::MAX as f32) * 2.0 - 1.0
-    };
-    let scales: [(i32, u32, f32); 3] = [(2, 0xA, 1.0), (4, 0x55, 0.5), (8, 0xC3, 0.25)];
-    let mut acc = 0.0;
-    let mut weight = 0.0;
-    for (s, salt, w) in scales {
-        let cx = col as i32 / s;
-        let cy = row as i32 / s;
-        acc += h(cx, cy, salt) * w;
-        weight += w;
-    }
-    acc / weight
+fn elevation_from_prebake(prebake: &PreBake, col: u8, row: u8) -> f32 {
+    // Sample the per-seed pre-baked heightmap (Voronoi plate tectonics +
+    // multi-octave noise) at this hex's latitude / longitude. The pre-bake
+    // already returns f32 in [-1, 1] so the surface map's downstream sea-
+    // level quantile picks land/ocean directly.
+    let lat_norm = (row as f32 + 0.5) / SURFACE_ROWS as f32;
+    let lon_norm = (col as f32 + 0.5) / SURFACE_COLS as f32;
+    prebake.sample(lat_norm, lon_norm)
 }
 
 pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> SurfaceMap {
@@ -144,14 +128,16 @@ pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> Surface
     let ice = climate.ice_fraction.clamp(0.0, 1.0);
     let mean_t = climate.mean_surface_temp_k;
 
-    // First pass: collect every elevation so we can pick a sea level by
-    // quantile — guarantees the ocean fraction lands close to the climate
-    // water-inventory regardless of the noise function's distribution.
+    // Bake a per-seed heightmap (plate tectonics + multi-octave noise)
+    // once, then sample it at every hex. Same quantile-based sea-level
+    // pass guarantees the ocean fraction lands close to the climate
+    // water inventory regardless of the underlying noise distribution.
+    let prebake = surface_prebake::generate(seed, water);
     let mut elevations: Vec<f32> =
         Vec::with_capacity((SURFACE_COLS as usize) * (SURFACE_ROWS as usize));
     for row in 0..SURFACE_ROWS {
         for col in 0..SURFACE_COLS {
-            elevations.push(elevation_noise(col, row, seed));
+            elevations.push(elevation_from_prebake(&prebake, col, row));
         }
     }
     let mut sorted = elevations.clone();

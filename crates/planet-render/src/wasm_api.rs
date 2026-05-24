@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-use crate::domain::{subsector, surface_map};
+use crate::domain::{subsector, surface_map, surface_prebake};
 use crate::{params, renderer};
 
 #[wasm_bindgen]
@@ -117,4 +117,14 @@ impl Planet {
 pub fn generate_subsector(seed: u32, density: f32) -> Result<JsValue, JsValue> {
     let sub = subsector::generate(seed, density);
     serde_wasm_bindgen::to_value(&sub).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Generate the per-seed surface pre-bake (heightmap + plate ids).
+/// Future shader integration can sample this for the globe surface so
+/// the rendered planet and the surface hex map agree on continents.
+/// Today it is consumed by `surface_map::generate` (Rust-side).
+#[wasm_bindgen(js_name = generateSurfacePrebake)]
+pub fn generate_surface_prebake(seed: u32, water_fraction: f32) -> Result<JsValue, JsValue> {
+    let bake = surface_prebake::generate(seed, water_fraction);
+    serde_wasm_bindgen::to_value(&bake).map_err(|e| JsValue::from_str(&e.to_string()))
 }
