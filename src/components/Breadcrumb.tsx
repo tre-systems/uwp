@@ -34,7 +34,9 @@ export function Breadcrumb() {
     return () => window.removeEventListener('keydown', onKey)
   }, [mode])
 
-  const subsectorLabel = sub ? `Subsector ${seed.toString(16).toUpperCase().padStart(4, '0').slice(-6)}` : 'Subsector'
+  // Treat the subsector seed like any other system seed for naming so the
+  // top crumb reads as a place ("Thrame Sector") rather than a hex code.
+  const subsectorLabel = sub ? `${systemName(seed)} Sector` : 'Subsector'
   const hexLabelText = sel ? hexLabel(sel) : null
   const hexNameText = sel ? hexName(seed, sel.col, sel.row) : null
   const systemLabel = sys ? systemName(sys.seed) : 'System'

@@ -36,7 +36,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   return (
     <>
       <section>
-        <h2>Subsector</h2>
+        <h2>{sub ? `${systemName(seed)} Sector` : 'Subsector'}</h2>
         <dl class="sys-meta">
           <div class="sys-meta-row">
             <dt>Allegiance</dt>
