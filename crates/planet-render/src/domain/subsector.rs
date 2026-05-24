@@ -380,7 +380,7 @@ fn project_uwp(system: &SolarSystem, rng: &mut Rng) -> Uwp {
     if hydro >= 9 {
         tech_dm += 1;
     }
-    if pop >= 1 && pop <= 5 {
+    if (1..=5).contains(&pop) {
         tech_dm += 1;
     } else if pop >= 9 {
         tech_dm += pop as i32 - 7;
@@ -471,9 +471,7 @@ mod tests {
         let mean = total_occupied as f32 / (trials as f32 * total_cells as f32);
         assert!(
             (mean - target).abs() < 0.08,
-            "mean occupancy {:.3} far from target {:.3}",
-            mean,
-            target
+            "mean occupancy {mean:.3} far from target {target:.3}"
         );
     }
 
