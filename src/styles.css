@@ -501,20 +501,44 @@ input[type="range"]::-moz-range-thumb {
   gap: 4px;
 }
 .starport-btn {
-  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 4px;
   border-radius: 8px;
   border: 1px solid var(--panel-border);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
   font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
   cursor: pointer;
-  transition: background 140ms, border-color 140ms;
+  transition: background 140ms, border-color 140ms, color 140ms;
 }
 .starport-btn:hover { background: rgba(255, 255, 255, 0.08); }
 .starport-btn.active {
   background: var(--accent-soft);
   border-color: rgba(110, 164, 255, 0.5);
+  color: rgba(190, 220, 255, 1);
 }
+.starport-btn .icon { opacity: 0.75; }
+.starport-btn.active .icon { opacity: 1; }
+.starport-btn-label { font-size: 11px; letter-spacing: 0.4px; }
+
+/* Icon kit -----------------------------------------------------------*/
+.icon {
+  flex: none;
+  vertical-align: middle;
+  display: inline-block;
+}
+.body-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.body-type .icon { opacity: 0.7; }
+tr.sys-main .body-type .icon { opacity: 0.95; }
+.body-type-label { font-size: 12px; }
 
 .uwp-slider { margin: 10px 0; }
 .uwp-slider-row {

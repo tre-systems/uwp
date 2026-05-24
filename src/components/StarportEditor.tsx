@@ -1,4 +1,5 @@
 import { STARPORT_OPTIONS, type UwpDigits } from '../appState'
+import { StarportIcon, starportLabel } from './Icon'
 
 interface StarportEditorProps {
   starport: UwpDigits['starport']
@@ -16,9 +17,11 @@ export function StarportEditor({ starport, disabled, onChange }: StarportEditorP
             class={`starport-btn ${starport === sp ? 'active' : ''}`}
             onClick={() => onChange(sp)}
             disabled={disabled}
-            title={sp === 'X' ? 'No starport' : `Class ${sp}`}
+            title={starportLabel(sp)}
+            aria-label={starportLabel(sp)}
           >
-            {sp}
+            <StarportIcon code={sp} />
+            <span class="starport-btn-label">{sp}</span>
           </button>
         ))}
       </div>

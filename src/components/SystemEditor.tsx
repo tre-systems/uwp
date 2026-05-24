@@ -1,6 +1,7 @@
 import { rerollPlanet, rerollSystemSeed, uwp } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
+import { BodyTypeIcon, bodyTypeLabel } from './Icon'
 
 interface SystemEditorProps {
   system: SolarSystem
@@ -78,7 +79,12 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
             {system.planets.map((p: Planet, i: number) => (
               <tr class={i === system.main_world ? 'sys-main' : ''} key={p.seed}>
                 <td>{i + 1}{i === system.main_world ? ' ★' : ''}</td>
-                <td>{p.body_type}</td>
+                <td>
+                  <span class="body-type">
+                    <BodyTypeIcon body={p.body_type} title={bodyTypeLabel(p.body_type)} />
+                    <span class="body-type-label">{bodyTypeLabel(p.body_type)}</span>
+                  </span>
+                </td>
                 <td>{p.orbit_au < 0.1 ? p.orbit_au.toFixed(3) : p.orbit_au.toFixed(2)} AU</td>
                 <td>{p.mass_earth < 1
                   ? p.mass_earth.toFixed(2)
