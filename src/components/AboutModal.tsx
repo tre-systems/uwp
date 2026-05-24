@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks'
 import { BUILD_ID } from '../buildId'
+import { useFocusTrap } from './useFocusTrap'
 
 // Small about / credits modal, opened from the panel footer. Mirrors the
 // glossary modal's shape so the two feel related without sharing code.
@@ -11,6 +12,8 @@ interface AboutModalProps {
 
 export function AboutModal({ open, onClose }: AboutModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, open)
 
   useEffect(() => {
     if (!open) return
@@ -32,7 +35,7 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
       aria-labelledby="about-title"
       onClick={onClose}
     >
-      <div class="glossary-modal about-modal" onClick={(e) => e.stopPropagation()}>
+      <div class="glossary-modal about-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <header class="glossary-header">
           <h2 id="about-title">About UWP</h2>
           <button

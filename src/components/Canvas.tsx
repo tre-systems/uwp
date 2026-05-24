@@ -10,5 +10,13 @@ export function Canvas() {
     return () => client.dispose()
   }, [])
 
-  return <canvas ref={ref} class="planet-canvas" />
+  return (
+    <canvas
+      ref={ref}
+      class="planet-canvas"
+      role="img"
+      aria-label="Interactive 3D rendering of the generated planet or solar system. Drag to orbit, scroll to zoom."
+      tabIndex={0}
+    />
+  )
 }

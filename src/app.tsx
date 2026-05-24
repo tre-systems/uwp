@@ -21,6 +21,8 @@ export function App() {
       <button
         class="view-toggle"
         title={mode === 'detail' ? 'Switch to system overview' : 'Switch to the main world'}
+        aria-label={mode === 'detail' ? 'Switch to system overview' : 'Switch to the main world'}
+        aria-pressed={mode === 'system'}
         onClick={() => setViewMode(mode === 'detail' ? 'system' : 'detail')}
       >
         {mode === 'detail' ? '☉ System' : '◉ Main World'}

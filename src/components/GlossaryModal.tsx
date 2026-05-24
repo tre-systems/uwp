@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks'
+import { useFocusTrap } from './useFocusTrap'
 
 // Cepheus / legacy 2d6 vocabulary reference. Opened from the panel header,
 // dismissed by Escape, backdrop click, or close button. Definitions are
@@ -72,6 +73,8 @@ const ENTRIES: readonly GlossaryEntry[] = [
 
 export function GlossaryModal({ open, onClose }: GlossaryModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, open)
 
   useEffect(() => {
     if (!open) return
@@ -93,7 +96,7 @@ export function GlossaryModal({ open, onClose }: GlossaryModalProps) {
       aria-labelledby="glossary-title"
       onClick={onClose}
     >
-      <div class="glossary-modal" onClick={(e) => e.stopPropagation()}>
+      <div class="glossary-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <header class="glossary-header">
           <h2 id="glossary-title">Glossary</h2>
           <button
