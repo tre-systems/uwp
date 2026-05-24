@@ -346,6 +346,94 @@ For the first phase to be "done":
 - **Don't break the existing renderer.** The subsector view is an SVG sibling of the WebGPU canvas, not a replacement. The canvas stays mounted; the subsector view is layered on top or shown in a different DOM region. This avoids redoing renderer lifecycle for a 2D map.
 - **State ownership stays Rust-owned.** Per the State Ownership note above: Rust holds the canonical `Subsector`, JS snapshots it. The picking logic *can* live in TS (hex math is cheap and not a state question), but the chosen hex must be re-validated against the Rust state when it requests the system.
 
+## World Surface Map Roadmap
+
+legacy 2d6-style hex world maps of each main world's surface, sitting one level *below* the Main World detail view. Each hex shows terrain (mountain, forest, desert, ocean, ice, urban, etc.) and the map identifies the starport location and the major cities derived from the main world's UWP. The hex map's terrain must match what the 3D globe shows — clicking a hex should be able to spin the globe to point at that location.
+
+This is a separate feature from the *subsector* hex map (which arranges star systems across a sector). This one is **the planetary surface**, at a much higher detail level. Classic legacy 2d6 world maps are typically ~32-column × 16-row hex grids covering the whole sphere via a hex-friendly equal-area projection.
+
+### Hard Dependency
+
+This feature depends on **Rust Compute Roadmap item 1 (procedural surface pre-bake)**. The reason: the globe's surface is currently a per-fragment shader procedure, so the only way to make a 2D hex map "match the globe" today is to duplicate the noise + plate-tectonics + biome logic on the CPU side. That's exactly the duplication the pre-bake removes — once the surface is a cube-map texture, both the globe shader and the hex-map generator sample the same authoritative buffers. Don't attempt this feature without the pre-bake; you'd be writing the noise code twice and they would drift.
+
+### Target Boundaries
+
+- **Domain (Rust):** `crates/planet-render/src/domain/surface_map.rs` reads the pre-baked surface cube-maps and produces a `SurfaceMap` — a flat hex grid with terrain, elevation, biome, water-fraction per cell. Also owns starport placement and city placement (`SurfaceMap::starport`, `SurfaceMap::cities`) using Cepheus rules + the climate/habitability data already on each planet.
+- **Domain (TS):** `src/domain/surfaceMap/` mirrors the serialized Rust structs as TS DTOs (`SurfaceMap`, `SurfaceHex`, `Settlement`, `StarportLocation`). Biome enums are shared with the existing climate types.
+- **App state:** new signals `currentSurfaceMap`, `selectedSurfaceHex` plus an action `selectSurfaceHex(coord)` that can optionally feed the globe camera (Phase 5).
+- **Renderer client:** gains `getSurfaceMap()` reading the Rust-side map for the currently selected main world. If the camera-to-hex bridge ships, a new method `pointCameraAt(latitude, longitude)` aims the detail-render camera at a given surface coordinate.
+- **UI:** new `SurfaceMap.tsx` SVG hex grid component; new view mode `'surface'`. The view-mode toggle becomes Subsector / System / Main World / Surface (four-way). A "show on globe" affordance bridges back to the detail-render view rotated to the picked hex.
+
+### Cepheus Rules To Implement
+
+From Cepheus Engine Book 3 / Worlds, World Mapping section:
+
+1. **Terrain classification per hex.** Derived from the pre-baked surface cube-map: ocean (below sea level), shoreline, plain, forest, hill, mountain, desert (low water, hot), tundra (cold), ice (cold + high latitude), volcanic (hot rocky). Mapping rules tied to elevation, latitude, water-inventory, equilibrium-temperature already stored on the planet's `ClimateSummary` and the biome field from compute-roadmap item 2 (climate extension to biome textures).
+2. **Starport location.** One hex per world. Located on a high-population, habitable, coastal/plain hex (Cepheus convention: starports are near the main population centre). Class A/B may also have orbital satellites or off-world bases; for now we just mark a surface hex.
+3. **Major cities.** Count scales from the UWP population code: Pop 0–4 → 0–2 settlements, Pop 5–7 → 3–8 settlements, Pop 8+ → 10–20 settlements. Placement: coastal/river/plain biases, never on deep ocean or mountain unless terrain is restrictive; spread out via Poisson-disc to avoid clustering.
+4. **Sea / land ratio matches Hydrographics.** The hex map's ocean coverage must match the main world's hydrographics digit (within rounding). This is a cross-check: if the pre-bake's water fraction diverges from the UWP hydrographics, the projection step is the source of truth — round the pre-bake's water fraction to the nearest UWP digit.
+5. **Polar caps consistent with `ice_latitude`.** The same `ice_latitude` parameter that drives the globe shader's polar caps must drive the hex map's ice/tundra band boundary.
+6. **Atmospheric / climate annotation per hex.** Each hex carries the local climate summary (temperature, precipitation if available, day length) so a Referee panel can show "hex 0703 — temperate forest, mean 285 K, 15-day rainfall pattern". This composes naturally with compute-roadmap item 2 (precipitation bands).
+
+### Architecture Sketch
+
+```text
+crates/planet-render/src/domain/
+├── system.rs        ← already
+├── climate.rs       ← already
+├── subsector.rs     ← roadmap above
+└── surface_map.rs   ← new: reads pre-baked cube-maps, places starport + cities
+
+src/domain/
+├── system/
+├── cepheus/
+├── mainWorld/
+├── subsector/      ← roadmap above
+└── surfaceMap/      ← new: DTOs (SurfaceMap, SurfaceHex, Settlement, ...)
+
+src/components/
+├── SurfaceMap.tsx        ← new: SVG hex grid for one world
+├── SurfaceMapEditor.tsx  ← new: panel summary, hex inspector
+└── ...
+```
+
+### Phases
+
+Tackle in this order; the pre-bake must land before phase 1.
+
+1. **Rust surface-map generation from pre-baked data.** `surface_map::generate(planet_id, pre_bake) -> SurfaceMap`. Walk a 32×16 (or configurable) hex grid in equal-area projection, sample the pre-baked cube-map at each hex centre, classify terrain from elevation + biome + climate. Unit tests: ocean fraction matches the pre-bake's water fraction, polar caps within ice-latitude, no NaN hexes.
+
+2. **Starport placement.** Pick one hex meeting: habitable, coastal-or-plain, on the lit hemisphere if the world is tidally locked, ideally near the population centroid. Deterministic for a given seed. Unit test: starport hex is one of the more habitable cells.
+
+3. **City placement.** Count from population code. Poisson-disc-sampled positions weighted by habitability and avoiding ocean/mountain. Unit tests: count matches UWP, spread reasonable (min spacing).
+
+4. **WASM API + TS DTOs.** Expose `getSurfaceMap()` from `wasm_api.rs`; TS DTOs in `src/domain/surfaceMap/`. Cache the map in Rust (it doesn't change while the world parameters are fixed); recompute only when the world or its surface pre-bake changes.
+
+5. **App state + renderer client.** Signals `currentSurfaceMap`, `selectedSurfaceHex`. View mode enum extends to `'surface'`. View toggle becomes a four-way segmented control.
+
+6. **SVG surface hex map UI.** `SurfaceMap.tsx` renders the 512-ish hex grid; terrain types coloured per biome; starport marker (★) and city markers (●, size scaled by tier). `SurfaceMapEditor.tsx` shows the inspector for the selected hex with biome / climate / settlements. Click → `selectSurfaceHex`. Equal-area or interrupted-projection is fine; what matters is hex-to-globe correspondence.
+
+7. **Globe ↔ surface bridge.** Clicking "show on globe" on a hex rotates the detail-render camera to face that latitude/longitude. Hovering a hex on the surface map highlights a corresponding latitude band on the globe. This is the payoff for getting the data sources unified.
+
+8. **Optional WebGPU port.** Same as the subsector roadmap: once the SVG version's UX is stable, the surface map can move into the WebGPU canvas as a fullscreen-triangle scene with shared starfield/tonemap, so users can use canvas-native interactions (pinch zoom, etc.).
+
+### Phase 1 Acceptance Criteria
+
+- `domain::surface_map::generate(...)` returns a deterministic `SurfaceMap` for a given world.
+- Hex count is `32 × 16 = 512` (or configurable) and covers the sphere without gaps or overlaps.
+- Ocean fraction within ±5 % of the pre-bake's water fraction.
+- Polar ice / tundra band starts at the `ice_latitude` parameter, ±1 hex row tolerance.
+- A Rust test asserts: every hex has a valid biome enum, no NaN elevation.
+- No UI work; lives entirely behind the WASM boundary.
+
+### Notes For The Implementing Agent
+
+- **Surface pre-bake first.** Don't try to reproduce the shader's noise stack in Rust as a shortcut. Implement Rust Compute Roadmap item 1, then build this on top of it.
+- **Equal-area or interrupted-Goode projection.** A naïve lat-lon hex grid distorts wildly at the poles. Use an equal-area hex tessellation of the sphere (geodesic, icosahedral subdivision, or HEALPix-style) or fall back to the classic legacy 2d6 interrupted-rectangle projection. Pick whichever makes hex-to-globe-coord conversion cheap, because the globe-bridge step needs it both ways.
+- **Cepheus hydrographics is a rounded view, not the source of truth.** If the pre-bake's water fraction is 0.62, the UWP rounds to hydrographics 6, and the surface map should show 60 % ocean coverage (matching the pre-bake), not 60 % exactly to match the rounded UWP. The pre-bake is canonical; UWP is the rounded game label.
+- **Cities are not just "dots on land".** A good legacy 2d6 GM hex map clusters cities along coasts, rivers, and habitable bands. Use the climate field (item 6 above) to weight placement properly — desert worlds have cities along oases / poles, ice worlds along the equatorial belt, etc.
+- **State ownership stays Rust-owned.** Same rule as subsector: Rust holds the canonical `SurfaceMap`, JS snapshots it. The hex picking math can run in TS but the data is Rust's.
+
 ## Verification
 
 Before committing meaningful changes, run the relevant subset:
