@@ -1,9 +1,11 @@
 import type { ComponentChildren } from 'preact'
+import { useState } from 'preact/hooks'
 import { params, rerollPlanet, rerollSystemSeed, setSystemSeed, uwp } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
 import { systemName } from '../domain/names'
 import { BodyTypeIcon, bodyTypeLabel } from './Icon'
+import { BodyInspector } from './BodyInspector'
 import { SeedField } from './SeedField'
 
 interface SystemEditorProps {
@@ -14,6 +16,10 @@ interface SystemEditorProps {
 export function SystemEditor({ system, disabled }: SystemEditorProps) {
   const star = system.star
   const comp = system.companion
+  // Click a row to expand a derived-properties strip beneath it. Reroll
+  // clears the selection — the planet you were looking at no longer exists
+  // and we don't want to flash stats from a stale seed.
+  const [expanded, setExpanded] = useState<number | null>(null)
   // Trade codes are derived from the authored UWP digits, which currently
   // represent the user-edited main world. Once the renderer-side main-world
   // reconciliation lands these will track the generated world automatically.
@@ -101,43 +107,70 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
           <tbody>
             {system.planets.map((p: Planet, i: number) => {
               const isMain = i === system.main_world
+              const isOpen = expanded === i
+              const rowClass = [
+                'sys-row',
+                isMain ? 'sys-main' : '',
+                isOpen ? 'sys-row-open' : '',
+              ].filter(Boolean).join(' ')
               return (
-                <tr class={isMain ? 'sys-row sys-main' : 'sys-row'} key={p.seed}>
-                  <td class="sys-col-num">
-                    {isMain ? <span class="sys-main-marker" title="Main world">★</span> : null}
-                    {i + 1}
-                  </td>
-                  <td>
-                    <span class="body-type">
-                      <BodyTypeIcon body={p.body_type} title={bodyTypeLabel(p.body_type)} />
-                      <span class="body-type-label">{bodyTypeLabel(p.body_type)}</span>
-                    </span>
-                  </td>
-                  <td class="sys-col-num">
-                    {p.orbit_au < 0.1 ? p.orbit_au.toFixed(3) : p.orbit_au.toFixed(2)}
-                    <span class="sys-unit">AU</span>
-                  </td>
-                  <td class="sys-col-num">
-                    {p.mass_earth < 1 ? p.mass_earth.toFixed(2) : p.mass_earth.toFixed(0)}
-                    <span class="sys-unit">M⊕</span>
-                  </td>
-                  <td class="sys-col-num">
-                    {p.temperature_k.toFixed(0)}
-                    <span class="sys-unit">K</span>
-                  </td>
-                  <td class="sys-col-num">{p.moons.length || '—'}</td>
-                  <td class="sys-col-action">
-                    <button
-                      class="sys-reroll"
-                      disabled={disabled}
-                      title={`Reroll planet ${i + 1}`}
-                      aria-label={`Reroll planet ${i + 1}`}
-                      onClick={() => rerollPlanet(i)}
-                    >
-                      <RerollGlyph />
-                    </button>
-                  </td>
-                </tr>
+                <>
+                  <tr
+                    class={rowClass}
+                    key={p.seed}
+                    onClick={() => setExpanded(isOpen ? null : i)}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isOpen}
+                    aria-label={`Planet ${i + 1} ${bodyTypeLabel(p.body_type)}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setExpanded(isOpen ? null : i)
+                      }
+                    }}
+                  >
+                    <td class="sys-col-num">
+                      {isMain ? <span class="sys-main-marker" title="Main world">★</span> : null}
+                      {i + 1}
+                    </td>
+                    <td>
+                      <span class="body-type">
+                        <BodyTypeIcon body={p.body_type} title={bodyTypeLabel(p.body_type)} />
+                        <span class="body-type-label">{bodyTypeLabel(p.body_type)}</span>
+                      </span>
+                    </td>
+                    <td class="sys-col-num">
+                      {p.orbit_au < 0.1 ? p.orbit_au.toFixed(3) : p.orbit_au.toFixed(2)}
+                      <span class="sys-unit">AU</span>
+                    </td>
+                    <td class="sys-col-num">
+                      {p.mass_earth < 1 ? p.mass_earth.toFixed(2) : p.mass_earth.toFixed(0)}
+                      <span class="sys-unit">M⊕</span>
+                    </td>
+                    <td class="sys-col-num">
+                      {p.temperature_k.toFixed(0)}
+                      <span class="sys-unit">K</span>
+                    </td>
+                    <td class="sys-col-num">{p.moons.length || '—'}</td>
+                    <td class="sys-col-action">
+                      <button
+                        class="sys-reroll"
+                        disabled={disabled}
+                        title={`Reroll planet ${i + 1}`}
+                        aria-label={`Reroll planet ${i + 1}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setExpanded(null)
+                          rerollPlanet(i)
+                        }}
+                      >
+                        <RerollGlyph />
+                      </button>
+                    </td>
+                  </tr>
+                  {isOpen && <BodyInspector planet={p} star={star} columnSpan={7} />}
+                </>
               )
             })}
           </tbody>
