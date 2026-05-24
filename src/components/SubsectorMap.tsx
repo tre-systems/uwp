@@ -12,7 +12,9 @@ import {
   type SubsectorHex,
   type TravelZone,
 } from '../domain/subsector'
+import { useRef } from 'preact/hooks'
 import { hexName, uniqueHexNames } from '../domain/names'
+import { useMapGestures } from './useMapGestures'
 
 // Subsector map styled after the classic legacy 2d6 Map
 // (https://sector-map.com): pure black field, thin grey flat-top
@@ -66,6 +68,9 @@ interface SubsectorMapProps {
 }
 
 export function SubsectorMap({ subsector }: SubsectorMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const gestures = useMapGestures(containerRef, SVG_WIDTH, SVG_HEIGHT)
+
   if (!subsector) {
     return (
       <div class="subsector-map subsector-empty">
@@ -88,9 +93,19 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
     subsector.hexes.map((h) => ({ col: h.coord.col, row: h.coord.row })),
   )
   return (
-    <div class="subsector-map" role="region" aria-label={`Subsector ${subsector.allegiance}, seed ${subsector.seed}`}>
+    <div
+      class="subsector-map"
+      role="region"
+      aria-label={`Subsector ${subsector.allegiance}, seed ${subsector.seed}`}
+      ref={containerRef}
+      onWheel={gestures.handlers.onWheel as unknown as preact.JSX.WheelEventHandler<HTMLDivElement>}
+      onPointerDown={gestures.handlers.onPointerDown as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+      onPointerMove={gestures.handlers.onPointerMove as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+      onPointerUp={gestures.handlers.onPointerUp as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+      onPointerCancel={gestures.handlers.onPointerCancel as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+    >
       <svg
-        viewBox={`0 0 ${SVG_WIDTH.toFixed(0)} ${SVG_HEIGHT.toFixed(0)}`}
+        viewBox={gestures.viewBox}
         xmlns="http://www.w3.org/2000/svg"
         role="img"
         aria-label="Subsector hex grid"

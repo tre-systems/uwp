@@ -14,6 +14,8 @@ import {
   type Terrain,
 } from '../domain/surfaceMap'
 import { systemName } from '../domain/names'
+import { useRef } from 'preact/hooks'
+import { useMapGestures } from './useMapGestures'
 
 // Classic Cepheus / legacy 2d6 Book 3 world surface map.
 //
@@ -92,6 +94,8 @@ export function SurfaceMap(_: SurfaceMapProps) {
   // Read from the signal so we re-render on map changes. The prop is kept
   // for symmetry with SubsectorMap and to make the call site clearer.
   const map = currentSurfaceMap.value
+  const containerRef = useRef<HTMLDivElement>(null)
+  const gestures = useMapGestures(containerRef, SVG_W, SVG_H)
   if (!map) {
     return (
       <div class="surface-map surface-empty">
@@ -117,8 +121,14 @@ export function SurfaceMap(_: SurfaceMapProps) {
       class="surface-map"
       role="region"
       aria-label={`Surface map, ${(map.ocean_fraction * 100).toFixed(0)}% ocean`}
+      ref={containerRef}
+      onWheel={gestures.handlers.onWheel as unknown as preact.JSX.WheelEventHandler<HTMLDivElement>}
+      onPointerDown={gestures.handlers.onPointerDown as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+      onPointerMove={gestures.handlers.onPointerMove as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+      onPointerUp={gestures.handlers.onPointerUp as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
+      onPointerCancel={gestures.handlers.onPointerCancel as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
     >
-      <svg viewBox={`0 0 ${SVG_W.toFixed(0)} ${SVG_H.toFixed(0)}`} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Surface hex grid">
+      <svg viewBox={gestures.viewBox} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Surface hex grid">
         {map.hexes.map((hex) => {
           const { x, y } = hexCenter(hex.coord.col, hex.coord.row)
           const key = `${hex.coord.col},${hex.coord.row}`
