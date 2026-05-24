@@ -3,6 +3,7 @@ import { ControlPanel } from './components/ControlPanel'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { ErrorOverlay } from './components/ErrorOverlay'
 import { OnboardingHint } from './components/OnboardingHint'
+import { ViewTransition } from './components/ViewTransition'
 import { errorMessage, rendererStatus, setViewMode, viewMode } from './appState'
 
 export function App() {
@@ -13,6 +14,7 @@ export function App() {
   return (
     <div class="app">
       <Canvas />
+      <ViewTransition />
       {status === 'loading' && <LoadingOverlay />}
       {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
       {status === 'error' && <ErrorOverlay kind="error" detail={error} />}

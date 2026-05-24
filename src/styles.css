@@ -847,6 +847,31 @@ label.color input[type="color"]::-webkit-color-swatch {
   to   { opacity: 1; }
 }
 
+/* View transition ----------------------------------------------------*/
+/* A short black wash hides the GPU scene swap when viewMode flips. The
+   element is always mounted (no enter/exit gymnastics) so the keyframe
+   plays cleanly every time React re-renders the component with a fresh
+   active class. */
+.view-transition {
+  position: absolute;
+  inset: 0;
+  background: #02040a;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.view-transition-active {
+  animation: view-transition-wash 240ms ease-out;
+}
+@keyframes view-transition-wash {
+  0%   { opacity: 0; }
+  35%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-transition-active { animation: none; }
+}
+
 /* Onboarding hint ----------------------------------------------------*/
 .onboarding-hint {
   position: fixed;
