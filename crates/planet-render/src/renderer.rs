@@ -6,8 +6,9 @@ use wgpu::util::DeviceExt;
 use crate::camera::Camera;
 use crate::mesh::{cubesphere, Vertex};
 use crate::params::PlanetParams;
+use crate::scenes::{detail as detail_scene, system as system_scene};
 use crate::shader::shader_with_common;
-use crate::system::{generate as generate_system, BodyType, SolarSystem};
+use crate::system::{generate as generate_system, SolarSystem};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
@@ -16,13 +17,6 @@ pub enum ViewMode {
     /// New system overview — star at origin, planets on circular orbits.
     System,
 }
-
-const MAX_SYSTEM_PLANETS: usize = 16;
-const MAX_SYSTEM_MOONS: usize = 32;
-const MAX_SYSTEM_BELTS: usize = 4;
-const SCENE_UNITS_PER_AU: f32 = 1.0;
-
-const PLANET_RES: u32 = 200;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -48,39 +42,6 @@ struct Uniforms {
     resolution: [f32; 4],
     /// x = crater_density, y = population_intensity, z = vegetation_richness, w = atm_banding
     world_features: [f32; 4],
-}
-
-const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-
-/// Packed system data for the system shader. Tightly packed for transfer
-/// efficiency — the shader unpacks back into its own struct view.
-///
-///   planets[2i  ]: xyz = world position, w = display radius
-///   planets[2i+1]: xyz = base colour,    w = orbital radius (scene units)
-///   planet_meta[i]: x = body_type (shader id), y = seed, z = axial tilt, w = unused
-///   moons[i]      : xyz = world position, w = display radius (sign = icy flag)
-///   belts[i]      : x = inner_au, y = outer_au, z = density [0..1], w = unused
-///   companion     : xyz = world position, w = display radius (0 = no companion)
-///   companion_color: xyz = colour, w = intensity
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, Default)]
-struct SystemUniforms {
-    /// x = planet count, y = primary-star display radius, z = primary intensity,
-    /// w = moon count.
-    info: [f32; 4],
-    /// xyz = primary-star colour, w = belt count.
-    star_color: [f32; 4],
-    planets: [[f32; 4]; MAX_SYSTEM_PLANETS * 2],
-    planet_meta: [[f32; 4]; MAX_SYSTEM_PLANETS],
-    moons: [[f32; 4]; MAX_SYSTEM_MOONS],
-    belts: [[f32; 4]; MAX_SYSTEM_BELTS],
-    companion: [f32; 4],
-    companion_color: [f32; 4],
-    /// Per-star activity metadata used by the shader for class-specific
-    /// rendering. x = primary temperature (K), y = primary "warmth" factor
-    /// [-1..1] (negative = blue hot, positive = red cool), z = companion
-    /// temperature, w = companion warmth.
-    stars_meta: [f32; 4],
 }
 
 pub struct Renderer {
@@ -187,7 +148,7 @@ impl Renderer {
         surface.configure(&device, &config);
 
         // Mesh
-        let mesh = cubesphere(mesh_resolution(mesh_quality));
+        let mesh = cubesphere(detail_scene::mesh_resolution(mesh_quality));
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex_buffer"),
             contents: bytemuck::cast_slice(&mesh.vertices),
@@ -281,7 +242,7 @@ impl Renderer {
         // positions/colours.
         let system_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("system_uniforms"),
-            size: std::mem::size_of::<SystemUniforms>() as u64,
+            size: std::mem::size_of::<system_scene::SystemUniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -355,7 +316,7 @@ impl Renderer {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: SCENE_FORMAT,
+                    format: detail_scene::SCENE_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -395,7 +356,7 @@ impl Renderer {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: SCENE_FORMAT,
+                    format: detail_scene::SCENE_FORMAT,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -496,8 +457,8 @@ impl Renderer {
             cache: None,
         });
 
-        let depth_view = create_depth_view(&device, width, height);
-        let scene_view = create_scene_view(&device, width, height);
+        let depth_view = detail_scene::create_depth_view(&device, width, height);
+        let scene_view = detail_scene::create_scene_view(&device, width, height);
         let scene_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("scene_sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -508,7 +469,7 @@ impl Renderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
         });
-        let atmosphere_bind_group = create_atmosphere_bind_group(
+        let atmosphere_bind_group = detail_scene::create_atmosphere_bind_group(
             &device,
             &atmosphere_bind_group_layout,
             &scene_view,
@@ -523,7 +484,7 @@ impl Renderer {
         // real system. The buffer is also pre-populated so the first render
         // doesn't read uninitialised memory.
         let initial_system = generate_system(1337);
-        let initial_system_uniforms = system_uniforms_for(&initial_system, 0.0);
+        let initial_system_uniforms = system_scene::uniforms_for(&initial_system, 0.0);
         let queue_for_init = &queue;
         queue_for_init.write_buffer(
             &system_uniform_buffer,
@@ -587,10 +548,6 @@ impl Renderer {
         }
     }
 
-    pub fn view_mode(&self) -> ViewMode {
-        self.view_mode
-    }
-
     pub fn set_system_seed(&mut self, seed: u32) {
         self.system = generate_system(seed);
         // If we're currently in system view, refit the camera to the new outer
@@ -600,41 +557,8 @@ impl Renderer {
         }
     }
 
-    /// Camera distance that fits the *compressed* outer orbit in frame —
-    /// matches the visual layout produced by `system_uniforms_for`. Falls
-    /// back to a sensible default for systems with no planets.
     fn system_camera_fit_distance(&self) -> f32 {
-        let outer_orbit = self
-            .system
-            .planets
-            .last()
-            .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
-            .unwrap_or(1.0);
-        let outer_belt = self
-            .system
-            .belts
-            .iter()
-            .map(|b| b.outer_au * SCENE_UNITS_PER_AU)
-            .fold(0.0_f32, f32::max);
-        let system_scale = outer_orbit.max(outer_belt).max(1.0);
-        let star_disp =
-            (system_scale * 0.045 * (self.system.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
-        let gap = star_disp * 0.45;
-        // Walk the same monotonic compression as system_uniforms_for so we
-        // get the same outermost display radius.
-        let mut prev_outer_edge = star_disp + gap;
-        let mut last_disp_r = star_disp;
-        for planet in &self.system.planets {
-            let real_r = planet.orbit_au * SCENE_UNITS_PER_AU;
-            let p_radius =
-                display_radius_for(planet.body_type, planet.radius_earth, system_scale);
-            let needed_r = prev_outer_edge + p_radius;
-            let r = real_r.max(needed_r);
-            last_disp_r = r;
-            prev_outer_edge = r + p_radius + gap;
-        }
-        let fit = last_disp_r.max(outer_belt).max(5.0);
-        (fit * 1.6).max(3.0)
+        system_scene::camera_fit_distance(&self.system)
     }
 
     pub fn system(&self) -> &SolarSystem {
@@ -661,9 +585,9 @@ impl Renderer {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_view(&self.device, width, height);
-        self.scene_view = create_scene_view(&self.device, width, height);
-        self.atmosphere_bind_group = create_atmosphere_bind_group(
+        self.depth_view = detail_scene::create_depth_view(&self.device, width, height);
+        self.scene_view = detail_scene::create_scene_view(&self.device, width, height);
+        self.atmosphere_bind_group = detail_scene::create_atmosphere_bind_group(
             &self.device,
             &self.atmosphere_bind_group_layout,
             &self.scene_view,
@@ -734,12 +658,9 @@ impl Renderer {
             ViewMode::System => {
                 // Push the latest system layout (planet positions move every
                 // frame as orbits advance).
-                let sys_u = system_uniforms_for(&self.system, time);
-                self.queue.write_buffer(
-                    &self.system_uniform_buffer,
-                    0,
-                    bytemuck::bytes_of(&sys_u),
-                );
+                let sys_u = system_scene::uniforms_for(&self.system, time);
+                self.queue
+                    .write_buffer(&self.system_uniform_buffer, 0, bytemuck::bytes_of(&sys_u));
                 self.encode_system_render(&mut encoder, &view);
             }
         }
@@ -749,11 +670,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn encode_detail_render(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) {
+    fn encode_detail_render(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         // Pass 1: render planet + background into the HDR scene texture.
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -812,11 +729,7 @@ impl Renderer {
         }
     }
 
-    fn encode_system_render(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) {
+    fn encode_system_render(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         // Single fullscreen pass directly to swapchain. The system shader
         // does its own raymarched composite + tonemap.
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -899,316 +812,8 @@ impl Renderer {
     }
 }
 
-fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("depth"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Depth32Float,
-        // TEXTURE_BINDING so the atmosphere pass can sample depth and cap
-        // its scattering integration at the nearest opaque scene object
-        // (otherwise scattering bleeds onto moons in front of the atmosphere).
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-fn create_scene_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("scene_hdr"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: SCENE_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-fn create_atmosphere_bind_group(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    view: &wgpu::TextureView,
-    sampler: &wgpu::Sampler,
-    depth_view: &wgpu::TextureView,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("atmosphere_bind_group"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(depth_view),
-            },
-        ],
-    })
-}
-
 fn vec3_to_v4(c: [f32; 3]) -> [f32; 4] {
     [c[0], c[1], c[2], 1.0]
-}
-
-/// Visual radius for a planet rendered in system view. Real planets at AU
-/// scale would be sub-pixel against the star; we exaggerate them — but
-/// always keep them visibly smaller than the star itself (so a gas giant
-/// can't transit and eclipse the whole star in the overview).
-///
-/// `system_scale` is a per-system unit length (typically the outermost
-/// orbit radius in scene units) — we size bodies as a fraction of that
-/// so compact M-dwarf systems and big G-star systems both stay readable.
-fn display_radius_for(body: BodyType, real_radius_earth: f32, system_scale: f32) -> f32 {
-    // Base: a small fraction of the system's overall scale, with a sublinear
-    // dependence on real radius so a 14 R⊕ gas giant only reads ~3× bigger
-    // than a 1 R⊕ terrestrial (rather than 14× — which would dwarf the star).
-    let real_factor = real_radius_earth.max(0.3).powf(0.30);
-    let mult = match body {
-        BodyType::GasGiant => 1.8,
-        BodyType::IceGiant => 1.4,
-        BodyType::MiniNeptune => 1.2,
-        BodyType::SuperEarth => 1.0,
-        BodyType::Terrestrial => 0.9,
-        BodyType::Inferno => 0.8,
-        BodyType::Frozen => 0.8,
-        BodyType::Rocky => 0.7,
-    };
-    let scale_unit = system_scale.max(0.5);
-    (scale_unit * 0.012 * real_factor * mult).max(0.008)
-}
-
-/// Schematic colour for a body in system view. The detail-render planet
-/// shader produces the textured surface — at system scale we just want a
-/// solid tint that conveys body class.
-fn schematic_color_for(body: BodyType, in_hz: bool) -> [f32; 3] {
-    match body {
-        BodyType::GasGiant => [0.86, 0.74, 0.55],   // pale gold (Jupiter)
-        BodyType::IceGiant => [0.47, 0.63, 0.85],   // pale cyan (Neptune)
-        BodyType::MiniNeptune => [0.55, 0.70, 0.88],
-        BodyType::SuperEarth => {
-            if in_hz {
-                [0.40, 0.65, 0.50]
-            } else {
-                [0.55, 0.48, 0.40]
-            }
-        }
-        BodyType::Terrestrial => {
-            if in_hz {
-                [0.30, 0.60, 0.85]
-            } else {
-                [0.55, 0.50, 0.42]
-            }
-        }
-        BodyType::Inferno => [0.78, 0.42, 0.22],
-        BodyType::Frozen => [0.78, 0.84, 0.92],
-        BodyType::Rocky => [0.55, 0.50, 0.46],
-    }
-}
-
-/// Build the system-view uniform buffer contents for the current system at a
-/// given time. Planet positions advance along circular orbits (Kepler 3rd
-/// law); moons advance around their planet at correspondingly faster rates.
-fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
-    let mut out = SystemUniforms::default();
-    let n_p = sys.planets.len().min(MAX_SYSTEM_PLANETS);
-
-    // System scale = outermost feature (orbit or belt) reach.
-    let outer_orbit = sys
-        .planets
-        .last()
-        .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
-        .unwrap_or(1.0);
-    let outer_belt = sys
-        .belts
-        .iter()
-        .map(|b| b.outer_au * SCENE_UNITS_PER_AU)
-        .fold(0.0_f32, f32::max);
-    let system_scale = outer_orbit.max(outer_belt).max(1.0);
-
-    let star_disp =
-        (system_scale * 0.045 * (sys.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
-    let intensity = 1.4 + sys.star.luminosity_solar.powf(0.2);
-
-    // Monotonic visual-spacing pass. Real AU positions would put inner planets
-    // *inside* the exaggerated star disc and crowd adjacent gas giants on top
-    // of each other. We compute each planet's "display orbit radius" by walking
-    // outward from the star and enforcing:
-    //   - the first planet's edge clears the star disc by at least `gap`
-    //   - each subsequent planet's edge clears the previous planet's edge by
-    //     at least `gap`
-    // If the real AU position already satisfies that, we use it; otherwise we
-    // push the planet outward. Result is monotonically increasing display
-    // radii, no overlaps, AU ordering preserved.
-    let gap = star_disp * 0.45;
-    let mut display_orbit_r = [0.0f32; MAX_SYSTEM_PLANETS];
-    let mut planet_disp_r = [0.0f32; MAX_SYSTEM_PLANETS];
-    let mut prev_outer_edge = star_disp + gap;
-    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
-        let real_r = planet.orbit_au * SCENE_UNITS_PER_AU;
-        let p_radius = display_radius_for(planet.body_type, planet.radius_earth, system_scale);
-        let needed_r = prev_outer_edge + p_radius;
-        let r = real_r.max(needed_r);
-        display_orbit_r[i] = r;
-        planet_disp_r[i] = p_radius;
-        prev_outer_edge = r + p_radius + gap;
-    }
-
-    // First write all planet positions, recording them so moons can offset.
-    let mut planet_positions = [[0.0f32; 3]; MAX_SYSTEM_PLANETS];
-    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
-        // Mean motion at the *real* AU (so closer planets still orbit faster
-        // even if they got pushed out visually). Slowed ~5× from the first
-        // pass — and capped so hot-inner-orbit planets don't spin a full
-        // revolution in under 2 s of wall time. Kepler 3rd still drives the
-        // outer-to-inner ratio; the cap just slices off the unwatchably-fast
-        // upper end at small a.
-        let omega = (0.04 / planet.orbit_au.powf(1.5)).min(0.50);
-        let theta = planet.phase_rad + time * omega;
-        let r = display_orbit_r[i];
-        let pos = [r * theta.cos(), 0.0, r * theta.sin()];
-        let disp_r = planet_disp_r[i];
-        let col = schematic_color_for(planet.body_type, planet.in_habitable_zone);
-        out.planets[i * 2] = [pos[0], pos[1], pos[2], disp_r];
-        out.planets[i * 2 + 1] = [col[0], col[1], col[2], r];
-        let tilt = ((planet.seed as f32 * 1.7e-5).sin() * 0.45) + 0.1;
-        let seed_f = ((planet.seed % 9973) as f32) / 9973.0 * 1000.0;
-        out.planet_meta[i] = [planet.body_type.as_shader_id(), seed_f, tilt, 0.0];
-        planet_positions[i] = pos;
-    }
-
-    // Pack moons. Distribute across planets in proportion to each planet's
-    // moon count, capping at MAX_SYSTEM_MOONS total. We render each moon as
-    // a small dot positioned around its host planet, scaled so the orbit
-    // ring is just outside the planet's display radius.
-    let mut moon_idx = 0usize;
-    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
-        let host_pos = planet_positions[i];
-        let host_r = planet_disp_r[i];
-        // Cap moons rendered per planet at 6 so the dots don't pile up.
-        for moon in planet.moons.iter().take(6) {
-            if moon_idx >= MAX_SYSTEM_MOONS {
-                break;
-            }
-            // Moon orbit display radius — outside the planet disc, scales
-            // with the moon's orbital ring (compressed for visibility).
-            let orbit_r = host_r * (1.6 + (moon.orbit_radii / 12.0).min(4.0));
-            // Spin moons fast enough to read as moving, slow enough not to
-            // strobe. Capped like the planet omegas.
-            let omega = (0.15 / (moon.orbit_radii).powf(1.5)).min(0.40);
-            let theta = moon.phase_rad + time * omega;
-            let pos = [
-                host_pos[0] + orbit_r * theta.cos(),
-                host_pos[1],
-                host_pos[2] + orbit_r * theta.sin(),
-            ];
-            let disp_r = (host_r * 0.18 * moon.radius_earth.powf(0.5)).max(0.003);
-            // Encode icy vs rocky as sign of w; magnitude = display radius.
-            // Shader reads abs(w) as radius, sign as icy flag.
-            let w = if moon.icy { disp_r } else { -disp_r };
-            out.moons[moon_idx] = [pos[0], pos[1], pos[2], w];
-            moon_idx += 1;
-        }
-        if moon_idx >= MAX_SYSTEM_MOONS {
-            break;
-        }
-    }
-
-    // Pack belts.
-    let n_b = sys.belts.len().min(MAX_SYSTEM_BELTS);
-    for (i, belt) in sys.belts.iter().take(n_b).enumerate() {
-        out.belts[i] = [
-            belt.inner_au * SCENE_UNITS_PER_AU,
-            belt.outer_au * SCENE_UNITS_PER_AU,
-            belt.density,
-            0.0,
-        ];
-    }
-
-    out.info = [n_p as f32, star_disp, intensity, moon_idx as f32];
-    out.star_color = [
-        sys.star.color[0],
-        sys.star.color[1],
-        sys.star.color[2],
-        n_b as f32,
-    ];
-
-    // Warmth = R - B from the blackbody colour. Cool M-dwarfs are very red
-    // (R=1, B≈0.4 → warmth ≈ 0.6); hot O/B stars are blue (R≈0.7, B=1 →
-    // warmth ≈ -0.3). The shader reads warmth directly to drive granulation,
-    // sunspot density and limb-darkening intensity per spectral class.
-    let primary_warmth = sys.star.color[0] - sys.star.color[2];
-    out.stars_meta = [
-        sys.star.temperature_k,
-        primary_warmth,
-        sys.companion
-            .as_ref()
-            .map(|c| c.star.temperature_k)
-            .unwrap_or(0.0),
-        sys.companion
-            .as_ref()
-            .map(|c| c.star.color[0] - c.star.color[2])
-            .unwrap_or(0.0),
-    ];
-
-    // Companion star. Orbits the system centre on its own (very slow) cycle —
-    // a real binary takes years to decades to swing around. Time-scaled to
-    // about 60 s for a 30-AU binary so the user sees visible motion.
-    if let Some(comp) = &sys.companion {
-        // Slowed to match planets — a real binary at 30 AU takes ~165 years
-        // to swing around. We'd never finish a cycle but visible drift is fine.
-        let omega = (0.012 / comp.separation_au.powf(1.5)).min(0.05);
-        let theta = comp.phase_rad + time * omega;
-        let incl = comp.inclination_deg.to_radians();
-        let r = comp.separation_au * SCENE_UNITS_PER_AU;
-        let cp = theta.cos();
-        let sp = theta.sin();
-        let ci = incl.cos();
-        let si = incl.sin();
-        let pos = [r * cp, r * sp * si, r * sp * ci];
-        let disp_r =
-            (system_scale * 0.045 * (comp.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
-        let comp_intensity = 1.4 + comp.star.luminosity_solar.powf(0.2);
-        out.companion = [pos[0], pos[1], pos[2], disp_r];
-        out.companion_color = [
-            comp.star.color[0],
-            comp.star.color[1],
-            comp.star.color[2],
-            comp_intensity,
-        ];
-    } else {
-        out.companion = [0.0; 4];
-        out.companion_color = [0.0; 4];
-    }
-    out
-}
-
-fn mesh_resolution(quality: f32) -> u32 {
-    if quality < 0.55 {
-        96
-    } else if quality < 0.85 {
-        144
-    } else {
-        PLANET_RES
-    }
 }
 
 /// Derive a per-seed axial tilt (axis in the XZ plane + angle 0..~35°) so

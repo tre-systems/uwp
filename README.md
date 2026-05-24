@@ -1,7 +1,8 @@
 # UWP
 
-Procedurally rendered planets in the browser via WebGPU. Move the mouse to orbit,
-scroll to zoom, open the ☰ panel to tune planet parameters or randomize the seed.
+Procedurally rendered Cepheus-style star systems in the browser via WebGPU.
+Move the mouse to orbit, scroll to zoom, open the panel to tune planet
+parameters, edit the UWP, or inspect the generated system.
 
 Live: <https://uwp.tre.systems>
 
@@ -10,8 +11,10 @@ Live: <https://uwp.tre.systems>
 - **Rust → WebAssembly** for the renderer (`crates/planet-render`).
   Compiles to a `cdylib` consumed from JS via `wasm-bindgen`.
 - **wgpu** drives WebGPU directly from the WASM module — no JS-side WebGPU code.
-- **WGSL** for all three shaders (planet surface, atmosphere/tonemap, background).
-- **Preact + Vite** for the UI shell, sliders and signal-driven param plumbing.
+- **WGSL** for the four render shaders: planet surface, atmosphere/tonemap,
+  background, and system overview.
+- **Preact + Vite** for the UI shell, typed app state, and renderer-client
+  facade.
 - **Cloudflare Workers** hosts the static bundle, custom domain
   `uwp.tre.systems`.
 
@@ -20,26 +23,23 @@ Live: <https://uwp.tre.systems>
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  src/  (Preact)                                                │
-│    Canvas.tsx ──► wasm Planet.create / drag / zoom / setParams │
-│       │                                                        │
-│       └──► requestAnimationFrame → planet.render(t)            │
+│    appState/      typed signals, actions, renderer commands    │
+│    domain/        Cepheus UWP, system DTOs, main-world model   │
+│    rendererClient wasm lifecycle, resize, frame loop, snapshots│
+│    components/    presentation UI                              │
 └──────────┬─────────────────────────────────────────────────────┘
            │ wasm-bindgen FFI
            ▼
 ┌────────────────────────────────────────────────────────────────┐
 │  crates/planet-render/  (Rust + wgpu)                          │
 │                                                                │
-│  Pass 1: scene HDR target  (Rgba16Float)                       │
-│    background.wgsl  (fullscreen triangle, depth_write)         │
-│      └─ stars, Milky Way, raymarched moons/rings/satellites    │
-│    planet.wgsl      (cubesphere mesh, displaced + lit)         │
-│      └─ terrain, biomes, ocean BRDF, 3-layer clouds, lighting  │
+│  domain system.rs: physically plausible stars, planets, belts  │
+│  scenes/system.rs: system uniform packing + camera fitting     │
+│  scenes/detail.rs: detail-scene mesh quality policy            │
 │                                                                │
-│  Pass 2: swapchain (sRGB)                                      │
-│    atmosphere.wgsl  (fullscreen triangle)                      │
-│      └─ raymarched Rayleigh + Mie + ozone scattering           │
-│      └─ HDR bloom                                              │
-│      └─ AGX display transform                                  │
+│  Detail mode: scene HDR target → atmosphere/tonemap swapchain  │
+│    background.wgsl + planet.wgsl + atmosphere.wgsl             │
+│  System mode: one fullscreen system.wgsl pass to swapchain     │
 └────────────────────────────────────────────────────────────────┘
 ```
 

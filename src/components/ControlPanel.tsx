@@ -7,7 +7,6 @@ import {
   parseUwpDigits,
   POP_DESC,
   randomizeUwp,
-  rerollSystemSeed,
   resetUwp,
   setUwpField,
   setUwpFromCode,
@@ -15,14 +14,16 @@ import {
   STARPORT_OPTIONS,
   systemSeed,
   TECH_DESC,
+  togglePanel,
   updateParams,
   uwp,
   uwpHex,
   uwpToCode,
   viewMode,
-} from '../state'
+} from '../appState'
 import { useEffect, useState } from 'preact/hooks'
 import { Slider } from './Slider'
+import { SystemEditor } from './SystemEditor'
 
 interface UwpSliderProps {
   label: string
@@ -55,107 +56,6 @@ function UwpSlider({ label, value, max, descriptions, disabled = false, onChange
   )
 }
 
-/** Compact view of the currently-loaded solar system: star, companion (if
- * any), HZ + snow-line + age, planet list, and asteroid belts. Shown in
- * the panel whenever the user is in System view mode. */
-function SystemEditor({ system, disabled }: { system: any; disabled: boolean }) {
-  const star = system.star
-  const comp = system.companion
-  return (
-    <>
-      <section>
-        <h2>System</h2>
-        <div class="sys-meta">
-          <div>
-            <strong>Primary:</strong> {star.spectral}-class · {star.mass_solar.toFixed(2)} M⊙ ·
-            {' '}{star.luminosity_solar < 0.01
-              ? star.luminosity_solar.toExponential(2)
-              : star.luminosity_solar.toFixed(2)} L⊙ · {star.temperature_k.toFixed(0)} K
-          </div>
-          {comp && (
-            <div>
-              <strong>Companion:</strong> {comp.star.spectral}-class ·
-              {' '}{comp.star.mass_solar.toFixed(2)} M⊙ ·
-              {' '}separation {comp.separation_au.toFixed(1)} AU
-            </div>
-          )}
-          <div>
-            <strong>Habitable zone:</strong> {system.hz_inner_au.toFixed(2)} –
-            {' '}{system.hz_outer_au.toFixed(2)} AU
-          </div>
-          <div>
-            <strong>Snow line:</strong> {system.snow_line_au.toFixed(2)} AU ·
-            {' '}<strong>Age:</strong> {system.age_gyr.toFixed(1)} Gyr
-          </div>
-        </div>
-
-        <div class="sys-actions">
-          <button onClick={rerollSystemSeed} disabled={disabled}>
-            New system
-          </button>
-          <span class="sys-seed">seed {system.seed}</span>
-        </div>
-      </section>
-
-      <section>
-        <h2>Planets ({system.planets.length})</h2>
-        <table class="sys-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Class</th>
-              <th>Orbit</th>
-              <th>Mass</th>
-              <th>T<sub>eq</sub></th>
-              <th>Moons</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {system.planets.map((p: any, i: number) => (
-              <tr class={i === system.main_world ? 'sys-main' : ''}>
-                <td>{i + 1}{i === system.main_world ? ' ★' : ''}</td>
-                <td>{p.body_type}</td>
-                <td>{p.orbit_au < 0.1 ? p.orbit_au.toFixed(3) : p.orbit_au.toFixed(2)} AU</td>
-                <td>{p.mass_earth < 1
-                  ? p.mass_earth.toFixed(2)
-                  : p.mass_earth.toFixed(0)} M⊕</td>
-                <td>{p.temperature_k.toFixed(0)} K</td>
-                <td>{p.moons.length || '—'}</td>
-                <td>
-                  <button
-                    class="sys-reroll"
-                    disabled={disabled}
-                    title={`Reroll planet ${i + 1}`}
-                    onClick={() => {
-                      const w = window as any
-                      const newSeed = Math.floor(Math.random() * 0xffffffff)
-                      w.uwp?.rerollPlanet?.(i, newSeed)
-                      // Force the panel + render to pick up the new state.
-                      currentSystem.value = w.uwp?.getSystem?.() ?? null
-                    }}
-                  >🎲</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {system.belts.length > 0 && (
-        <section>
-          <h2>Asteroid belts ({system.belts.length})</h2>
-          {system.belts.map((b: any, i: number) => (
-            <div class="sys-belt" key={i}>
-              {b.inner_au.toFixed(2)} – {b.outer_au.toFixed(2)} AU
-            </div>
-          ))}
-        </section>
-      )}
-    </>
-  )
-}
-
 export function ControlPanel() {
   // Accessing .value inside JSX subscribes the component to changes.
   const u = uwp.value
@@ -165,7 +65,6 @@ export function ControlPanel() {
   const sys = currentSystem.value
   const _ = systemSeed.value  // subscribe so the panel re-renders on seed change
   void _
-  const toggle = () => (panelOpen.value = !panelOpen.value)
   const codeText = uwpToCode(u)
   const panelId = 'controls-panel'
   const controlsDisabled = !open
@@ -180,7 +79,7 @@ export function ControlPanel() {
     <>
       <button
         class={`panel-toggle ${open ? 'panel-toggle-open' : ''}`}
-        onClick={toggle}
+        onClick={togglePanel}
         aria-controls={panelId}
         aria-expanded={open}
         aria-label={open ? 'Hide controls' : 'Show controls'}

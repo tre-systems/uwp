@@ -89,8 +89,9 @@ planet correctly occludes whatever sits behind it.
 Responsibilities:
 - **Starfield** (celestial-sphere sampled, see *Stars* below)
 - **Milky Way band** (faint tilted noise stripe)
-- **Moons** — raymarched spheres on orbital shells (1.7×, 2.8×, 3.9× planet
-  radius), each with multi-octave surface noise (highlands + maria).
+- **Moons** — raymarched spheres on seeded orbital shells spanning roughly
+  4-6, 12-18, and 30-45 planet radii, each with multi-octave surface noise
+  (highlands + maria).
   Per-planet count from a seed hash: ~40 % 0 moons, 35 % 1, 20 % 2, 5 % 3.
 - **Rings** — ray–plane intersection in the planet's equatorial plane (so
   rings tilt with the axial inclination), banded density via stacked sines
@@ -243,7 +244,8 @@ sharp at the planet's edge.
 ### Atmospheric scattering
 
 `atmosphere.wgsl` integrates a Bruneton & Neyret 2008-style scattering
-model along the view ray with **12 view steps** and **4 light steps**.
+model along the view ray with adaptive quality: low profiles use 6 view
+steps / 2 light steps, balanced uses 8 / 3, and high uses 12 / 4.
 
 - **Rayleigh** for the blue scatter. β_R = (3.5, 8.5, 19.5) × atmosphere
   density, tinted by the user atmosphere colour. The wavelength ratio is

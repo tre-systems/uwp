@@ -1,0 +1,88 @@
+import type { UwpDigits } from '../../uwp'
+import type { MainWorldSummary, SolarSystem } from '../system'
+
+export interface MainWorldModel {
+  radiusEarth: number
+  gravityEarth: number
+  atmosphereCode: number
+  hydrographicsPercent: number
+  population: number
+  governmentCode: number
+  lawLevel: number
+  techLevel: number
+  starportQuality: number
+}
+
+const STARPORT_QUALITY: Record<string, number> = {
+  A: 1,
+  B: 0.82,
+  C: 0.62,
+  D: 0.42,
+  E: 0.24,
+  X: 0,
+}
+
+const STARPORT_BY_QUALITY = [
+  { min: 0.9, value: 'A' },
+  { min: 0.72, value: 'B' },
+  { min: 0.52, value: 'C' },
+  { min: 0.32, value: 'D' },
+  { min: 0.1, value: 'E' },
+]
+
+export function uwpToMainWorldModel(uwp: UwpDigits): MainWorldModel {
+  const radiusEarth = uwp.size <= 0 ? 0 : uwp.size / 8
+  return {
+    radiusEarth,
+    gravityEarth: Math.max(0, radiusEarth),
+    atmosphereCode: uwp.atm,
+    hydrographicsPercent: uwp.hydro * 10,
+    population: uwp.pop <= 0 ? 0 : 10 ** uwp.pop,
+    governmentCode: uwp.gov,
+    lawLevel: uwp.law,
+    techLevel: uwp.tech,
+    starportQuality: STARPORT_QUALITY[uwp.starport] ?? 0,
+  }
+}
+
+export function mainWorldModelToUwp(model: MainWorldModel): UwpDigits {
+  return {
+    starport: starportFromQuality(model.starportQuality),
+    size: clampRound(model.radiusEarth * 8, 0, 10),
+    atm: clampRound(model.atmosphereCode, 0, 15),
+    hydro: clampRound(model.hydrographicsPercent / 10, 0, 10),
+    pop: populationExponent(model.population),
+    gov: clampRound(model.governmentCode, 0, 15),
+    law: clampRound(model.lawLevel, 0, 15),
+    tech: clampRound(model.techLevel, 0, 15),
+  }
+}
+
+export function mainWorldSummary(system: SolarSystem | null): MainWorldSummary | null {
+  if (!system) return null
+  const planet = system.planets[system.main_world]
+  if (!planet) return null
+  return {
+    planetIndex: system.main_world,
+    orbitAu: planet.orbit_au,
+    radiusEarth: planet.radius_earth,
+    massEarth: planet.mass_earth,
+    temperatureK: planet.temperature_k,
+    bodyType: planet.body_type,
+    moonCount: planet.moons.length,
+  }
+}
+
+function clampRound(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(value)))
+}
+
+function populationExponent(population: number) {
+  if (population <= 0) return 0
+  return clampRound(Math.log10(population), 0, 12)
+}
+
+function starportFromQuality(quality: number) {
+  const match = STARPORT_BY_QUALITY.find((entry) => quality >= entry.min)
+  return match?.value ?? 'X'
+}

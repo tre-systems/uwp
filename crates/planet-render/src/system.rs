@@ -184,17 +184,12 @@ impl Rng {
         let u2 = self.f01();
         (-2.0_f32 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos()
     }
-
-    fn pick<'a, T: Copy>(&mut self, choices: &'a [T]) -> T {
-        let i = (self.f01() * choices.len() as f32) as usize;
-        choices[i.min(choices.len() - 1)]
-    }
 }
 
 /// Star sampling. Pure IMF would give ~75 % M-dwarfs and ~0.04 % G-stars,
 /// which makes most randomly-generated systems visually identical small
 /// red ones. Bias toward G/K/F so each system feels distinct.
-pub fn sample_star(rng: &mut Rng) -> Star {
+fn sample_star(rng: &mut Rng) -> Star {
     let r = rng.f01();
     let (spectral, m_lo, m_hi) = if r < 0.005 {
         (SpectralClass::O, 16.0, 60.0)
@@ -244,12 +239,12 @@ fn blackbody_color(temp_k: f32) -> [f32; 3] {
     let r = if t <= 66.0 {
         1.0
     } else {
-        (329.698727446 * (t - 60.0).powf(-0.1332047592) / 255.0).clamp(0.0, 1.2)
+        (329.698_73 * (t - 60.0).powf(-0.133_204_76) / 255.0).clamp(0.0, 1.2)
     };
     let g = if t <= 66.0 {
-        (99.4708025861 * t.ln() - 161.1195681661) / 255.0
+        (99.470_8 * t.ln() - 161.119_57) / 255.0
     } else {
-        288.1221695283 * (t - 60.0).powf(-0.0755148492) / 255.0
+        288.122_16 * (t - 60.0).powf(-0.075_514_846) / 255.0
     }
     .clamp(0.0, 1.1);
     let b = if t >= 66.0 {
@@ -257,7 +252,7 @@ fn blackbody_color(temp_k: f32) -> [f32; 3] {
     } else if t < 19.0 {
         0.0
     } else {
-        (138.5177312231 * (t - 10.0).ln() - 305.0447927307) / 255.0
+        (138.517_73 * (t - 10.0).ln() - 305.044_8) / 255.0
     }
     .clamp(0.0, 1.0);
     [r, g, b]
@@ -393,7 +388,11 @@ fn generate_moons(rng: &mut Rng, planet: &Planet) -> Vec<Moon> {
             BodyType::GasGiant | BodyType::IceGiant => rng.range(0.10, 0.40),
             _ => rng.range(0.05, 0.25),
         };
-        let icy = if icy_dominant { rng.f01() > 0.15 } else { rng.f01() > 0.55 };
+        let icy = if icy_dominant {
+            rng.f01() > 0.15
+        } else {
+            rng.f01() > 0.55
+        };
         moons.push(Moon {
             orbit_radii: r,
             radius_earth: radius,
@@ -567,7 +566,7 @@ fn roll_orbit_content(
 ///   M-class      ~25 %
 /// We use roughly these rates so binaries feel correctly rare on red-dwarfs
 /// and common on bright stars.
-pub fn sample_companion(rng: &mut Rng, primary: &Star) -> Option<Companion> {
+fn sample_companion(rng: &mut Rng, primary: &Star) -> Option<Companion> {
     let p_binary = match primary.spectral {
         SpectralClass::O | SpectralClass::B => 0.65,
         SpectralClass::A | SpectralClass::F => 0.50,
@@ -835,7 +834,7 @@ mod tests {
         }
         let mean: f32 = counts.iter().map(|&c| c as f32).sum::<f32>() / counts.len() as f32;
         assert!(
-            mean >= 2.0 && mean <= 8.0,
+            (2.0..=8.0).contains(&mean),
             "mean planet count {mean} outside observed range"
         );
         for c in &counts {

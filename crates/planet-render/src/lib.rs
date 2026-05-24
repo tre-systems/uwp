@@ -7,6 +7,7 @@ mod camera;
 mod mesh;
 mod params;
 mod renderer;
+mod scenes;
 mod shader;
 mod system;
 

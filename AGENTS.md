@@ -115,6 +115,24 @@ Do this incrementally. Avoid a rewrite.
 
 Refactor priority should follow pain: type/contracts first, command boundaries second, Rust renderer decomposition third, shader modularity last.
 
+## Current Refactor Baseline
+
+The first architecture pass has established the intended boundaries:
+
+- TypeScript domain DTOs live in `src/domain/system/`.
+- Cepheus/UWP entry points are available through `src/domain/cepheus/`.
+- Continuous main-world projection helpers live in `src/domain/mainWorld/`.
+- App signals and named actions live in `src/appState/`; `src/state.ts` is a compatibility re-export.
+- WASM lifecycle, resize, frame loop, render profiles, snapshots, and renderer commands live in `src/rendererClient/`.
+- `Canvas.tsx` is now only the canvas mount point.
+- Product UI calls typed actions such as `rerollPlanet(index)` instead of `window.uwp`; the window handle remains debug-only.
+- Rust system-view uniform packing and camera fitting live in `crates/planet-render/src/scenes/system.rs`.
+- Rust detail-scene mesh quality and HDR/depth target helpers live in `crates/planet-render/src/scenes/detail.rs`.
+- A Rust uniform layout test pins the `SystemUniforms` shader contract.
+- `SystemEditor.tsx` owns system summary/table presentation instead of growing `ControlPanel.tsx`.
+
+Next refactor work should continue extracting GPU/pipeline setup and the full detail-scene render pass from `renderer.rs`, then split the remaining UWP editor controls out of `ControlPanel.tsx`.
+
 ## Type And Contract Rules
 
 - Do not use `any` for serialized Rust data in product UI. Define TypeScript DTOs for `SolarSystem`, `Star`, `Planet`, `Moon`, belts, companions, and game-facing UWP projections.
