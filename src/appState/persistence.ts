@@ -20,7 +20,7 @@ interface Persisted {
   renderQuality?: RenderQualityMode
 }
 
-const VIEW_MODES: readonly ViewMode[] = ['detail', 'system']
+const VIEW_MODES: readonly ViewMode[] = ['subsector', 'system', 'detail']
 const QUALITY_MODES: readonly RenderQualityMode[] = ['auto', 'low', 'balanced', 'high']
 
 function safeRead(): Persisted | null {

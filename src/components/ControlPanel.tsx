@@ -17,6 +17,7 @@ import {
 import { AboutModal } from './AboutModal'
 import { GlossaryModal } from './GlossaryModal'
 import { SocietyEditor } from './SocietyEditor'
+import { SubsectorEditor } from './SubsectorEditor'
 import { StarportEditor } from './StarportEditor'
 import { SystemEditor } from './SystemEditor'
 import { PerformanceControls } from './PerformanceControls'
@@ -54,7 +55,7 @@ export function ControlPanel() {
 
       <aside id={panelId} class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open} inert={!open}>
         <header class="panel-header">
-          <h1>{mode === 'system' ? 'System' : 'UWP'}</h1>
+          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : 'Main World'}</h1>
           <div class="panel-actions">
             {mode === 'detail' && (
               <>
@@ -73,6 +74,10 @@ export function ControlPanel() {
             </button>
           </div>
         </header>
+
+        {mode === 'subsector' && (
+          <SubsectorEditor disabled={controlsDisabled} />
+        )}
 
         {mode === 'system' && sys && (
           <SystemEditor system={sys} disabled={controlsDisabled} />

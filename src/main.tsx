@@ -5,6 +5,7 @@ import {
   installPreferencePersistence,
   loadPersistedPreferences,
 } from './appState/persistence'
+import { installSubsectorPipeline } from './subsectorClient'
 import './styles.css'
 
 publishBuildId()
@@ -14,4 +15,5 @@ installServiceWorkerAutoReload()
 // effect that mirrors future signal writes back to storage.
 loadPersistedPreferences()
 installPreferencePersistence()
+installSubsectorPipeline()
 render(<App />, document.getElementById('app')!)

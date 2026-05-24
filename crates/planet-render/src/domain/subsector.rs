@@ -24,9 +24,6 @@ use super::system::{self, BodyType, SolarSystem};
 pub const SUBSECTOR_COLS: u8 = 8;
 pub const SUBSECTOR_ROWS: u8 = 10;
 
-/// Default presence-roll target: 1d6 ≥ 4 ≈ 50 %.
-const DEFAULT_DENSITY: f32 = 0.5;
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HexCoord {
     pub col: u8,
@@ -201,11 +198,6 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         allegiance: "Independent".to_string(),
         hexes,
     }
-}
-
-/// Convenience entry point with the canonical 50 % density.
-pub fn generate_default(seed: u32) -> Subsector {
-    generate(seed, DEFAULT_DENSITY)
 }
 
 fn build_hex(coord: HexCoord, system_seed: u32, system: &SolarSystem, rng: &mut Rng) -> SubsectorHex {

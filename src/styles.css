@@ -922,6 +922,173 @@ label.color input[type="color"]::-webkit-color-swatch {
   to   { opacity: 1; }
 }
 
+/* Subsector view ----------------------------------------------------*/
+.subsector-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8, 10, 18, 0.55), rgba(2, 4, 8, 0.92));
+  padding: var(--space-7) 320px var(--space-7) var(--space-7);
+  z-index: 5;
+  overflow: auto;
+}
+.subsector-map {
+  width: 100%;
+  max-width: 760px;
+  color: var(--color-text);
+}
+.subsector-map svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.subsector-empty {
+  color: var(--text-dim);
+  font-size: var(--type-body);
+  text-align: center;
+}
+
+.hex-cell .hex-shape {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 0.8;
+  fill: rgba(255, 255, 255, 0.02);
+  transition: fill var(--motion-fast), stroke var(--motion-fast);
+}
+.hex-cell.hex-occupied { cursor: pointer; }
+.hex-cell.hex-occupied:hover .hex-shape { fill: rgba(255, 255, 255, 0.07); }
+.hex-cell.hex-occupied:focus-visible .hex-shape { stroke: var(--color-accent); stroke-width: 1.5; outline: none; }
+.hex-cell.hex-selected .hex-shape {
+  fill: var(--color-accent-soft);
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+}
+.hex-cell.zone-amber .hex-shape { fill: rgba(255, 200, 110, 0.08); }
+.hex-cell.zone-amber:hover .hex-shape { fill: rgba(255, 200, 110, 0.16); }
+.hex-cell.zone-amber.hex-selected .hex-shape {
+  fill: rgba(255, 200, 110, 0.22);
+  stroke: rgba(255, 200, 110, 0.85);
+}
+.hex-cell.zone-red .hex-shape { fill: rgba(255, 110, 110, 0.10); }
+.hex-cell.zone-red:hover .hex-shape { fill: rgba(255, 110, 110, 0.18); }
+.hex-cell.zone-red.hex-selected .hex-shape {
+  fill: rgba(255, 110, 110, 0.24);
+  stroke: rgba(255, 110, 110, 0.85);
+}
+
+.hex-system-dot {
+  fill: var(--color-text-strong);
+  filter: drop-shadow(0 0 4px rgba(255, 220, 160, 0.55));
+}
+.hex-cell.port-a .hex-system-dot { fill: rgba(255, 240, 180, 1); }
+.hex-cell.port-b .hex-system-dot { fill: rgba(220, 230, 255, 1); }
+.hex-cell.port-c .hex-system-dot { fill: rgba(200, 220, 255, 0.9); }
+.hex-cell.port-d .hex-system-dot { fill: rgba(200, 200, 220, 0.8); }
+.hex-cell.port-e .hex-system-dot { fill: rgba(180, 180, 200, 0.6); }
+.hex-cell.port-x .hex-system-dot { fill: rgba(150, 80, 80, 0.7); }
+
+.hex-uwp,
+.hex-uwp-row2 {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  fill: var(--color-text-strong);
+  pointer-events: none;
+}
+.hex-uwp-row2 { font-size: 8px; fill: var(--color-text); }
+.hex-label {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  fill: var(--text-dim);
+  pointer-events: none;
+  letter-spacing: 0.5px;
+}
+.hex-flags {
+  font-size: 8px;
+  fill: rgba(255, 220, 160, 0.85);
+  pointer-events: none;
+}
+.hex-base {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.base-naval { fill: rgba(140, 180, 255, 1); }
+.base-scout { fill: rgba(255, 200, 140, 1); }
+.base-research { fill: rgba(180, 255, 200, 1); }
+.base-Aid { fill: rgba(255, 180, 220, 1); }
+
+/* Hex detail panel chip --------------------------------------------*/
+.hex-detail-uwp {
+  font-family: var(--font-mono);
+  font-size: var(--type-base);
+  color: var(--color-text-strong);
+  letter-spacing: 0.6px;
+}
+.zone-tag {
+  display: inline-block;
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--type-xs);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.zone-tag-green { background: rgba(110, 220, 150, 0.18); color: rgba(180, 245, 200, 1); }
+.zone-tag-amber { background: rgba(255, 200, 110, 0.22); color: rgba(255, 220, 160, 1); }
+.zone-tag-red { background: rgba(255, 110, 110, 0.22); color: rgba(255, 180, 180, 1); }
+
+/* View mode toggle -------------------------------------------------*/
+.view-mode-toggle {
+  position: fixed;
+  top: 16px;
+  right: 68px;
+  display: inline-flex;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 22, 0.78);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  overflow: hidden;
+  box-shadow: var(--shadow-button);
+  z-index: 10;
+}
+.view-mode-segment {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--type-body);
+  font-family: inherit;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+.view-mode-segment:last-child { border-right: none; }
+.view-mode-segment:hover { background: rgba(255, 255, 255, 0.06); }
+.view-mode-segment.active {
+  background: var(--color-accent-soft);
+  color: var(--color-text-strong);
+}
+.view-mode-segment:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 640px) {
+  .view-mode-toggle {
+    top: 12px;
+    right: 64px;
+    height: 44px;
+  }
+  .view-mode-segment { padding: 0 10px; font-size: var(--type-sm); }
+  .subsector-overlay { padding: var(--space-6); }
+}
+
 /* View transition ----------------------------------------------------*/
 /* A short black wash hides the GPU scene swap when viewMode flips. The
    element is always mounted (no enter/exit gymnastics) so the keyframe

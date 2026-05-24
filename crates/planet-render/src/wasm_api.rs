@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
+use crate::domain::subsector;
 use crate::{params, renderer};
 
 #[wasm_bindgen]
@@ -70,4 +71,14 @@ impl Planet {
     pub fn reroll_planet(&mut self, idx: u32, new_seed: u32) {
         self.inner.reroll_planet(idx, new_seed);
     }
+}
+
+/// Subsector data is independent of the GPU renderer; expose it as
+/// free-standing wasm-bindgen functions so the JS layer can request a
+/// fresh grid without going through the renderer instance.
+
+#[wasm_bindgen(js_name = generateSubsector)]
+pub fn generate_subsector(seed: u32, density: f32) -> Result<JsValue, JsValue> {
+    let sub = subsector::generate(seed, density);
+    serde_wasm_bindgen::to_value(&sub).map_err(|e| JsValue::from_str(&e.to_string()))
 }

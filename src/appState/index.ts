@@ -9,13 +9,14 @@ import {
 } from '../uwp'
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
 import type { SolarSystem } from '../domain/system'
+import type { HexCoord, Subsector } from '../domain/subsector'
 import type { RenderProfileName } from '../renderProfile'
 
 export * from '../params'
 export * from '../domain/cepheus'
 export { paramsPatchFromUwp, paramsPatchFromUwpDigits }
 
-export type ViewMode = 'detail' | 'system'
+export type ViewMode = 'subsector' | 'system' | 'detail'
 export type RenderQualityMode = 'auto' | RenderProfileName
 
 export interface RenderPerformanceSnapshot {
@@ -49,6 +50,10 @@ export const params = signal<Params>({ ...defaultParams })
 export const viewMode = signal<ViewMode>('detail')
 export const systemSeed = signal<number>(1337)
 export const currentSystem = signal<SolarSystem | null>(null)
+export const subsectorSeed = signal<number>(0xC0FFEE)
+export const subsectorDensity = signal<number>(0.5)
+export const currentSubsector = signal<Subsector | null>(null)
+export const selectedHex = signal<HexCoord | null>(null)
 export const renderQualityMode = signal<RenderQualityMode>('auto')
 export const renderPerformance = signal<RenderPerformanceSnapshot>({
   mode: 'auto',
@@ -114,6 +119,41 @@ export function setParamsSnapshot(nextParams: Params) {
 export function rerollPlanet(index: number) {
   rendererControls?.rerollPlanet(index)
   currentSystem.value = rendererControls?.getSystem() ?? currentSystem.value
+}
+
+export function setSubsector(sub: Subsector | null) {
+  currentSubsector.value = sub
+}
+
+export function setSubsectorSeed(seed: number) {
+  subsectorSeed.value = seed
+}
+
+export function setSubsectorDensity(density: number) {
+  subsectorDensity.value = Math.max(0, Math.min(1, density))
+}
+
+export function rerollSubsectorSeed() {
+  setSubsectorSeed(Math.floor(Math.random() * 0xffffffff))
+}
+
+export function setSelectedHex(coord: HexCoord | null) {
+  selectedHex.value = coord
+}
+
+/**
+ * Pick a hex: store the selection, hand its system seed to the existing
+ * system pipeline, and snap the view to detail so the user lands inside
+ * the chosen system.
+ */
+export function selectHex(coord: HexCoord): void {
+  const sub = currentSubsector.value
+  if (!sub) return
+  const hex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
+  if (!hex) return
+  setSelectedHex(coord)
+  setSystemSeed(hex.system_seed)
+  setViewMode('system')
 }
 
 export function updateParams(patch: Partial<Params>) {
