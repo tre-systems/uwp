@@ -106,7 +106,11 @@ impl Planet {
         if system.planets.is_empty() {
             return Ok(JsValue::NULL);
         }
-        let main_idx = if system.main_world >= 0 { system.main_world as usize } else { 0 };
+        let main_idx = if system.main_world >= 0 {
+            system.main_world as usize
+        } else {
+            0
+        };
         let planet = &system.planets[main_idx];
         let params = self.inner.params();
 
