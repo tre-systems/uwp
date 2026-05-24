@@ -252,14 +252,26 @@ html, body, #app {
 .view-toggle:active { transform: scale(0.95); }
 
 .sys-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.78);
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr;
+  gap: var(--space-2) var(--space-5);
+  margin: 0 0 var(--space-4);
+  font-size: var(--type-body);
+  line-height: 1.5;
 }
-.sys-meta strong { color: rgba(255, 255, 255, 0.95); font-weight: 500; }
+.sys-meta-row {
+  display: contents;
+}
+.sys-meta-row dt {
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+.sys-meta-row dd {
+  margin: 0;
+  color: var(--color-text);
+}
+.sys-meta-bar dd { display: flex; align-items: center; }
 
 .sys-actions {
   display: flex;
@@ -276,29 +288,111 @@ html, body, #app {
 .sys-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.78);
+  font-size: var(--type-sm);
+  color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 .sys-table th {
   text-align: left;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.55);
-  padding: 4px 6px 4px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  color: var(--text-dim);
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
+  border-bottom: 1px solid var(--border-control);
+  letter-spacing: 0.3px;
 }
+.sys-table th.sys-col-num { text-align: right; }
 .sys-table td {
-  padding: 3px 6px 3px 0;
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
   white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-divider);
 }
-.sys-table tr.sys-main { color: rgba(170, 220, 255, 0.95); }
-.sys-table tr.sys-main td:first-child { color: rgba(255, 220, 120, 0.95); }
+.sys-table td.sys-col-num { text-align: right; font-variant-numeric: tabular-nums; }
+.sys-table td.sys-col-action { padding-right: 0; text-align: right; }
+.sys-row { transition: background var(--motion-fast); }
+.sys-row:hover { background: rgba(255, 255, 255, 0.04); }
+.sys-row:hover .sys-reroll { opacity: 1; }
+.sys-table tr.sys-main {
+  color: var(--color-main-world);
+  background: linear-gradient(90deg, rgba(110, 164, 255, 0.10), transparent);
+}
+.sys-table tr.sys-main:hover {
+  background: linear-gradient(90deg, rgba(110, 164, 255, 0.18), rgba(110, 164, 255, 0.02));
+}
+.sys-main-marker {
+  color: var(--color-main-world-star);
+  margin-right: var(--space-2);
+  font-size: 0.95em;
+}
+.sys-unit {
+  margin-left: 3px;
+  color: var(--text-dim);
+  font-size: 0.85em;
+}
+.sys-reroll {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast), opacity var(--motion-fast);
+}
+.sys-reroll:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+  color: var(--color-text-strong);
+  opacity: 1;
+}
+.sys-reroll:disabled { opacity: 0.25; cursor: default; }
 
 .sys-belt {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  padding: 2px 0;
+  font-size: var(--type-body);
+  color: var(--color-text);
+  padding: var(--space-2) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.sys-belt-dots {
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+
+/* Habitability bar ---------------------------------------------------*/
+.hab-bar {
+  position: relative;
+  width: 100%;
+  max-width: 140px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.hab-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-sm);
+  transition: width var(--motion-medium) var(--motion-ease);
+}
+.hab-bar-good .hab-bar-fill { background: linear-gradient(90deg, rgba(110, 220, 150, 0.55), rgba(110, 220, 150, 0.85)); }
+.hab-bar-fair .hab-bar-fill { background: linear-gradient(90deg, rgba(255, 200, 110, 0.55), rgba(255, 200, 110, 0.85)); }
+.hab-bar-poor .hab-bar-fill { background: linear-gradient(90deg, rgba(255, 110, 110, 0.45), rgba(255, 110, 110, 0.75)); }
+.hab-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--type-xs);
+  color: var(--color-text-strong);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .trade-codes {
@@ -335,25 +429,6 @@ html, body, #app {
 .trade-chip:focus-visible {
   background: var(--color-accent-hover);
   outline: none;
-}
-
-.sys-reroll {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  padding: 1px 5px;
-  cursor: pointer;
-  line-height: 1.2;
-}
-.sys-reroll:hover {
-  background: rgba(255, 255, 255, 0.10);
-  color: #fff;
-}
-.sys-reroll:disabled {
-  opacity: 0.3;
-  cursor: default;
 }
 
 .panel-header {
