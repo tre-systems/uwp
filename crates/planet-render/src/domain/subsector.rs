@@ -258,7 +258,12 @@ fn axial_from_offset(coord: HexCoord) -> (i32, i32) {
     (q, r)
 }
 
-fn build_hex(coord: HexCoord, system_seed: u32, system: &SolarSystem, rng: &mut Rng) -> SubsectorHex {
+fn build_hex(
+    coord: HexCoord,
+    system_seed: u32,
+    system: &SolarSystem,
+    rng: &mut Rng,
+) -> SubsectorHex {
     let gas_giant = system
         .planets
         .iter()
@@ -298,7 +303,11 @@ fn project_uwp(system: &SolarSystem, rng: &mut Rng) -> Uwp {
                     BodyType::Rocky | BodyType::Terrestrial | BodyType::SuperEarth
                 )
             })
-            .max_by(|a, b| a.radius_earth.partial_cmp(&b.radius_earth).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.radius_earth
+                    .partial_cmp(&b.radius_earth)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     };
 
     let (size, hydro, atm) = if let Some(p) = main {
