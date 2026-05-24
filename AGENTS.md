@@ -201,11 +201,11 @@ Presentation layer work — `src/components/`, `src/styles.css`, `src/app.tsx`, 
 18. **Export visuals.** `ExportPanel` ships two presets: a raw PNG frame and a 2D-composited planet card that overlays UWP + star metadata + trade-code chips beside the canvas snapshot. → `9042cdd`
 19. **Pronounceable names.** Deterministic CV-CV-CV name generator surfaces in the breadcrumb, system header, subsector hex detail, and hover tooltip so worlds read as "Aenis" rather than four-digit hex addresses. → `25001aa`
 
+20. **Surface hex inspector.** `SurfaceMapEditor` reuses the inspector shape for per-hex terrain / latitude / temperature / elevation, with a "Main starport sits here" callout when the selected cell is the starport. → `6785193`
+
 ### Open
 
-1. **Surface hex inspector.** Once the Surface Map roadmap lands, reuse the inspector shape for per-hex terrain / settlement details.
-
-New UX work proposals belong in this section. When picking up an item, mark it in commit messages so it stays traceable.
+No items currently open. New UX work proposals belong in this section. When picking up an item, mark it in commit messages so it stays traceable.
 
 ## Rust Compute Baseline
 
@@ -263,7 +263,7 @@ The current CPU-side workload is trivial — mesh once at startup, microseconds 
 
 These are the high-ROI Rust compute opportunities, roughly in priority order. Don't do them speculatively — pick the next one when a feature actually needs it.
 
-1. **Procedural surface pre-bake.** Biggest win by a wide margin. `planet.wgsl` currently recomputes 7-octave FBM + plate-tectonics Voronoi + crater layers + biome blending per fragment per frame, which is wasteful — the surface doesn't change while you orbit. Bake six 2k×2k cube-map faces (heightmap + biome + feature mask) per seed in Rust with `rayon`. Shader becomes cheap texture lookups; per-pixel budget drops 5–10×, freeing space for finer detail, real river networks, or higher resolution at the same framerate. **Hard prerequisite for the World Surface Map Roadmap.**
+1. **Procedural surface pre-bake.** Still future. The Surface Map roadmap is now shipped on a climate-driven v1 (`6785193`) that doesn't require this pre-bake — the globe and the hex map agree on broad bands but not per-pixel noise. Pre-baking the existing 7-octave FBM + plate Voronoi + crater layers + biome stack into six cube-map faces per seed would (a) collapse per-fragment shader cost 5-10×, (b) let the surface hex map sample exactly what the globe shader draws, (c) unblock tectonics (item 3) which iterates over the heightmap. Sequence: port the WGSL noise stack to Rust, rayon-parallelise across faces, upload as a 6-face GPU cube-map, modify `planet.wgsl` to sample instead of compute.
 
 2. **Climate / habitability simulation.** *Partial → `6e35769`.* Seasonal axial-tilt sampling (four orbital-phase samples, subsolar-latitude shifted by obliquity) is in; mean temperatures are now cosine-zenith averages over the year rather than a static latitude factor. Still future: precipitation bands (latitude-dependent Hadley / Ferrel / polar cells), ocean heat capacity (sea-fraction-weighted thermal inertia), a shader-facing biome field uploaded as a small texture so `planet.wgsl` can colour continents physically instead of from fbm.
 
@@ -434,23 +434,23 @@ src/components/
 
 ### Phases
 
-Tackle in this order; the pre-bake must land before phase 1.
+Phases 1-6 are shipped on a climate-driven v1 (`6785193`). The original spec assumed the procedural pre-bake had landed; this implementation instead derives terrain straight from `ClimateSummary` + latitude + a small value-noise field. The on-screen globe and the hex map agree on broad bands (polar caps, temperate belts, equatorial deserts) but don't share per-pixel noise — that consistency arrives with the pre-bake.
 
-1. **Rust surface-map generation from pre-baked data.** `surface_map::generate(planet_id, pre_bake) -> SurfaceMap`. Walk a 32×16 (or configurable) hex grid in equal-area projection, sample the pre-baked cube-map at each hex centre, classify terrain from elevation + biome + climate. Unit tests: ocean fraction matches the pre-bake's water fraction, polar caps within ice-latitude, no NaN hexes.
+1. **Rust surface-map generation.** *Shipped → `6785193`.* `domain::surface_map::generate` walks a 32×16 hex grid, picks sea level by quantile of a three-octave value noise so ocean fraction tracks `climate.liquid_water_fraction`, classifies terrain (Ocean / Shoreline / Plain / Forest / Hill / Mountain / Desert / Tundra / Ice / Volcanic) from elevation + latitude + climate + body-type. Four unit tests pin determinism, grid extent, ocean-fraction tracking, and polar-ice growth on a synthesised cold world.
 
-2. **Starport placement.** Pick one hex meeting: habitable, coastal-or-plain, on the lit hemisphere if the world is tidally locked, ideally near the population centroid. Deterministic for a given seed. Unit test: starport hex is one of the more habitable cells.
+2. **Starport placement.** *Shipped → `6785193`.* Scores habitable, low-elevation, coastal/plain cells with a mid-latitude bias and a tiny RNG jitter for tie-break; picks the top score per seed.
 
-3. **City placement.** Count from population code. Poisson-disc-sampled positions weighted by habitability and avoiding ocean/mountain. Unit tests: count matches UWP, spread reasonable (min spacing).
+3. **City placement.** *Shipped → `6785193`.* Target count from `climate.habitability * class_mult`, scored by terrain + latitude, sampled greedily with a minimum hex-distance gap so cities don't clump. Tiered 0-3 (village / town / city / metropolis).
 
-4. **WASM API + TS DTOs.** Expose `getSurfaceMap()` from `wasm_api.rs`; TS DTOs in `src/domain/surfaceMap/`. Cache the map in Rust (it doesn't change while the world parameters are fixed); recompute only when the world or its surface pre-bake changes.
+4. **WASM API + TS DTOs.** *Shipped → `6785193`.* `Planet::getSurfaceMap()` returns the JSON shape; TS DTOs in `src/domain/surfaceMap/`.
 
-5. **App state + renderer client.** Signals `currentSurfaceMap`, `selectedSurfaceHex`. View mode enum extends to `'surface'`. Renderer client exposes `selectSurfaceHex` and a `pointCameraAt(latitude, longitude)` helper used by phase 7.
+5. **App state + renderer client.** *Shipped → `6785193`.* `currentSurfaceMap`, `selectedSurfaceHex` signals; `refreshSurfaceMap` action; renderer client pushes a fresh map alongside every system snapshot refresh. ViewMode enum extends to `'surface'`.
 
-6. **SVG surface hex map UI.** `SurfaceMap.tsx` renders the 512-ish hex grid; terrain types coloured per biome; starport marker (★) and city markers (●, size scaled by tier). `SurfaceMapEditor.tsx` shows the inspector for the selected hex with biome / climate / settlements. Click → `selectSurfaceHex`. Four-way segmented control wires up the new view mode.
+6. **SVG surface hex map UI.** *Shipped → `6785193`.* `SurfaceMap.tsx` renders the 512-hex grid with a fixed terrain palette, starport star, city dots scaled by tier, focus rings, click-to-select. `SurfaceMapEditor.tsx` surfaces grid stats and a per-hex inspector. `ViewModeToggle` becomes a 4-way segmented control with Surface disabled until a main world exists.
 
-7. **Globe ↔ surface bridge.** Camera-rotation helper and lat/long projection math in Rust + renderer-client method; "show on globe" affordance and hover-to-highlight-latitude-band interaction on the surface map in the UI.
+7. **Globe ↔ surface bridge.** Future — camera-rotation helper + `pointCameraAt(lat, lon)` so clicking a hex spins the rendered globe to point at it.
 
-8. **Optional WebGPU port.** Same pattern as the subsector roadmap: port the data path to a WGSL fullscreen-triangle scene, then restyle the view to match. Only worth doing once the SVG version's UX is stable.
+8. **Optional WebGPU port.** Future — port the data path to a WGSL fullscreen-triangle scene once the SVG UX is stable.
 
 ### Phase 1 Acceptance Criteria
 
