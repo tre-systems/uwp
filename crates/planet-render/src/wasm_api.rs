@@ -71,6 +71,20 @@ impl Planet {
     pub fn reroll_planet(&mut self, idx: u32, new_seed: u32) {
         self.inner.reroll_planet(idx, new_seed);
     }
+
+    /// Ray-pick the system overview. `time_ms` keeps the picked planet
+    /// aligned with the one currently animating on screen. Returns the
+    /// 0-based planet index or `-1` when the ray misses.
+    #[wasm_bindgen(js_name = pickSystemPlanet)]
+    pub fn pick_system_planet(&self, canvas_x: f32, canvas_y: f32, time_ms: f64) -> i32 {
+        match self
+            .inner
+            .pick_system_planet(canvas_x, canvas_y, (time_ms * 0.001) as f32)
+        {
+            Some(i) => i as i32,
+            None => -1,
+        }
+    }
 }
 
 /// Subsector data is independent of the GPU renderer; expose it as

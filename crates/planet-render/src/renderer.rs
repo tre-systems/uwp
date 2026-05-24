@@ -215,6 +215,25 @@ impl Renderer {
         &self.system
     }
 
+    /// Project a canvas pixel to NDC and pick the system body underneath
+    /// it. Returns the planet index or `None`. The view-mode gate lives
+    /// in the JS layer; the renderer happily picks even when detail view
+    /// is showing because the underlying math is cheap.
+    pub fn pick_system_planet(&self, canvas_x: f32, canvas_y: f32, time: f32) -> Option<u32> {
+        let w = self.config.width as f32;
+        let h = self.config.height as f32;
+        if w <= 0.0 || h <= 0.0 {
+            return None;
+        }
+        let ndc_x = (canvas_x / w) * 2.0 - 1.0;
+        // Canvas y is top-down; NDC y is bottom-up.
+        let ndc_y = 1.0 - (canvas_y / h) * 2.0;
+        let view_proj = self.camera.view_proj();
+        let cam = self.camera.position();
+        system_scene::pick_planet(&self.system, time, view_proj, cam, ndc_x, ndc_y)
+            .map(|hit| hit.index as u32)
+    }
+
     /// Reroll a single planet's surface seed in place. Orbit, body class,
     /// mass, moons, and other physical properties stay the same; only seeded
     /// procedural surface detail changes. Future physical mutation methods

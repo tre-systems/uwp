@@ -3,6 +3,7 @@ import { Canvas } from './components/Canvas'
 import { ControlPanel } from './components/ControlPanel'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { ErrorOverlay } from './components/ErrorOverlay'
+import { HoverTooltip } from './components/HoverTooltip'
 import { OnboardingHint } from './components/OnboardingHint'
 import { SubsectorMap } from './components/SubsectorMap'
 import { ViewModeToggle } from './components/ViewModeToggle'
@@ -32,6 +33,7 @@ export function App() {
       {status === 'loading' && <LoadingOverlay />}
       {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
       {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
+      <HoverTooltip />
       <Breadcrumb />
       <ViewModeToggle />
       <ControlPanel />

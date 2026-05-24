@@ -127,6 +127,16 @@ export class RendererClient {
     return (this.planet?.getSystem() as SolarSystem | undefined) ?? null
   }
 
+  pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null {
+    const planet = this.planet
+    if (!planet) return null
+    // Convert CSS pixels to backbuffer pixels (the renderer thinks in
+    // device pixels via the canvas attribute width/height).
+    const dpr = window.devicePixelRatio || 1
+    const idx = planet.pickSystemPlanet(canvasX * dpr, canvasY * dpr, timeMs)
+    return idx < 0 ? null : idx
+  }
+
   private renderParams() {
     return { ...params.value, render_quality: this.profile.shaderQuality }
   }
@@ -156,6 +166,7 @@ export class RendererClient {
       rerollPlanet: (index, seed) => this.rerollPlanet(index, seed),
       getSystem: () => this.getSystem(),
       setParams: (nextParams) => this.setParams(nextParams),
+      pickSystemPlanet: (x, y, t) => this.pickSystemPlanet(x, y, t),
     })
     this.debugHandle = {
       setMode: (mode) => {

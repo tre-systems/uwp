@@ -28,6 +28,7 @@ describe('appState renderer command boundary', () => {
         received = nextParams
         setParamsSnapshot(nextParams)
       },
+      pickSystemPlanet: () => null,
     })
 
     updateParams({ sun_angle: 0.25 })
@@ -48,6 +49,7 @@ describe('appState renderer command boundary', () => {
       },
       getSystem: () => system,
       setParams: () => undefined,
+      pickSystemPlanet: () => null,
     })
 
     rerollPlanet(2)

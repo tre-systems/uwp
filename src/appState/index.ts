@@ -34,6 +34,21 @@ export interface RendererControls {
   rerollPlanet(index: number, seed?: number): void
   getSystem(): SolarSystem | null
   setParams(params: Params): void
+  /**
+   * Ray-pick the system view. Coordinates are CSS pixels relative to the
+   * canvas origin. Returns the 0-based planet index or `null` on miss.
+   */
+  pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null
+}
+
+/** Hovered-body snapshot consumed by tooltips. Stays null when nothing
+ *  is under the pointer or when we're not in system view. */
+export interface HoverTarget {
+  index: number
+  /** Canvas-relative pixel position so the tooltip can anchor near the
+   *  cursor without re-running the pick. */
+  x: number
+  y: number
 }
 
 // Lifecycle of the renderer pipeline. `idle` is the very first frame before
@@ -55,6 +70,7 @@ export const subsectorDensity = signal<number>(0.5)
 export const currentSubsector = signal<Subsector | null>(null)
 export const selectedHex = signal<HexCoord | null>(null)
 export const showJumpRoutes = signal<boolean>(true)
+export const hoverTarget = signal<HoverTarget | null>(null)
 export const renderQualityMode = signal<RenderQualityMode>('auto')
 export const renderPerformance = signal<RenderPerformanceSnapshot>({
   mode: 'auto',
@@ -144,6 +160,18 @@ export function setSelectedHex(coord: HexCoord | null) {
 
 export function setShowJumpRoutes(visible: boolean) {
   showJumpRoutes.value = visible
+}
+
+export function setHoverTarget(target: HoverTarget | null) {
+  hoverTarget.value = target
+}
+
+export function pickSystemPlanet(
+  canvasX: number,
+  canvasY: number,
+  timeMs: number,
+): number | null {
+  return rendererControls?.pickSystemPlanet(canvasX, canvasY, timeMs) ?? null
 }
 
 /**

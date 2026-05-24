@@ -1132,6 +1132,50 @@ label.color input[type="color"]::-webkit-color-swatch {
 .zone-tag-amber { background: rgba(255, 200, 110, 0.22); color: rgba(255, 220, 160, 1); }
 .zone-tag-red { background: rgba(255, 110, 110, 0.22); color: rgba(255, 180, 180, 1); }
 
+/* Hover tooltip ----------------------------------------------------*/
+.hover-tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9;
+  padding: 8px 12px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent-border);
+  background: rgba(8, 12, 22, 0.92);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  color: var(--color-text-strong);
+  font-size: var(--type-body);
+  letter-spacing: 0.2px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  max-width: 240px;
+}
+.hover-tooltip-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: 4px;
+}
+.hover-tooltip-head .icon { color: var(--color-accent); }
+.hover-tooltip-idx {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
+}
+.hover-tooltip-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: var(--type-sm);
+  font-variant-numeric: tabular-nums;
+}
+.hover-tooltip-tag {
+  margin-top: 4px;
+  font-size: var(--type-xs);
+  color: rgba(180, 245, 200, 1);
+  letter-spacing: 0.4px;
+}
+
 /* Breadcrumb -------------------------------------------------------*/
 .breadcrumb {
   position: fixed;

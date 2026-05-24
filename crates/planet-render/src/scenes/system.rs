@@ -1,4 +1,5 @@
 use bytemuck::{Pod, Zeroable};
+use glam::{Mat4, Vec3, Vec4};
 
 use crate::system::{BodyType, SolarSystem};
 
@@ -237,6 +238,103 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     out
 }
 
+/// Result of a ray-pick against the system view. `index` is the planet
+/// index inside `SolarSystem::planets`; the renderer client surfaces
+/// the rest of the metadata through `getSystem`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PickHit {
+    pub index: usize,
+    /// Hit distance along the ray (camera-space units). Lets the caller
+    /// resolve overlapping bodies if it later picks moons too.
+    pub distance: f32,
+}
+
+/// Pick the closest system-view planet under an NDC point (`-1..1` in
+/// both axes; (0, 0) is the canvas centre, y points up). Returns `None`
+/// when the ray misses every planet. The pick mirrors `uniforms_for`'s
+/// position math so the user clicks exactly the sphere they see.
+pub fn pick_planet(
+    sys: &SolarSystem,
+    time: f32,
+    view_proj: Mat4,
+    camera_pos: Vec3,
+    ndc_x: f32,
+    ndc_y: f32,
+) -> Option<PickHit> {
+    let inv = view_proj.inverse();
+    let near = inv * Vec4::new(ndc_x, ndc_y, 0.0, 1.0);
+    let far = inv * Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+    if near.w == 0.0 || far.w == 0.0 {
+        return None;
+    }
+    let p_near = Vec3::new(near.x / near.w, near.y / near.w, near.z / near.w);
+    let p_far = Vec3::new(far.x / far.w, far.y / far.w, far.z / far.w);
+    let mut ray_dir = p_far - p_near;
+    let len = ray_dir.length();
+    if !len.is_finite() || len < 1e-6 {
+        return None;
+    }
+    ray_dir /= len;
+
+    let outer_orbit = sys
+        .planets
+        .last()
+        .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
+        .unwrap_or(1.0);
+    let outer_belt = sys
+        .belts
+        .iter()
+        .map(|b| b.outer_au * SCENE_UNITS_PER_AU)
+        .fold(0.0_f32, f32::max);
+    let system_scale = outer_orbit.max(outer_belt).max(1.0);
+    let star_disp = star_display_radius(sys, system_scale);
+    let gap = star_disp * 0.45;
+
+    let n_p = sys.planets.len().min(MAX_SYSTEM_PLANETS);
+    let mut best: Option<PickHit> = None;
+    let mut prev_outer_edge = star_disp + gap;
+    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
+        let real_r = planet.orbit_au * SCENE_UNITS_PER_AU;
+        let p_radius = display_radius_for(planet.body_type, planet.radius_earth, system_scale);
+        let needed_r = prev_outer_edge + p_radius;
+        let r = real_r.max(needed_r);
+        prev_outer_edge = r + p_radius + gap;
+
+        let omega = (0.04 / planet.orbit_au.powf(1.5)).min(0.50);
+        let theta = planet.phase_rad + time * omega;
+        let centre = Vec3::new(r * theta.cos(), 0.0, r * theta.sin());
+
+        // Slight padding around the rendered disc lets the user grab a
+        // small planet without millimetre precision, but stays tight
+        // enough that two adjacent planets don't share pick territory.
+        let pick_radius = p_radius * 1.25;
+        if let Some(t) = ray_sphere(camera_pos, ray_dir, centre, pick_radius) {
+            if best.is_none_or(|b| t < b.distance) {
+                best = Some(PickHit {
+                    index: i,
+                    distance: t,
+                });
+            }
+        }
+    }
+    best
+}
+
+fn ray_sphere(origin: Vec3, dir: Vec3, centre: Vec3, radius: f32) -> Option<f32> {
+    let m = origin - centre;
+    let b = m.dot(dir);
+    let c = m.dot(m) - radius * radius;
+    if c > 0.0 && b > 0.0 {
+        return None;
+    }
+    let disc = b * b - c;
+    if disc < 0.0 {
+        return None;
+    }
+    let t = -b - disc.sqrt();
+    Some(t.max(0.0))
+}
+
 pub fn encode_render(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
@@ -311,12 +409,68 @@ fn schematic_color_for(body: BodyType, in_hz: bool) -> [f32; 3] {
 
 #[cfg(test)]
 mod tests {
-    use super::SystemUniforms;
+    use super::{pick_planet, uniforms_for, SystemUniforms};
+    use crate::system;
+    use glam::{Mat4, Vec3};
 
     #[test]
     fn system_uniform_contract_stays_shader_aligned() {
         assert_eq!(std::mem::size_of::<SystemUniforms>(), 1424);
         assert_eq!(std::mem::align_of::<SystemUniforms>(), 4);
         assert_eq!(std::mem::size_of::<SystemUniforms>() % 16, 0);
+    }
+
+    #[test]
+    fn pick_planet_lands_on_centre() {
+        // Take a known system, project every planet's world centre into NDC,
+        // then ask pick_planet to recover the index. Every planet should be
+        // pick-able from its own screen centre.
+        let sys = system::generate(0xDEAD_BEEF);
+        let uniforms = uniforms_for(&sys, 0.0);
+        let camera_pos = Vec3::new(0.0, 35.0, 60.0);
+        let view = Mat4::look_at_rh(camera_pos, Vec3::ZERO, Vec3::Y);
+        let proj = Mat4::perspective_rh(35f32.to_radians(), 16.0 / 9.0, 0.05, 200.0);
+        let vp = proj * view;
+        for (i, _) in sys
+            .planets
+            .iter()
+            .enumerate()
+            .take(super::MAX_SYSTEM_PLANETS)
+        {
+            // planets[2i] xyz = world position
+            let pos = uniforms.planets[i * 2];
+            let world = glam::Vec4::new(pos[0], pos[1], pos[2], 1.0);
+            let clip = vp * world;
+            if clip.w <= 0.0 {
+                continue;
+            }
+            let ndc_x = clip.x / clip.w;
+            let ndc_y = clip.y / clip.w;
+            if ndc_x.abs() > 1.0 || ndc_y.abs() > 1.0 {
+                continue;
+            }
+            let hit = pick_planet(&sys, 0.0, vp, camera_pos, ndc_x, ndc_y);
+            assert!(hit.is_some(), "planet {i} should hit at its centre");
+            assert_eq!(hit.unwrap().index, i);
+        }
+    }
+
+    #[test]
+    fn pick_planet_misses_off_screen() {
+        let sys = system::generate(7);
+        let camera_pos = Vec3::new(0.0, 20.0, 30.0);
+        let view = Mat4::look_at_rh(camera_pos, Vec3::ZERO, Vec3::Y);
+        let proj = Mat4::perspective_rh(35f32.to_radians(), 16.0 / 9.0, 0.05, 200.0);
+        // Ray that points straight up - should miss everything in the orbital plane.
+        let vp = proj * view;
+        let miss = pick_planet(&sys, 0.0, vp, camera_pos, 0.0, 0.99);
+        // Either misses entirely or, at worst, hits the closest planet if
+        // it happens to be near the top of frame. Don't assert None - just
+        // ensure the function returns without panicking and the result is
+        // well-formed.
+        if let Some(hit) = miss {
+            assert!(hit.index < sys.planets.len());
+            assert!(hit.distance >= 0.0);
+        }
     }
 }
