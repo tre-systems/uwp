@@ -2,6 +2,7 @@ import { Canvas } from './components/Canvas'
 import { ControlPanel } from './components/ControlPanel'
 import { LoadingOverlay } from './components/LoadingOverlay'
 import { ErrorOverlay } from './components/ErrorOverlay'
+import { OnboardingHint } from './components/OnboardingHint'
 import { errorMessage, rendererStatus, setViewMode, viewMode } from './appState'
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
         {mode === 'detail' ? '☉ System' : '◉ Main World'}
       </button>
       <ControlPanel />
+      {status === 'ready' && <OnboardingHint />}
     </div>
   )
 }
