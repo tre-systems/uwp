@@ -124,21 +124,32 @@ built in CI) or the local git short SHA (when built locally). The ID is:
 - Logged to the browser console on startup: `UWP build <id>`.
 - Exposed as `window.__UWP_BUILD_ID` for manual or automated probing.
 
-Once a CI deploy completes, opening <https://uwp.tre.systems> in a fresh
-browser tab should immediately serve the new build because:
+Once a CI deploy completes, opening <https://uwp.tre.systems> serves the
+new build with at most a single in-page reload because:
 
 - Hashed JS/CSS/WASM filenames force a network fetch on content change.
 - `public/_headers` instructs Cloudflare to serve `index.html`, `sw.js`,
   `registerSW.js`, and `manifest.webmanifest` with `Cache-Control:
   no-cache`, so the entry document and service worker are always
-  revalidated.
+  revalidated at the HTTP layer.
 - VitePWA's service worker is configured with `skipWaiting` +
-  `clientsClaim`, so a new SW activates and takes over open tabs on first
-  load rather than waiting for every tab to close.
+  `clientsClaim`, so a new SW activates and takes over open tabs the
+  moment it installs.
+- `src/buildId.ts::installServiceWorkerAutoReload()` listens for the
+  `controllerchange` event the new SW fires when it claims the tab, and
+  reloads the page once. This is the piece that prevents the user from
+  sitting on a stale shell.
 
-If a returning user still sees an old build, the fastest diagnostic is to
-read `window.__UWP_BUILD_ID` in the console — that exposes the running
-build regardless of how it was loaded.
+Without the auto-reload, the SW's NavigationRoute handler would keep
+serving the precached old `index.html` for every navigation — bypassing
+the HTTP `no-cache` header — and the running page would only see the
+new build after a manual refresh. The reload happens at most once per
+deploy per tab, and only when the user has an active SW from a previous
+visit. Fresh first-time visitors hit the new build directly.
+
+If a returning user still sees an old build, the fastest diagnostic is
+to read `window.__UWP_BUILD_ID` in the console — that exposes the
+running build regardless of how it was loaded.
 
 ## Browser support
 
