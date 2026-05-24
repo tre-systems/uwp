@@ -100,6 +100,11 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pin wrangler 4.x — `wrangler.jsonc` uses the Workers Assets
+          # `assets` config block, which is only understood by wrangler 4+.
+          # The action's default is currently a 3.x release that fails with
+          # "Missing entry-point" on our config.
+          wranglerVersion: "4.94.0"
           # dist/ comes from the artifact uploaded by the `checks` job;
           # wrangler reads it via the `assets.directory` in wrangler.jsonc.
           command: deploy
