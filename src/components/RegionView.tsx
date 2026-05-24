@@ -17,8 +17,10 @@ import { useFocusTrap } from './useFocusTrap'
 //
 // Dismiss via Escape, backdrop click, or the close affordance.
 
-const FRAME_WIDTH = 900
-const FRAME_HEIGHT = 780
+// Frame size tuned to fit within a typical laptop viewport while still
+// leaving room for the modal header + padding.
+const FRAME_WIDTH = 760
+const FRAME_HEIGHT = 600
 
 export function RegionView() {
   const hex = regionHex.value

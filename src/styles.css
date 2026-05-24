@@ -920,14 +920,16 @@ label.color input[type="color"]::-webkit-color-swatch {
 .region-modal {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
   align-items: center;
-  width: min(960px, 100%);
+  width: min(820px, 100%);
+  max-height: calc(100vh - 32px);
   background: var(--surface-1-solid);
   border: 1px solid var(--border-panel);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-panel);
-  padding: var(--space-6) var(--space-7) var(--space-7);
+  padding: var(--space-5) var(--space-6) var(--space-6);
+  overflow: auto;
 }
 .region-header {
   display: flex;
