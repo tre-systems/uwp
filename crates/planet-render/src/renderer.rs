@@ -577,14 +577,7 @@ impl Renderer {
                 }
             }
             ViewMode::System => {
-                // Fit the outermost orbit comfortably in frame.
-                let outer = self
-                    .system
-                    .planets
-                    .last()
-                    .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
-                    .unwrap_or(5.0);
-                self.camera.distance = (outer * 1.6).max(3.0);
+                self.camera.distance = self.system_camera_fit_distance();
             }
         }
     }
@@ -598,14 +591,45 @@ impl Renderer {
         // If we're currently in system view, refit the camera to the new outer
         // orbit so swapping systems doesn't leave us looking at empty space.
         if self.view_mode == ViewMode::System {
-            let outer = self
-                .system
-                .planets
-                .last()
-                .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
-                .unwrap_or(5.0);
-            self.camera.distance = (outer * 1.6).max(3.0);
+            self.camera.distance = self.system_camera_fit_distance();
         }
+    }
+
+    /// Camera distance that fits the *compressed* outer orbit in frame —
+    /// matches the visual layout produced by `system_uniforms_for`. Falls
+    /// back to a sensible default for systems with no planets.
+    fn system_camera_fit_distance(&self) -> f32 {
+        let outer_orbit = self
+            .system
+            .planets
+            .last()
+            .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
+            .unwrap_or(1.0);
+        let outer_belt = self
+            .system
+            .belts
+            .iter()
+            .map(|b| b.outer_au * SCENE_UNITS_PER_AU)
+            .fold(0.0_f32, f32::max);
+        let system_scale = outer_orbit.max(outer_belt).max(1.0);
+        let star_disp =
+            (system_scale * 0.045 * (self.system.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
+        let gap = star_disp * 0.45;
+        // Walk the same monotonic compression as system_uniforms_for so we
+        // get the same outermost display radius.
+        let mut prev_outer_edge = star_disp + gap;
+        let mut last_disp_r = star_disp;
+        for planet in &self.system.planets {
+            let real_r = planet.orbit_au * SCENE_UNITS_PER_AU;
+            let p_radius =
+                display_radius_for(planet.body_type, planet.radius_earth, system_scale);
+            let needed_r = prev_outer_edge + p_radius;
+            let r = real_r.max(needed_r);
+            last_disp_r = r;
+            prev_outer_edge = r + p_radius + gap;
+        }
+        let fit = last_disp_r.max(outer_belt).max(5.0);
+        (fit * 1.6).max(3.0)
     }
 
     pub fn system(&self) -> &SolarSystem {
@@ -654,15 +678,10 @@ impl Renderer {
             ViewMode::System => {
                 // In system view we want a much larger zoom range — the camera
                 // must accommodate seeing a single planet up close (~0.1 scene
-                // units) AND the full outermost orbit (potentially 80+ AU).
-                let outer = self
-                    .system
-                    .planets
-                    .last()
-                    .map(|p| p.orbit_au * SCENE_UNITS_PER_AU)
-                    .unwrap_or(5.0);
+                // units) AND the full compressed outermost orbit.
+                let fit = self.system_camera_fit_distance();
                 self.camera.distance = (self.camera.distance * (1.0 + delta * 0.0015))
-                    .clamp(0.10, (outer * 4.0).max(20.0));
+                    .clamp(0.10, (fit * 3.5).max(20.0));
             }
         }
     }
@@ -1024,25 +1043,47 @@ fn system_uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
         (system_scale * 0.045 * (sys.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
     let intensity = 1.4 + sys.star.luminosity_solar.powf(0.2);
 
+    // Monotonic visual-spacing pass. Real AU positions would put inner planets
+    // *inside* the exaggerated star disc and crowd adjacent gas giants on top
+    // of each other. We compute each planet's "display orbit radius" by walking
+    // outward from the star and enforcing:
+    //   - the first planet's edge clears the star disc by at least `gap`
+    //   - each subsequent planet's edge clears the previous planet's edge by
+    //     at least `gap`
+    // If the real AU position already satisfies that, we use it; otherwise we
+    // push the planet outward. Result is monotonically increasing display
+    // radii, no overlaps, AU ordering preserved.
+    let gap = star_disp * 0.45;
+    let mut display_orbit_r = [0.0f32; MAX_SYSTEM_PLANETS];
+    let mut planet_disp_r = [0.0f32; MAX_SYSTEM_PLANETS];
+    let mut prev_outer_edge = star_disp + gap;
+    for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
+        let real_r = planet.orbit_au * SCENE_UNITS_PER_AU;
+        let p_radius = display_radius_for(planet.body_type, planet.radius_earth, system_scale);
+        let needed_r = prev_outer_edge + p_radius;
+        let r = real_r.max(needed_r);
+        display_orbit_r[i] = r;
+        planet_disp_r[i] = p_radius;
+        prev_outer_edge = r + p_radius + gap;
+    }
+
     // First write all planet positions, recording them so moons can offset.
     let mut planet_positions = [[0.0f32; 3]; MAX_SYSTEM_PLANETS];
-    let mut planet_disp_r = [0.0f32; MAX_SYSTEM_PLANETS];
     for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
+        // Mean motion at the *real* AU (so closer planets still orbit faster
+        // even if they got pushed out visually).
         let omega = 0.20 / planet.orbit_au.powf(1.5);
         let theta = planet.phase_rad + time * omega;
-        let r = planet.orbit_au * SCENE_UNITS_PER_AU;
+        let r = display_orbit_r[i];
         let pos = [r * theta.cos(), 0.0, r * theta.sin()];
-        let disp_r = display_radius_for(planet.body_type, planet.radius_earth, system_scale);
+        let disp_r = planet_disp_r[i];
         let col = schematic_color_for(planet.body_type, planet.in_habitable_zone);
         out.planets[i * 2] = [pos[0], pos[1], pos[2], disp_r];
         out.planets[i * 2 + 1] = [col[0], col[1], col[2], r];
-        // Per-planet shader meta: body class, surface seed, axial tilt.
-        // Tilt drawn from the planet's own seed so it's stable across frames.
         let tilt = ((planet.seed as f32 * 1.7e-5).sin() * 0.45) + 0.1;
         let seed_f = ((planet.seed % 9973) as f32) / 9973.0 * 1000.0;
         out.planet_meta[i] = [planet.body_type.as_shader_id(), seed_f, tilt, 0.0];
         planet_positions[i] = pos;
-        planet_disp_r[i] = disp_r;
     }
 
     // Pack moons. Distribute across planets in proportion to each planet's
