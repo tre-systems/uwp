@@ -501,6 +501,38 @@ Tackle in this order; the pre-bake must land before phase 1.
 - **Cities are not just "dots on land".** A good legacy 2d6 GM hex map clusters cities along coasts, rivers, and habitable bands. Use the climate field (item 6 above) to weight placement properly — desert worlds have cities along oases / poles, ice worlds along the equatorial belt, etc.
 - **State ownership stays Rust-owned.** Same rule as subsector: Rust holds the canonical `SurfaceMap`, JS snapshots it. The hex picking math can run in TS but the data is Rust's.
 
+## Deployment Policy
+
+**Do not deploy from a developer or agent machine. Push to `main` and let CI deploy.**
+
+`.github/workflows/ci.yml` runs the full check suite, builds the production
+bundle in CI, and then a separate `deploy` job ships the artifact to
+Cloudflare via `wrangler-action`. Every commit on `main` therefore deploys
+exactly once, from exactly the artifact CI verified.
+
+Why this rule exists:
+
+- A CLI deploy from a working tree that hasn't been pushed yet drifts the
+  live site from `origin/main`. The next CI deploy then either looks like
+  a no-op (confusing) or overwrites the CLI-shipped build with a different
+  one (worse).
+- The build ID stamped into the bundle is derived from `GITHUB_SHA` in CI
+  and a local git short SHA otherwise. A CLI deploy publishes a build ID
+  that doesn't correspond to anything on the remote, which defeats the
+  post-deploy verification flow described in the README.
+- CI runs `cargo clippy` for native and wasm targets and the full Playwright
+  smoke suite as part of `verify`. A CLI deploy bypasses those gates.
+
+`npm run deploy` is kept as an escape hatch for genuinely emergent
+situations (CI broken, urgent rollback needed). If you ever run it,
+tell the team and follow up by re-aligning the CI deploy: push the same
+commit, let CI re-run, confirm the live build ID matches.
+
+For agents in particular: never call `wrangler deploy` or `npm run
+deploy` yourself. Treat the pipeline as the only deploy path. If you've
+made changes you want live, push them; CI will handle it within a few
+minutes.
+
 ## Verification
 
 Before committing meaningful changes, run the relevant subset:

@@ -83,7 +83,7 @@ cp /tmp/wasm-pack-v0.14.0-aarch64-apple-darwin/wasm-pack ~/.cargo/bin/
 | `npm run test:e2e`      | Playwright smoke tests against the production preview        |
 | `npm run verify:fast`   | fast local gate used by the Husky pre-commit hook           |
 | `npm run verify`        | full local gate used by the Husky pre-push hook             |
-| `npm run deploy`        | full release build + `wrangler deploy`                      |
+| `npm run deploy`        | release build + `wrangler deploy` — **emergency only**, see below |
 
 Husky installs Git hooks via `npm install`. The pre-commit hook runs the fast
 gate: TS unit tests, Rust format, and native Rust check. The pre-push hook runs
@@ -113,8 +113,13 @@ Required GitHub Actions secrets on the repo:
 - `CLOUDFLARE_API_TOKEN` — Workers Edit scope on the `uwp` worker.
 - `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
 
-A manual deploy from a developer machine is still supported via
-`npm run deploy`; it rebuilds and pushes the local working tree.
+**Do not run `npm run deploy` from a developer machine for normal
+changes.** Push to `main` and let CI deploy. The CLI deploy is kept as
+an escape hatch only for emergencies (CI broken, urgent rollback). A
+CLI deploy ships a build whose ID doesn't correspond to anything on the
+remote, which defeats the post-deploy verification flow and drifts the
+live site from `origin/main` until the next CI deploy overwrites it.
+See `AGENTS.md` → "Deployment Policy" for the policy and rationale.
 
 ### Verifying the live build after deploy
 
