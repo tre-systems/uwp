@@ -14,6 +14,7 @@ import {
   uwpToCode,
   viewMode,
 } from '../appState'
+import { AboutModal } from './AboutModal'
 import { GlossaryModal } from './GlossaryModal'
 import { SocietyEditor } from './SocietyEditor'
 import { StarportEditor } from './StarportEditor'
@@ -36,6 +37,7 @@ export function ControlPanel() {
   const panelId = 'controls-panel'
   const controlsDisabled = !open
   const [glossaryOpen, setGlossaryOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   return (
     <>
@@ -97,9 +99,17 @@ export function ControlPanel() {
 
         <footer class="panel-footer">
           <span>Drag to orbit · scroll to zoom</span>
+          <button
+            class="link"
+            onClick={() => setAboutOpen(true)}
+            disabled={controlsDisabled}
+          >
+            About
+          </button>
         </footer>
       </aside>
       <GlossaryModal open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </>
   )
 }

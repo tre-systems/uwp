@@ -644,7 +644,36 @@ label.color input[type="color"]::-webkit-color-swatch {
   color: var(--text-dim);
   font-size: 11px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
 }
+.panel-footer .link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.panel-footer .link:hover { color: var(--color-text-strong); }
+.panel-footer .link:disabled { color: var(--text-dim); cursor: default; text-decoration: none; }
+
+.about-modal .about-lede {
+  color: var(--color-text);
+  font-size: var(--type-base);
+  line-height: 1.6;
+  margin: 0 0 var(--space-6);
+}
+.about-modal a {
+  color: var(--color-accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.about-modal a:hover { color: var(--color-text-strong); }
 
 .error-overlay {
   position: absolute;
