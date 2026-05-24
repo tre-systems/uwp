@@ -28,6 +28,12 @@ pub struct ClimateSummary {
     pub aridity: f32,
     /// Overall Rust-computed habitability score in [0, 1].
     pub habitability: f32,
+    /// Thermal inertia hint (0 = bone dry / no oceans, 1 = ocean world).
+    /// Used by downstream consumers to soften day/night and seasonal
+    /// temperature swings near coastal cells.
+    pub thermal_inertia: f32,
+    /// Mean annual rainfall summary in mm/yr (rough global average).
+    pub mean_rainfall_mm: f32,
 }
 
 impl ClimateSummary {
@@ -41,6 +47,8 @@ impl ClimateSummary {
             ice_fraction: 1.0,
             aridity: 1.0,
             habitability: 0.0,
+            thermal_inertia: 0.0,
+            mean_rainfall_mm: 0.0,
         }
     }
 }
@@ -74,6 +82,13 @@ pub fn estimate(planet: &Planet) -> ClimateSummary {
     // poles face.
     let obliquity = obliquity_for_seed(planet.seed);
 
+    // Ocean heat capacity damps year-on-year temperature swings. With
+    // little water, the band temperature converges fast on the
+    // instantaneous equilibrium each iteration. With deep oceans, the
+    // band drags toward the previous iteration's value - a crude
+    // thermal-inertia mix that keeps wet planets temperate.
+    let thermal_inertia_alpha = (water_inventory * 0.55).clamp(0.0, 0.75);
+
     for _ in 0..ITERATIONS {
         for (i, temp) in temps.iter_mut().enumerate() {
             let lat = latitude_for_band(i);
@@ -92,7 +107,11 @@ pub fn estimate(planet: &Planet) -> ClimateSummary {
             lat_factor /= SEASON_SAMPLES as f32;
             let ice_albedo = if *temp < FREEZE_K { 0.68 } else { base_albedo };
             let albedo_factor = ((1.0 - ice_albedo) / (1.0 - base_albedo)).clamp(0.35, 1.25);
-            *temp = planet.temperature_k * lat_factor * albedo_factor.powf(0.25) + greenhouse_k;
+            let target =
+                planet.temperature_k * lat_factor * albedo_factor.powf(0.25) + greenhouse_k;
+            // Mix new equilibrium against the previous band temperature
+            // by the thermal-inertia coefficient.
+            *temp = target * (1.0 - thermal_inertia_alpha) + *temp * thermal_inertia_alpha;
         }
     }
 
@@ -102,6 +121,7 @@ pub fn estimate(planet: &Planet) -> ClimateSummary {
     let mut max_t = f32::NEG_INFINITY;
     let mut liquid_weight = 0.0;
     let mut ice_weight = 0.0;
+    let mut rainfall_weighted_sum = 0.0;
 
     for (i, temp) in temps.iter().copied().enumerate() {
         let lat = latitude_for_band(i);
@@ -116,12 +136,26 @@ pub fn estimate(planet: &Planet) -> ClimateSummary {
         if temp < FREEZE_K {
             ice_weight += weight;
         }
+        // Hadley / Ferrel / polar three-cell precipitation envelope:
+        // wet at the equator (~ITCZ), dry in the subtropics (~25°),
+        // moist again in the temperate band (~50-60°), dry at the
+        // poles. We weight the contribution by band area (cos(lat))
+        // and gate by temperature so frozen / boiling bands don't
+        // contribute rainfall.
+        if (FREEZE_K..BOIL_K).contains(&temp) {
+            rainfall_weighted_sum += precipitation_for_latitude(lat) * weight;
+        }
     }
 
     let mean_surface_temp_k = weighted_sum / weight_total.max(1e-6);
     let liquid_water_fraction = (liquid_weight / weight_total.max(1e-6)) * water_inventory;
     let ice_fraction = ice_weight / weight_total.max(1e-6);
     let aridity = (1.0 - water_inventory).clamp(0.0, 1.0);
+    let rainfall_band_factor = rainfall_weighted_sum / weight_total.max(1e-6);
+    // Scale global rainfall by water inventory + an Earth-like cap
+    // (~1000 mm/yr global mean). Worlds with vanishing water inventory
+    // converge to ~0 mm; ocean worlds approach the cap.
+    let mean_rainfall_mm = (rainfall_band_factor * water_inventory * 1400.0).clamp(0.0, 1800.0);
     let thermal_score = gaussian_score(mean_surface_temp_k, 288.0, 45.0);
     let liquid_score = smoothstep(0.03, 0.35, liquid_water_fraction);
     let climate_stability = 1.0 - (ice_fraction - 0.35).clamp(0.0, 0.65) / 0.65;
@@ -149,7 +183,23 @@ pub fn estimate(planet: &Planet) -> ClimateSummary {
             * gravity_score
             * climate_stability)
             .clamp(0.0, 1.0),
+        thermal_inertia: thermal_inertia_alpha,
+        mean_rainfall_mm,
     }
+}
+
+/// Three-cell circulation precipitation envelope (Hadley / Ferrel /
+/// polar). Returns a relative rainfall factor in [0, 1] for the given
+/// latitude in radians. Peaks at the equator (ITCZ) and again around
+/// 55°; troughs around 25° (subtropical highs) and the poles.
+fn precipitation_for_latitude(lat: f32) -> f32 {
+    let abs_lat = lat.abs();
+    let equator = (-((abs_lat - 0.0).powi(2) / 0.18)).exp(); // ITCZ
+    let subtropical_dip = 1.0 - (-((abs_lat - 0.44).powi(2) / 0.08)).exp(); // ~25°
+    let temperate = (-((abs_lat - 1.0).powi(2) / 0.12)).exp() * 0.65; // ~57°
+    let polar_dip = 1.0 - (-((abs_lat - 1.55).powi(2) / 0.10)).exp() * 0.7; // pole
+    let base = (equator + temperate * 0.6) * subtropical_dip * polar_dip;
+    base.clamp(0.0, 1.0)
 }
 
 fn latitude_for_band(index: usize) -> f32 {

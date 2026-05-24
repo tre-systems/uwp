@@ -51,6 +51,10 @@ export interface ClimateSummary {
   ice_fraction: number
   aridity: number
   habitability: number
+  /** 0 = bone dry / no oceans, 1 = ocean world. */
+  thermal_inertia: number
+  /** Rough global-mean rainfall in mm/yr. */
+  mean_rainfall_mm: number
 }
 
 export interface AsteroidBelt {

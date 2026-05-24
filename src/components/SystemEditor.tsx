@@ -50,6 +50,17 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
           <MetaRow label="Main world (UWP)">
             Hydrographics {uwp.value.hydro} · {authoredWaterPct}% water
           </MetaRow>
+          {(() => {
+            const mw = system.main_world >= 0 ? system.planets[system.main_world] : null
+            if (!mw) return null
+            const rain = mw.climate.mean_rainfall_mm
+            const inertia = mw.climate.thermal_inertia
+            return (
+              <MetaRow label="Climate">
+                {rain.toFixed(0)} mm/yr · thermal inertia {Math.round(inertia * 100)}%
+              </MetaRow>
+            )
+          })()}
           <div class="sys-meta-row sys-meta-bar">
             <dt>Habitability</dt>
             <dd>

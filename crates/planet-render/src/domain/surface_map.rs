@@ -465,6 +465,8 @@ mod tests {
             ice_fraction: 0.10,
             aridity: 0.15,
             habitability: 0.75,
+            thermal_inertia: 0.4,
+            mean_rainfall_mm: 900.0,
         };
         let m = generate(&p, &c, 1);
         // Loose tolerance — sea level is set from the climate water frac
@@ -494,6 +496,8 @@ mod tests {
             ice_fraction: 0.55,
             aridity: 0.5,
             habitability: 0.2,
+            thermal_inertia: 0.15,
+            mean_rainfall_mm: 250.0,
         };
         let m = generate(&p, &c, 7);
         let polar_ice = m

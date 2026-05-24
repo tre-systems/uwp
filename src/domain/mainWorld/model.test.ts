@@ -58,6 +58,8 @@ describe('main world model', () => {
               ice_fraction: 0.1,
               aridity: 0.3,
               habitability: 0.9,
+              thermal_inertia: 0.4,
+              mean_rainfall_mm: 900,
             },
           },
         ],

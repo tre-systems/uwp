@@ -17,6 +17,7 @@ import {
 import { AboutModal } from './AboutModal'
 import { ExportPanel } from './ExportPanel'
 import { GlossaryModal } from './GlossaryModal'
+import { ShareButton } from './ShareButton'
 import { SocietyEditor } from './SocietyEditor'
 import { SubsectorEditor } from './SubsectorEditor'
 import { SurfaceMapEditor } from './SurfaceMapEditor'
@@ -65,6 +66,7 @@ export function ControlPanel() {
                 <button class="ghost" onClick={resetUwp} disabled={controlsDisabled}>Reset</button>
               </>
             )}
+            <ShareButton disabled={controlsDisabled} />
             <button
               class="ghost glossary-trigger"
               onClick={() => setGlossaryOpen(true)}

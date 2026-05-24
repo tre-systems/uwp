@@ -1036,6 +1036,23 @@ label.color input[type="color"]::-webkit-color-swatch {
     -1px 0 0 rgba(0, 0, 0, 0.9);
 }
 
+/* Share button -------------------------------------------------------*/
+.share-trigger {
+  flex: 0 0 auto !important;
+  width: 32px;
+  padding: 0 !important;
+  font-size: var(--type-base);
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.share-trigger.share-status-copied {
+  color: rgba(180, 245, 200, 1);
+  background: rgba(110, 220, 150, 0.18) !important;
+}
+.share-trigger.share-status-error {
+  color: rgba(255, 180, 180, 1);
+  background: rgba(255, 110, 110, 0.18) !important;
+}
+
 /* Glossary modal -----------------------------------------------------*/
 .glossary-trigger {
   /* Hard size so it never stretches to flex:1 when it's alone in the
