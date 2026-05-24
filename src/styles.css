@@ -1585,11 +1585,13 @@ label.color input[type="color"]::-webkit-color-swatch {
   z-index: 6;
 }
 .view-transition-active {
-  animation: view-transition-wash 240ms ease-out;
+  /* Short, low-opacity wash that masks the GPU-canvas snap without
+     hiding the scene for long enough to feel sluggish. */
+  animation: view-transition-wash 140ms ease-out;
 }
 @keyframes view-transition-wash {
   0%   { opacity: 0; }
-  35%  { opacity: 0.85; }
+  40%  { opacity: 0.40; }
   100% { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
