@@ -20,6 +20,20 @@ export function HoverTooltip() {
   const mass = planet.mass_earth < 1
     ? planet.mass_earth.toFixed(2)
     : planet.mass_earth.toFixed(0)
+  // Year via Kepler's 3rd in Earth/Sun units. Day comes pre-computed.
+  // Show the most natural unit: days/months/years depending on scale.
+  const yearYears = Math.sqrt(Math.pow(planet.orbit_au, 3) / Math.max(sys.star.mass_solar, 0.01))
+  const yearLabel = yearYears < 0.05
+    ? `${(yearYears * 365.25).toFixed(1)} d`
+    : yearYears < 1
+      ? `${(yearYears * 12).toFixed(1)} mo`
+      : `${yearYears.toFixed(yearYears < 10 ? 1 : 0)} yr`
+  const dayHours = planet.day_seconds / 3600
+  const dayLabel = dayHours < 1
+    ? `${(dayHours * 60).toFixed(0)} min`
+    : dayHours > 100
+      ? `${(dayHours / 24).toFixed(1)} d`
+      : `${dayHours.toFixed(1)} h`
   return (
     <div
       class="hover-tooltip"
@@ -38,6 +52,11 @@ export function HoverTooltip() {
         <span>{mass} M⊕</span>
         <span>·</span>
         <span>{planet.temperature_k.toFixed(0)} K</span>
+      </div>
+      <div class="hover-tooltip-meta hover-tooltip-meta-sub">
+        <span>year {yearLabel}</span>
+        <span>·</span>
+        <span>day {dayLabel}</span>
       </div>
       {planet.in_habitable_zone && (
         <div class="hover-tooltip-tag">in habitable zone</div>

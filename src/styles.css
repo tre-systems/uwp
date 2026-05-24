@@ -1652,6 +1652,11 @@ label.color input[type="color"]::-webkit-color-swatch {
   font-size: var(--type-sm);
   font-variant-numeric: tabular-nums;
 }
+.hover-tooltip-meta-sub {
+  margin-top: 2px;
+  font-size: var(--type-xs);
+  opacity: 0.85;
+}
 .hover-tooltip-tag {
   margin-top: 4px;
   font-size: var(--type-xs);
