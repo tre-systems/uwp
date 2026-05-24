@@ -16,6 +16,14 @@
 //!
 //! Reference: <https://www.orffenspace.com/cepheus-srd/book3/worlds.html>
 
+// Several inherent helpers (Uwp::to_code, HexCoord::label, Subsector::hex_at,
+// the `digit` formatter) are exercised only by unit tests and the JS layer
+// observing the serde JSON. The wasm build doesn't reach them through Rust,
+// so clippy's dead-code lint flags them. They're part of the module's public
+// API surface for tests and would otherwise grow back the moment we add a
+// JS-facing accessor, so allow rather than delete them.
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 
 use super::system::{self, BodyType, SolarSystem};
