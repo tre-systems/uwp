@@ -52,18 +52,40 @@ export interface RegionRenderResult {
   labels: RegionLabel[]
 }
 
-const NOISE_RES = 128  // internal heightmap resolution (tuned for sub-50ms render)
+// Two quality presets so the caller can paint a fast preview first
+// (snappy modal open) and then a crisp pass on the next frame. Each
+// preset trades heightmap resolution and noise octaves against render
+// cost. The progressive pass disables imageSmoothing so the ridges
+// read sharp instead of blurring through the 6x upscale that was
+// killing image quality.
+export type RegionQuality = 'preview' | 'final'
+
+interface QualityProfile {
+  noiseRes: number
+  fbmOctaves: number
+  ridgeOctaves: number
+  /** Add a fine high-frequency tint per output pixel for organic feel.
+   *  Cheap to compute - one valueNoise call per pixel. */
+  fineDetail: boolean
+}
+
+const QUALITY_PROFILES: Record<RegionQuality, QualityProfile> = {
+  preview: { noiseRes: 144, fbmOctaves: 5, ridgeOctaves: 3, fineDetail: false },
+  final: { noiseRes: 384, fbmOctaves: 6, ridgeOctaves: 4, fineDetail: true },
+}
 
 export function renderRegion(
   ctx: CanvasRenderingContext2D,
   input: RegionRenderInput,
+  quality: RegionQuality = 'final',
 ): RegionRenderResult {
   const { hex, worldSeed, width, height } = input
+  const profile = QUALITY_PROFILES[quality]
 
-  // Per-pixel internal heightmap. Higher resolution would look better,
-  // but 192x192 keeps the render under ~5 ms on modest hardware and
-  // still produces fine ridge / coast detail when upscaled.
-  const map = buildHeightmap(hex, worldSeed)
+  // Per-pixel internal heightmap. The 'final' pass renders at 384
+  // wide, which is about a 2x upscale to the modal frame instead of
+  // 6x - that single change is the biggest legibility win.
+  const map = buildHeightmap(hex, worldSeed, profile)
 
   // The terrain-driven sea-level threshold drives both the coastline
   // and the ocean shading. For ocean hexes everything is below water;
@@ -76,10 +98,12 @@ export function renderRegion(
   // as the globe view.
   const sunDir = [-0.55, -0.55, 0.62] as const
 
-  // Paint into an offscreen ImageData at NOISE_RES, then upscale.
+  // Paint into an offscreen ImageData at the profile's resolution,
+  // then upscale crisply (no smoothing - the 2x scale plus a per-pixel
+  // fine-detail jitter keeps ridges sharp).
   const off = document.createElement('canvas')
-  off.width = NOISE_RES
-  off.height = Math.round(NOISE_RES * (height / width))
+  off.width = profile.noiseRes
+  off.height = Math.round(profile.noiseRes * (height / width))
   const offCtx = off.getContext('2d')!
   const img = offCtx.createImageData(off.width, off.height)
   const data = img.data
@@ -109,6 +133,10 @@ export function renderRegion(
       slopeY[idx] = elev[yp] - elev[ym]
     }
   }
+  // Slope amplifier scales with resolution so the hillshade reads at
+  // the same visual intensity regardless of the noise grid size.
+  const slopeScale = profile.noiseRes / 32
+  const detailSeed = mix32(worldSeed, 0xA5A55A5A) >>> 0
   for (let py = 0; py < off.height; py++) {
     for (let px = 0; px < off.width; px++) {
       const idx = py * off.width + px
@@ -117,8 +145,8 @@ export function renderRegion(
       // Hillshade: lambert against a fake surface normal derived from
       // the gradient. Slope vectors get scaled into world units so the
       // relief reads at the resolution we're sampling.
-      const nx = -slopeX[idx] * 4
-      const ny = -slopeY[idx] * 4
+      const nx = -slopeX[idx] * slopeScale
+      const ny = -slopeY[idx] * slopeScale
       const nz = 1.0
       const nl = Math.hypot(nx, ny, nz)
       const lamb = Math.max(0, (nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]) / nl)
@@ -144,6 +172,15 @@ export function renderRegion(
         b *= shade
       }
 
+      // High-frequency colour jitter on the final pass: one octave of
+      // value noise tints each pixel by +-6%, which breaks up the
+      // smooth interpolation that otherwise reads as plastic.
+      if (profile.fineDetail && !isWater) {
+        const j = valueNoise(px * 0.7, py * 0.7, detailSeed) // [-1, 1]
+        const k = 1 + j * 0.06
+        r *= k; g *= k; b *= k
+      }
+
       const di = idx * 4
       data[di] = clamp255(r)
       data[di + 1] = clamp255(g)
@@ -153,10 +190,11 @@ export function renderRegion(
   }
   offCtx.putImageData(img, 0, 0)
 
-  // Upscale into target context with smoothing on (blurs the pixel-grid
-  // into a painterly look).
+  // Crisp upscale. The 'high' smoothing setting was washing the
+  // ridges into a soft blur; bilinear (the default) at a 2x ratio
+  // gives a much sharper result while still avoiding aliasing.
   ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
+  ctx.imageSmoothingQuality = quality === 'final' ? 'medium' : 'low'
   ctx.drawImage(off, 0, 0, width, height)
 
   // ---- Rivers ----
@@ -202,9 +240,9 @@ interface Heightmap {
   data: Float32Array
 }
 
-function buildHeightmap(hex: SurfaceHex, worldSeed: number): Heightmap {
-  const w = NOISE_RES
-  const h = NOISE_RES
+function buildHeightmap(hex: SurfaceHex, worldSeed: number, profile: QualityProfile): Heightmap {
+  const w = profile.noiseRes
+  const h = profile.noiseRes
   const data = new Float32Array(w * h)
   // Per-hex seed so each hex paints a different terrain.
   const seed = mix32(worldSeed, (hex.coord.col << 16) ^ hex.coord.row)
@@ -216,8 +254,8 @@ function buildHeightmap(hex: SurfaceHex, worldSeed: number): Heightmap {
     for (let x = 0; x < w; x++) {
       const u = x / w
       const v = y / h
-      const fbm = fbm2(u * 4, v * 4, seed, 6)
-      const ridged = 1 - Math.abs(fbm2(u * 6, v * 6, seed + 1357, 4))
+      const fbm = fbm2(u * 4, v * 4, seed, profile.fbmOctaves)
+      const ridged = 1 - Math.abs(fbm2(u * 6, v * 6, seed + 1357, profile.ridgeOctaves))
       const e = baseBias + fbm * 0.55 + ridged * ridge
       data[y * w + x] = clamp(e, -1, 1)
     }
@@ -412,7 +450,10 @@ function drawRivers(
       const slope = sampleSlope(map, u, v)
       const len = Math.hypot(slope.dx, slope.dy)
       if (len < 1e-4) break
-      const step2 = 1 / NOISE_RES * 2
+      // River walk step is in heightmap-fraction units; using the
+      // actual map width keeps the same physical stride regardless of
+      // which quality preset built the map.
+      const step2 = 2 / map.width
       u = clamp(u - (slope.dx / len) * step2, 0, 1)
       v = clamp(v - (slope.dy / len) * step2, 0, 1)
       path.push([u, v])

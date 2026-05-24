@@ -1145,6 +1145,29 @@ label.color input[type="color"]::-webkit-color-swatch {
 .region-label-tier-3 { font-size: 14px; font-weight: 700; letter-spacing: 0.4px; }
 .region-label-tier-2 { font-size: 12px; font-weight: 600; }
 
+/* Brief 'refining' chip shown while the high-resolution pass paints
+   over the initial preview. Disappears once the final frame is in. */
+.region-refining {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  padding: 3px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+  pointer-events: none;
+  animation: region-refining-blink 1s ease-in-out infinite;
+}
+@keyframes region-refining-blink {
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .region-refining { animation: none; opacity: 0.7; }
+}
+
 /* Compass rose anchored top-right inside the canvas frame. */
 .region-compass {
   position: absolute;

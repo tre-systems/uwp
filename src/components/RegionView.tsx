@@ -41,10 +41,12 @@ export function RegionView() {
   }, [hex])
 
   // The visible region detail is recomputed every time the focused hex
-  // (or world seed) changes. We render into the canvas inside an effect
-  // so the result repaints with the latest hex data, and stash labels
-  // in state so the HTML overlay re-renders on the next pass.
+  // (or world seed) changes. Two-pass progressive render: a fast
+  // preview paints on the next frame so the modal feels instant, then
+  // a high-resolution pass replaces it on the frame after. The HTML
+  // label overlay is set from whichever pass finishes most recently.
   const [labels, setLabels] = useState<RegionLabel[]>([])
+  const [refining, setRefining] = useState(false)
   useEffect(() => {
     if (!hex || !map) return
     const canvas = canvasRef.current
@@ -63,14 +65,6 @@ export function RegionView() {
     canvas.style.width = `${FRAME_WIDTH}px`
     canvas.style.height = `${FRAME_HEIGHT}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT)
-
-    // Clip the drawing region to a large flat-top hexagon centred in
-    // the canvas. The procedural renderer paints into the unclipped
-    // canvas; the clip keeps everything inside the hex frame.
-    ctx.save()
-    pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
-    ctx.clip()
 
     const starport = map.starport && map.starport.col === hex.col && map.starport.row === hex.row
       ? { name: 'Starport', x: 0.5, y: 0.55 }
@@ -86,26 +80,58 @@ export function RegionView() {
         y: 0.30 + ((i * 0.29 + s.tier * 0.11) % 0.45),
       }))
 
-    const result = renderRegion(ctx, {
-      hex: surfaceHex,
-      worldSeed: map.seed,
-      authoredHydroFraction: surfaceHexHydroFraction(map.ocean_fraction),
-      width: FRAME_WIDTH,
-      height: FRAME_HEIGHT,
-      starport,
-      settlements,
+    const paint = (quality: 'preview' | 'final') => {
+      ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT)
+      ctx.save()
+      pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
+      ctx.clip()
+      const result = renderRegion(
+        ctx,
+        {
+          hex: surfaceHex,
+          worldSeed: map.seed,
+          authoredHydroFraction: surfaceHexHydroFraction(map.ocean_fraction),
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
+          starport,
+          settlements,
+        },
+        quality,
+      )
+      ctx.restore()
+      // Hex frame outline on top of the clipped scene.
+      ctx.save()
+      pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
+      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'
+      ctx.stroke()
+      ctx.restore()
+      setLabels(result.labels)
+    }
+
+    let raf1 = 0
+    let raf2 = 0
+    let cancelled = false
+    setRefining(true)
+    // First frame: low-res preview so the modal has content within
+    // ~25 ms. Run inside rAF so the modal layout settles before the
+    // synchronous render blocks the main thread.
+    raf1 = requestAnimationFrame(() => {
+      if (cancelled) return
+      paint('preview')
+      // Second frame: high-resolution final paint. The user sees a
+      // soft preview for one frame, then a sharp result.
+      raf2 = requestAnimationFrame(() => {
+        if (cancelled) return
+        paint('final')
+        setRefining(false)
+      })
     })
-    ctx.restore()
-
-    // Draw the hex frame outline on top of the clipped scene.
-    ctx.save()
-    pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
-    ctx.lineWidth = 3
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'
-    ctx.stroke()
-    ctx.restore()
-
-    setLabels(result.labels)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
   }, [hex, map])
 
   if (!hex || !map) return null
@@ -153,6 +179,9 @@ export function RegionView() {
         </header>
         <div class="region-canvas-wrap" style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT }}>
           <canvas ref={canvasRef} class="region-canvas" />
+          {refining && (
+            <div class="region-refining" aria-hidden="true">refining…</div>
+          )}
           {labels.map((l, i) => (
             <div
               key={i}
