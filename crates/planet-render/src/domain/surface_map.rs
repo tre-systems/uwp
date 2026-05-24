@@ -321,14 +321,16 @@ fn pick_starport(hexes: &[SurfaceHex], planet: &Planet, rng: &mut Rng) -> Option
 
 fn population_settlement_count(planet: &Planet, climate: &ClimateSummary) -> usize {
     // Hand-wavy mapping from main-world habitability to settlement count.
-    // Real UWP-driven count would key on the pop digit, but we generate
-    // the map on demand without re-running the full UWP projection, so
-    // use the climate score as a proxy.
+    // Class multiplier biases away from frozen/inferno bodies but never
+    // zeros out - the user can still place colonies on a marginal world,
+    // and the JS layer's UWP-derived habitability override makes that
+    // count meaningful even when the underlying Rust body type is rocky.
     let base = (climate.habitability * 18.0) as usize;
     let class_mult = match planet.body_type {
         BodyType::Terrestrial | BodyType::SuperEarth => 1.0,
-        BodyType::Rocky => 0.4,
-        _ => 0.0,
+        BodyType::Rocky => 0.6,
+        BodyType::Frozen | BodyType::Inferno => 0.25,
+        _ => 0.10,
     };
     ((base as f32) * class_mult).round().max(0.0) as usize
 }

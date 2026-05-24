@@ -131,6 +131,16 @@ impl Planet {
         } else {
             climate.mean_surface_temp_k = 270.0 + warmth_from_atm;
         }
+        // Surface-map settlement count keys off habitability; ensure a
+        // populated UWP shows cities even when the climate fallback gave
+        // a zero score. population_intensity comes from the UWP pop digit
+        // via the visual mapping, so this stays correct when the user
+        // edits Pop in the panel.
+        if params.population_intensity > 0.0 {
+            climate.habitability = climate
+                .habitability
+                .max((params.population_intensity * 0.85).clamp(0.0, 1.0));
+        }
         let map = surface_map::generate(planet, &climate, params.seed);
         serde_wasm_bindgen::to_value(&map).map_err(|e| JsValue::from_str(&e.to_string()))
     }
