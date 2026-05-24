@@ -428,17 +428,27 @@ fn roll_bases(uwp: &Uwp, rng: &mut Rng) -> Bases {
 }
 
 fn roll_travel_zone(uwp: &Uwp, rng: &mut Rng) -> TravelZone {
-    // Red zones: oppressive law level + extreme government, or a flat 1-in-30
-    // "interdicted" roll. Amber zones: high law or contested. Otherwise green.
-    let extreme_law = uwp.law >= 9;
+    // Match legacy 2d6 Map density: most worlds are unmarked (green), a
+    // small minority flag as Amber (high-law / contested) and a rare
+    // few as Red (interdicted). Roughly 10-15 % amber, 2-3 % red.
+    let extreme_law = uwp.law >= 12;
     let extreme_gov = uwp.gov >= 13;
-    if (extreme_law && extreme_gov) || rng.d6() == 6 && rng.d6() == 6 && rng.d6() >= 5 {
-        TravelZone::Red
-    } else if uwp.law >= 7 || uwp.gov >= 11 || rng.roll(2) >= 11 {
-        TravelZone::Amber
-    } else {
-        TravelZone::Green
+    if extreme_law && extreme_gov && rng.d6() >= 4 {
+        return TravelZone::Red;
     }
+    if rng.d6() == 6 && rng.d6() == 6 && rng.d6() == 6 {
+        return TravelZone::Red;
+    }
+    if uwp.law >= 9 && rng.roll(2) >= 10 {
+        return TravelZone::Amber;
+    }
+    if uwp.gov >= 12 && rng.d6() >= 5 {
+        return TravelZone::Amber;
+    }
+    if rng.roll(2) >= 12 {
+        return TravelZone::Amber;
+    }
+    TravelZone::Green
 }
 
 fn clamp_digit(value: i32, lo: i32, hi: i32) -> i32 {

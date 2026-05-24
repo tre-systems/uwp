@@ -1055,19 +1055,20 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke: var(--color-accent);
   stroke-width: 1.8;
 }
-/* Travel zones render as coloured rings around the hex (canon
-   legacy 2d6 Map: amber/red border with no fill). */
-.hex-cell.zone-amber .hex-shape {
-  stroke: rgba(255, 198, 60, 0.95);
+/* Travel zones render as a separate concentric hex ring drawn inset
+   from the hex outline, matching the canonical legacy 2d6 Map. The
+   grey grid stays continuous behind the ring. */
+.hex-zone-ring {
+  fill: none;
+  pointer-events: none;
+}
+.zone-ring-amber {
+  stroke: rgba(255, 196, 60, 0.95);
   stroke-width: 1.6;
 }
-.hex-cell.zone-red .hex-shape {
+.zone-ring-red {
   stroke: rgba(230, 56, 56, 0.95);
   stroke-width: 1.8;
-}
-.hex-cell.zone-amber:hover .hex-shape,
-.hex-cell.zone-red:hover .hex-shape {
-  stroke-width: 2.2;
 }
 
 .jump-route {

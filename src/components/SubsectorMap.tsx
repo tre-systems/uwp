@@ -178,9 +178,18 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed }: HexCellProp
         }
       }}
     >
-      {/* Grid outline. Selection / zone styling lives on the hex-shape
-          via CSS classes - no fill, just stroke variants. */}
+      {/* Grid outline (grey, continuous across the whole subsector). */}
       <path d={hexPath(cx, cy, HEX_R)} class="hex-shape" />
+
+      {/* Travel-zone ring: a slightly inset concentric hex drawn on
+          top, so amber / red zones read as a discrete decoration
+          rather than recolouring the underlying grid line. */}
+      {hex.travel_zone !== 'Green' && (
+        <path
+          d={hexPath(cx, cy, HEX_R - 2.5)}
+          class={`hex-zone-ring zone-ring-${hex.travel_zone.toLowerCase()}`}
+        />
+      )}
 
       {/* Hex coordinate, top edge, very small dim grey. */}
       <text x={cx} y={cy - HEX_R * 0.62} class="hex-label" text-anchor="middle">
