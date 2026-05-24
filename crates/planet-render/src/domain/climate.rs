@@ -6,6 +6,11 @@ const LATITUDE_BANDS: usize = 36;
 const ITERATIONS: usize = 8;
 const FREEZE_K: f32 = 273.15;
 const BOIL_K: f32 = 373.15;
+/// Number of orbital-phase samples for the obliquity-modulated insolation
+/// average. Four samples (perihelion + the two solstices + apoapsis-ish)
+/// is enough to capture the annual energy budget for typical eccentricity
+/// values without making the per-planet climate cost visible.
+const SEASON_SAMPLES: usize = 4;
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct ClimateSummary {
@@ -63,10 +68,28 @@ pub fn estimate(planet: &Planet) -> ClimateSummary {
     let gravity_score = gravity_score(planet);
     let mut temps = [planet.temperature_k + greenhouse_k; LATITUDE_BANDS];
 
+    // Seed-derived obliquity, 0..40 deg. Same axis the renderer derives
+    // from the seed for visual axial tilt, kept here so the temperature
+    // model and the rendered planet's tilt agree about which way the
+    // poles face.
+    let obliquity = obliquity_for_seed(planet.seed);
+
     for _ in 0..ITERATIONS {
         for (i, temp) in temps.iter_mut().enumerate() {
             let lat = latitude_for_band(i);
-            let lat_factor = latitude_insolation_factor(lat);
+            // Average insolation across the orbit. Each sample shifts the
+            // subsolar latitude by sin(season_phase) * obliquity and tilts
+            // the latitude-vs-sun geometry accordingly. With eccentricity
+            // we'd also weight by 1/r^2 here, but the temperature_k input
+            // is already the orbit-mean equilibrium so we keep just the
+            // geometric tilt term.
+            let mut lat_factor = 0.0_f32;
+            for s in 0..SEASON_SAMPLES {
+                let phase = (s as f32 + 0.5) * std::f32::consts::TAU / SEASON_SAMPLES as f32;
+                let subsolar = obliquity * phase.sin();
+                lat_factor += latitude_insolation_factor_with_subsolar(lat, subsolar);
+            }
+            lat_factor /= SEASON_SAMPLES as f32;
             let ice_albedo = if *temp < FREEZE_K { 0.68 } else { base_albedo };
             let albedo_factor = ((1.0 - ice_albedo) / (1.0 - base_albedo)).clamp(0.35, 1.25);
             *temp = planet.temperature_k * lat_factor * albedo_factor.powf(0.25) + greenhouse_k;
@@ -134,9 +157,28 @@ fn latitude_for_band(index: usize) -> f32 {
     -std::f32::consts::FRAC_PI_2 + t * std::f32::consts::PI
 }
 
-fn latitude_insolation_factor(lat: f32) -> f32 {
-    // Annual-average equator-to-pole contrast with moderate heat transport.
-    (0.86 + 0.32 * lat.cos().max(0.0).sqrt()).clamp(0.70, 1.18)
+/// Insolation factor for a latitude given an instantaneous subsolar
+/// latitude (the tilt-modulated latitude at which the sun is overhead
+/// for this seasonal sample). Mixes a cos(zenith) geometric term with
+/// a meridional heat-transport floor so the dark hemisphere doesn't
+/// drop to absolute zero in the coarse per-band model.
+fn latitude_insolation_factor_with_subsolar(lat: f32, subsolar: f32) -> f32 {
+    let cos_z = (lat - subsolar).cos().max(0.0);
+    (0.74 + 0.44 * cos_z).clamp(0.74, 1.18)
+}
+
+/// Deterministic obliquity (axial tilt in radians) from the planet seed.
+/// Distribution is biased toward modest tilts (most observed exoplanets
+/// have Earth-like obliquity); a small tail reaches ~50° to represent
+/// the rare Uranus-style outliers without pessimising the median case.
+fn obliquity_for_seed(seed: u32) -> f32 {
+    let mut s = seed.wrapping_mul(2_246_822_519).wrapping_add(0x9E3779B9);
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    let u = (s >> 8) as f32 / 16_777_216.0;
+    // u^2.4 squeezes most of the mass to small tilts; max ~50°.
+    (u.powf(2.4) * 50.0).to_radians()
 }
 
 fn base_albedo(body: BodyType) -> f32 {
