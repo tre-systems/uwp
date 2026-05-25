@@ -36,28 +36,34 @@ export function App() {
 
   return (
     <div class="app">
-      <Canvas />
-      <div
-        class={`subsector-overlay${panelClass}${subsectorHidden}`}
-        role="region"
-        aria-label="Subsector view"
-        aria-hidden={mode !== 'subsector'}
-      >
-        <SubsectorMap subsector={subsector} />
-      </div>
-      <div
-        class={`subsector-overlay${panelClass}${surfaceHidden}`}
-        role="region"
-        aria-label="Surface view"
-        aria-hidden={mode !== 'surface'}
-      >
-        <SurfaceMap map={surfaceMap} />
-      </div>
-      <ViewTransition />
-      {status === 'loading' && <LoadingOverlay />}
-      {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
-      {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
-      <HoverTooltip />
+      {/* The Canvas + flat overlays are the primary content; wrap them
+          in <main> so screen-reader landmark navigation can skip past
+          the panel aside, breadcrumb nav, and view-mode tablist to
+          reach the visualization in one jump. */}
+      <main class="app-main" aria-label="Chart view">
+        <Canvas />
+        <div
+          class={`subsector-overlay${panelClass}${subsectorHidden}`}
+          role="region"
+          aria-label="Subsector view"
+          aria-hidden={mode !== 'subsector'}
+        >
+          <SubsectorMap subsector={subsector} />
+        </div>
+        <div
+          class={`subsector-overlay${panelClass}${surfaceHidden}`}
+          role="region"
+          aria-label="Surface view"
+          aria-hidden={mode !== 'surface'}
+        >
+          <SurfaceMap map={surfaceMap} />
+        </div>
+        <ViewTransition />
+        {status === 'loading' && <LoadingOverlay />}
+        {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
+        {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
+        <HoverTooltip />
+      </main>
       <Breadcrumb />
       <ViewModeToggle />
       <ControlPanel />
