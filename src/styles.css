@@ -2178,6 +2178,10 @@ label.color input[type="color"]::-webkit-color-swatch {
      controls are comfortable on a phone. */
   .export-btn { min-height: 44px; }
   .quality-segment { min-height: 44px; }
+  /* Subsector New region / Copy as text / Download .tab buttons sit
+     around 22–23px tall by default. Bump them on phones too. */
+  .sys-actions button { min-height: 44px; }
+  .sys-export-row button { min-height: 44px; padding: 8px 12px; }
   .glossary-backdrop { padding: var(--space-4); }
   .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
