@@ -10,12 +10,11 @@
 //   * South middle (5 faces): two south-ring vertices + one north-ring.
 //   * South cap (5 faces): SP + two adjacent south-ring vertices.
 //
-// Net layout: each band becomes a row in a 5-column flat grid, so the
-// net is a 5×4 rectangle of equilateral triangles. North-cap and
-// south-middle rows are up-pointing; north-middle and south-cap rows
-// are down-pointing. Adjacent rows share edges in the flat net (and on
-// the icosahedron), so the heightmap projects continuously across
-// those edges - which is what makes the wrap-around feel work.
+// Net layout: five north-cap triangles attach to a continuous 10-face
+// equatorial zig-zag belt, and five south-cap triangles attach below it.
+// This is a real connected icosahedron net: the visible cuts are only at
+// the outer boundary. The previous 5×4 grid left big diamond holes between
+// faces, which looked like missing map rather than an unfolded solid.
 
 export interface Vec3 {
   x: number
@@ -117,26 +116,46 @@ export const FACES: readonly Face[] = (() => {
 export const TRI_SIDE = 200
 export const TRI_HEIGHT = TRI_SIDE * Math.sqrt(3) / 2
 
-export const NET_WIDTH = 5 * TRI_SIDE
-export const NET_HEIGHT = 4 * TRI_HEIGHT
+export const NET_WIDTH = 5.5 * TRI_SIDE
+export const NET_HEIGHT = 3 * TRI_HEIGHT
 
 /** Returns the 3 flat-net vertices of `face`, with the same ordering
  *  as `face.v` (so vertex `face.v[k]` corresponds to flat point k). */
 export function faceFlatVertices(face: Face): [Vec2, Vec2, Vec2] {
-  const x0 = face.col * TRI_SIDE
-  const y0 = face.row * TRI_HEIGHT
-  if (face.upPointing) {
-    return [
-      { x: x0 + TRI_SIDE / 2, y: y0 },                 // apex
-      { x: x0, y: y0 + TRI_HEIGHT },                   // bottom-left
-      { x: x0 + TRI_SIDE, y: y0 + TRI_HEIGHT },        // bottom-right
-    ]
-  } else {
-    return [
-      { x: x0, y: y0 },                                // top-left
-      { x: x0 + TRI_SIDE, y: y0 },                     // top-right
-      { x: x0 + TRI_SIDE / 2, y: y0 + TRI_HEIGHT },    // apex (bottom)
-    ]
+  const c = face.col
+  const S = TRI_SIDE
+  const H = TRI_HEIGHT
+
+  switch (face.row) {
+    case 0:
+      // North cap: [NP, Ni, Ni+1].
+      return [
+        { x: (c + 0.5) * S, y: 0 },
+        { x: c * S, y: H },
+        { x: (c + 1) * S, y: H },
+      ]
+    case 1:
+      // North-middle belt: [Ni, Ni+1, Si].
+      return [
+        { x: c * S, y: H },
+        { x: (c + 1) * S, y: H },
+        { x: (c + 0.5) * S, y: 2 * H },
+      ]
+    case 2:
+      // South-middle belt: [Ni+1, Si, Si+1].
+      return [
+        { x: (c + 1) * S, y: H },
+        { x: (c + 0.5) * S, y: 2 * H },
+        { x: (c + 1.5) * S, y: 2 * H },
+      ]
+    case 3:
+    default:
+      // South cap: [Si, Si+1, SP].
+      return [
+        { x: (c + 0.5) * S, y: 2 * H },
+        { x: (c + 1.5) * S, y: 2 * H },
+        { x: (c + 1) * S, y: 3 * H },
+      ]
   }
 }
 
@@ -150,15 +169,21 @@ export function faceSphereVertices(face: Face): [Vec3, Vec3, Vec3] {
 /** Map a flat-net point (x, y) to a spherical point. Returns null if
  *  the point is outside the net (the zigzag region around the cells). */
 export function netToSphere(x: number, y: number): { lat: number; lon: number; face: number } | null {
-  const col = Math.floor(x / TRI_SIDE)
-  const row = Math.floor(y / TRI_HEIGHT)
-  if (col < 0 || col >= 5 || row < 0 || row >= 4) return null
-  const faceIdx = row * 5 + col
-  const face = FACES[faceIdx]
-  const flat = faceFlatVertices(face)
-  const bary = barycentric2D({ x, y }, flat[0], flat[1], flat[2])
-  if (bary.u < 0 || bary.v < 0 || bary.w < 0) return null
-  const sph = faceSphereVertices(face)
+  if (x < 0 || x > NET_WIDTH || y < 0 || y > NET_HEIGHT) return null
+  const p2 = { x, y }
+  let faceIdx = -1
+  let bary: Bary | null = null
+  for (let i = 0; i < FACES.length; i++) {
+    const flat = faceFlatVertices(FACES[i])
+    const b = barycentric2D(p2, flat[0], flat[1], flat[2])
+    if (b.u >= -1e-5 && b.v >= -1e-5 && b.w >= -1e-5) {
+      faceIdx = i
+      bary = b
+      break
+    }
+  }
+  if (faceIdx < 0 || !bary) return null
+  const sph = faceSphereVertices(FACES[faceIdx])
   const p = barycentricMix3D(bary, sph[0], sph[1], sph[2])
   const len = Math.hypot(p.x, p.y, p.z) || 1
   const nx = p.x / len, ny = p.y / len, nz = p.z / len

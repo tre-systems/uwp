@@ -27,8 +27,8 @@ interface RenderOptions {
    *  toward hot / temperate / cold biomes. */
   meanTempK: number
   /** Output image size. The icosahedral net is rendered into a canvas
-   *  matching the net's aspect ratio (5 : 2√3 ≈ 1.44). Width controls
-   *  the resolution. */
+   *  matching the connected strip's aspect ratio (11 : 3√3 ≈ 2.12).
+   *  Width controls the resolution. */
   width: number
 }
 

@@ -1519,7 +1519,7 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 /* Surface map ------------------------------------------------------*/
 .surface-map {
-  width: min(100%, calc((100vh - 140px) * 1.443));
+  width: min(100%, calc((100vh - 140px) * 2.117));
   max-width: 1120px;
   color: var(--color-text);
 }

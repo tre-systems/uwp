@@ -29,14 +29,14 @@ import {
 
 // Cepheus / legacy 2d6-style icosahedral surface map.
 //
-// The world is laid out as a flat net of the 20 triangular faces of an
-// icosahedron (5 columns × 4 rows). The background image is the Rust
-// pre-bake projected through that same net, so continents wrap
-// continuously across fold lines. Each face is subdivided N times
-// into smaller triangles; each sub-triangle becomes one hex on the
-// map. Hexes near triangle edges may straddle fold lines visually -
-// that's intrinsic to an icosahedral net, and matches the canonical
-// legacy 2d6 world maps.
+// The world is laid out as a connected net of the 20 triangular faces
+// of an icosahedron: five north-cap faces, a ten-face equatorial
+// zig-zag belt, then five south-cap faces. The background image is the
+// Rust pre-bake projected through that same net, so continents wrap
+// continuously across shared face edges. Each face is subdivided N
+// times into smaller triangles; each sub-triangle becomes one pickable
+// atlas cell. Cuts remain only on the outside boundary, as expected for
+// an unfolded d20-style legacy 2d6 world map.
 
 const SUBDIVISIONS = 8
 
