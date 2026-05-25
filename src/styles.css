@@ -1367,7 +1367,7 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .subsector-map {
   width: 100%;
-  max-width: 760px;
+  max-width: 1320px;
   color: var(--color-text);
 }
 .subsector-map svg {
@@ -1392,6 +1392,11 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-width: 0.8;
   fill: transparent;
   transition: stroke var(--motion-fast);
+}
+.subsector-seam {
+  stroke: rgba(155, 202, 255, 0.32);
+  stroke-width: 1;
+  stroke-dasharray: 8 8;
 }
 .hex-cell.hex-occupied { cursor: pointer; }
 .hex-cell.hex-occupied:hover .hex-shape { stroke: rgba(255, 255, 255, 0.55); }

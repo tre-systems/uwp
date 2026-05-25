@@ -13,6 +13,7 @@ import { SeedField } from './SeedField'
 import { useState } from 'preact/hooks'
 import {
   hexLabel,
+  subsectorHexCount,
   subsectorToText,
   uwpToCode,
   type Subsector,
@@ -33,7 +34,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const routesVisible = showJumpRoutes.value
   const occupied = sub?.hexes.length ?? 0
   const routesCount = sub?.jump_routes.length ?? 0
-  const total = 8 * 10
+  const total = sub ? subsectorHexCount(sub) : 16 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
     : null
@@ -84,7 +85,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
         </dl>
         <div class="sys-actions">
           <button onClick={rerollSubsectorSeed} disabled={disabled}>
-            New subsector
+            New region
           </button>
           <SeedField
             value={seed}

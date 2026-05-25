@@ -37,8 +37,8 @@ const ROW_STEP = HEX_H
 const PAD_X = HEX_R * 1.1
 const PAD_Y = HEX_H * 0.85
 
-const COLS = 8
-const ROWS = 10
+const DEFAULT_COLS = 16
+const DEFAULT_ROWS = 10
 
 interface XY { x: number; y: number }
 
@@ -47,6 +47,14 @@ function hexCenter(col: number, row: number): XY {
   const cx = PAD_X + (col - 1) * COL_STEP
   const cy = PAD_Y + (row - 1) * ROW_STEP + (col % 2 === 0 ? ROW_STEP * 0.5 : 0)
   return { x: cx, y: cy }
+}
+
+function mapWidth(columns: number): number {
+  return PAD_X * 2 + (columns - 1) * COL_STEP + HEX_R
+}
+
+function mapHeight(rows: number): number {
+  return PAD_Y * 2 + (rows - 1) * ROW_STEP + ROW_STEP * 0.5 + HEX_H * 0.5
 }
 
 function hexPath(cx: number, cy: number, r: number): string {
@@ -61,16 +69,20 @@ function hexPath(cx: number, cy: number, r: number): string {
   return `M${pts.join(' L')}Z`
 }
 
-const SVG_WIDTH = PAD_X * 2 + (COLS - 1) * COL_STEP
-const SVG_HEIGHT = PAD_Y * 2 + (ROWS - 1) * ROW_STEP + ROW_STEP * 0.5
-
 interface SubsectorMapProps {
   subsector: Subsector | null
 }
 
 export function SubsectorMap({ subsector }: SubsectorMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const gestures = useMapGestures(containerRef, SVG_WIDTH, SVG_HEIGHT)
+  const columns = subsector?.columns ?? DEFAULT_COLS
+  const rows = subsector?.rows ?? DEFAULT_ROWS
+  const svgWidth = mapWidth(columns)
+  const svgHeight = mapHeight(rows)
+  const seamX = columns > 8
+    ? (hexCenter(8, 1).x + hexCenter(9, 1).x) * 0.5
+    : null
+  const gestures = useMapGestures(containerRef, svgWidth, svgHeight)
 
   if (!subsector) {
     return (
@@ -109,7 +121,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
         viewBox={gestures.viewBox}
         xmlns="http://www.w3.org/2000/svg"
         role="img"
-        aria-label="Subsector hex grid"
+        aria-label={`${columns} by ${rows} subsector hex grid`}
       >
         {/* Routes sit below the hex outlines so the hex border reads as
             the connector boundary, matching the legacy 2d6 Map look. */}
@@ -131,8 +143,18 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
             })}
           </g>
         )}
-        {Array.from({ length: COLS }, (_, i) => i + 1).flatMap((col) =>
-          Array.from({ length: ROWS }, (_, j) => j + 1).map((row) => {
+        {seamX != null && (
+          <line
+            x1={seamX}
+            y1={HEX_R * 0.35}
+            x2={seamX}
+            y2={svgHeight - HEX_R * 0.35}
+            class="subsector-seam"
+            aria-hidden="true"
+          />
+        )}
+        {Array.from({ length: columns }, (_, i) => i + 1).flatMap((col) =>
+          Array.from({ length: rows }, (_, j) => j + 1).map((row) => {
             const key = `${col},${row}`
             const hex = hexByCoord.get(key) ?? null
             const { x, y } = hexCenter(col, row)

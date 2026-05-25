@@ -187,9 +187,9 @@ describe('appState renderer command boundary', () => {
       pointAtSurface: () => undefined,
     })
 
-    selectHex({ col: 2, row: 3 })
+    selectHex({ col: 16, row: 10 })
 
-    expect(selectedHex.value).toEqual({ col: 2, row: 3 })
+    expect(selectedHex.value).toEqual({ col: 16, row: 10 })
     expect(systemSeed.value).toBe(0x12345678)
     expect(viewMode.value).toBe('system')
     expect(uwp.value).toMatchObject({
@@ -274,10 +274,12 @@ function fakeSubsector(): Subsector {
   return {
     seed: 99,
     density: 0.5,
+    columns: 16,
+    rows: 10,
     allegiance: 'Na',
     hexes: [
       {
-        coord: { col: 2, row: 3 },
+        coord: { col: 16, row: 10 },
         system_seed: 0x12345678,
         uwp: {
           starport: 'C',

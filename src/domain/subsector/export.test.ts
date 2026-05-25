@@ -22,6 +22,8 @@ function subsector(hexes: SubsectorHex[]): Subsector {
   return {
     seed: 0xFEEDFACE,
     density: 0.5,
+    columns: 16,
+    rows: 10,
     allegiance: 'ImDi',
     hexes,
     jump_routes: [],
@@ -32,25 +34,27 @@ describe('subsectorToText', () => {
   it('renders a header, divider, and one row per hex', () => {
     const text = subsectorToText(subsector([hex(3, 6)]))
     const lines = text.trim().split('\n')
-    // 4 banner comments + blank + header + divider + 1 data row
-    expect(lines).toHaveLength(8)
-    expect(lines[5]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
-    expect(lines[6]).toMatch(/^-+\s+-+\s+-+/)
+    // 5 banner comments + blank + header + divider + 1 data row
+    expect(lines).toHaveLength(9)
+    expect(lines[1]).toBe('# Dimensions: 16 x 10')
+    expect(lines[3]).toBe('# Hexes occupied: 1 / 160')
+    expect(lines[6]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
+    expect(lines[7]).toMatch(/^-+\s+-+\s+-+/)
     // Hex 0306 with starport A, bases NS, allegiance ImDi
-    expect(lines[7]).toContain('0306')
-    expect(lines[7]).toContain('A788899-C')
-    expect(lines[7]).toContain('NS')
-    expect(lines[7]).toMatch(/ImDi$/)
+    expect(lines[8]).toContain('0306')
+    expect(lines[8]).toContain('A788899-C')
+    expect(lines[8]).toContain('NS')
+    expect(lines[8]).toMatch(/ImDi$/)
   })
 
   it('sorts hexes by col then row', () => {
     const out = subsectorToText(
-      subsector([hex(5, 2), hex(1, 9), hex(3, 1)]),
+      subsector([hex(16, 10), hex(1, 9), hex(9, 1)]),
     )
-    const dataLines = out.trim().split('\n').slice(7)
+    const dataLines = out.trim().split('\n').slice(8)
     expect(dataLines[0]).toContain('0109')
-    expect(dataLines[1]).toContain('0301')
-    expect(dataLines[2]).toContain('0502')
+    expect(dataLines[1]).toContain('0901')
+    expect(dataLines[2]).toContain('1610')
   })
 
   it('formats red/amber zones and base combinations', () => {
@@ -66,7 +70,7 @@ describe('subsectorToText', () => {
         }),
       ]),
     )
-    const lines = text.trim().split('\n').slice(7)
+    const lines = text.trim().split('\n').slice(8)
     expect(lines[0]).toMatch(/--RT/)  // research + Aid, leading hyphens preserved
     expect(lines[0]).toMatch(/\sR\s/) // red zone column
     expect(lines[1]).toMatch(/\sA\s/) // amber zone column

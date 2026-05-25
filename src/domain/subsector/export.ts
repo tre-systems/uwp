@@ -1,6 +1,6 @@
 import { deriveTradeCodes } from '../cepheus'
 import { systemName } from '../names'
-import { hexLabel, uwpToCode, type Subsector, type SubsectorHex } from './types'
+import { hexLabel, subsectorHexCount, uwpToCode, type Subsector, type SubsectorHex } from './types'
 
 // Tab-aligned plain text export, modelled on legacy 2d6-Map's "Second
 // Survey" sec/tab format. Columns are space-padded so the file reads
@@ -91,9 +91,10 @@ function hexLine(h: SubsectorHex, allegiance: string): string {
 
 export function subsectorToText(sub: Subsector): string {
   const lines: string[] = []
-  lines.push(`# Subsector ${systemName(sub.seed)}  (seed ${sub.seed})`)
+  lines.push(`# Subsector region ${systemName(sub.seed)}  (seed ${sub.seed})`)
+  lines.push(`# Dimensions: ${sub.columns} x ${sub.rows}`)
   lines.push(`# Allegiance: ${sub.allegiance}`)
-  lines.push(`# Hexes occupied: ${sub.hexes.length} / 80`)
+  lines.push(`# Hexes occupied: ${sub.hexes.length} / ${subsectorHexCount(sub)}`)
   lines.push(`# Jump routes: ${sub.jump_routes.length}`)
   lines.push('')
   lines.push(headerLine())

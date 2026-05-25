@@ -1,9 +1,9 @@
 //! Cepheus Engine subsector generator.
 //!
-//! A subsector is an 8-column × 10-row hex grid of star systems. Each
-//! occupied hex carries its main world's UWP, bases, trade-zone, and
-//! presence flags (gas giant, asteroid belt) so the SVG map can render
-//! without re-running system generation.
+//! A local campaign strip is two adjacent Cepheus subsectors: a 16-column ×
+//! 10-row hex grid of star systems. Each occupied hex carries its main world's
+//! UWP, bases, trade-zone, and presence flags (gas giant, asteroid belt) so
+//! the SVG map can render without re-running system generation.
 //!
 //! Determinism: a per-hex sub-seed is derived from
 //! `hash(subsector_seed, col, row)` so any single hex can be regenerated
@@ -28,9 +28,11 @@ use serde::{Deserialize, Serialize};
 
 use super::system::{self, BodyType, SolarSystem};
 
-/// Subsector grid extents. Cepheus convention: 8 columns × 10 rows.
-pub const SUBSECTOR_COLS: u8 = 8;
+/// Local map grid extents. One classic subsector is 8 columns × 10 rows; the
+/// app shows two side by side so the first screen has useful travel context.
+pub const SUBSECTOR_COLS: u8 = 16;
 pub const SUBSECTOR_ROWS: u8 = 10;
+pub const CLASSIC_SUBSECTOR_COLS: u8 = 8;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HexCoord {
@@ -138,6 +140,10 @@ pub struct Subsector {
     pub seed: u32,
     /// 0..1 — target fraction of hexes that should host a system.
     pub density: f32,
+    /// Serialized map dimensions so JS presentation does not assume a single
+    /// classic 8-column subsector.
+    pub columns: u8,
+    pub rows: u8,
     /// Single allegiance per subsector for v1.
     pub allegiance: String,
     pub hexes: Vec<SubsectorHex>,
@@ -230,6 +236,8 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
     Subsector {
         seed,
         density,
+        columns: SUBSECTOR_COLS,
+        rows: SUBSECTOR_ROWS,
         allegiance: "Independent".to_string(),
         hexes,
         jump_routes,
@@ -586,6 +594,8 @@ mod tests {
     fn deterministic_for_same_seed() {
         let a = generate(0xC0FFEE, 0.5);
         let b = generate(0xC0FFEE, 0.5);
+        assert_eq!(a.columns, b.columns);
+        assert_eq!(a.rows, b.rows);
         assert_eq!(a.hexes.len(), b.hexes.len());
         for (ha, hb) in a.hexes.iter().zip(b.hexes.iter()) {
             assert_eq!(ha.coord, hb.coord);
@@ -766,6 +776,8 @@ mod tests {
         let sub = generate(1, 1.0);
         let total = (SUBSECTOR_COLS as usize) * (SUBSECTOR_ROWS as usize);
         assert_eq!(sub.hexes.len(), total);
+        assert_eq!(total, 160);
+        assert!(sub.hex_at(HexCoord::new(16, 10)).is_some());
     }
 
     #[test]
@@ -795,9 +807,53 @@ mod tests {
     }
 
     #[test]
+    fn jump_routes_cross_two_subsector_boundary() {
+        let a = route_test_hex(8, 5, 'A');
+        let b = route_test_hex(9, 5, 'B');
+        let c = route_test_hex(10, 5, 'D');
+        let routes = compute_jump_routes(&[a, b, c]);
+
+        assert!(routes.iter().any(|r| {
+            r.from == HexCoord::new(8, 5) && r.to == HexCoord::new(9, 5) && r.jump == 1
+        }));
+        assert!(!routes
+            .iter()
+            .any(|r| { r.from == HexCoord::new(9, 5) && r.to == HexCoord::new(10, 5) }));
+    }
+
+    #[test]
     fn label_format() {
         assert_eq!(HexCoord::new(3, 4).label(), "0304");
         assert_eq!(HexCoord::new(8, 10).label(), "0810");
+        assert_eq!(HexCoord::new(16, 10).label(), "1610");
+    }
+
+    fn route_test_hex(col: u8, row: u8, starport: char) -> SubsectorHex {
+        SubsectorHex {
+            coord: HexCoord::new(col, row),
+            system_seed: 1,
+            uwp: Uwp {
+                starport,
+                size: 8,
+                atm: 6,
+                hydro: 7,
+                pop: 6,
+                gov: 7,
+                law: 4,
+                tech: 9,
+            },
+            bases: Bases::default(),
+            travel_zone: TravelZone::Green,
+            gas_giant: false,
+            belts: false,
+            population: 6_000_000,
+            pbg: Pbg {
+                population_multiplier: 6,
+                belts: 0,
+                gas_giants: 0,
+            },
+            name: None,
+        }
     }
 
     fn test_planet(

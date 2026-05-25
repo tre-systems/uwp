@@ -328,6 +328,12 @@ When implementing any of these, the same boundary rules apply: the Rust crate ow
 
 A subsector is the Cepheus Engine sector-map unit: an 8-column × 10-row hex grid of star systems, with bases, trade codes, gas-giant presence, asteroid belts, travel zones, and inter-system jump routes attached to each occupied hex. Reference: <https://www.orffenspace.com/cepheus-srd/book3/worlds.html>.
 
+The product map currently presents two adjacent subsectors as one local
+16-column × 10-row campaign strip (`0101` through `1610`) so referees can see
+routes and neighbours across the classic subsector border. Keep the serialized
+`columns` / `rows` fields authoritative; UI, export, and tests should not
+reintroduce an implicit 8×10 assumption.
+
 This is the next major product feature. The goal is that a user can land on a generated subsector, browse the hex grid, click any occupied hex to drill into that system's overview (existing System view), and from there into its main world (existing Detail view). UWP codes, trade codes, bases, and travel zones surface as Cepheus-compatible game data at every level.
 
 ### Target Boundaries
@@ -384,7 +390,7 @@ src/appState/
 
 Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
-1. **Rust subsector data model + generator.** *Shipped → `8d48f26`.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `Subsector`; `generate(seed, density)` walks an 8×10 grid hashing per-hex sub-seeds and runs `system::generate` per occupied hex.
+1. **Rust subsector data model + generator.** *Shipped → `8d48f26`, expanded → current.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `Subsector`; `generate(seed, density)` walks a 16×10 two-subsector strip hashing per-hex sub-seeds and runs `system::generate` per occupied hex.
 
 2. **Bases / gas-giant / belt / trade codes per hex.** *Shipped → `8d48f26`.* `build_hex` projects main-world physics into UWP digits, rolls Cepheus base presence keyed on starport class, and derives a travel zone from law/government. Trade codes are derived TS-side from the UWP wire format.
 
@@ -416,7 +422,7 @@ For the first phase to be "done":
 
 - **Re-use, don't fork.** Trade codes are already implemented (`tradeCodes.ts`); the subsector hex carries a `MainWorldSummary` derived through the existing `mainWorld::model` pipeline. Don't duplicate UWP / climate / system logic.
 - **Determinism.** A given `subsector_seed` must always produce the same grid. Per-hex sub-seed = `hash(subsector_seed, col, row)` so individual hexes can be regenerated without disturbing their neighbours.
-- **Lazy generation.** Generating 80 full `SolarSystem`s up front is wasteful — most hexes are empty, and the user only drills into one or two. Generate the main-world summary eagerly; defer full planet/moon generation until the user selects the hex.
+- **Lazy generation.** Generating 160 full `SolarSystem`s up front is wasteful — most hexes are empty, and the user only drills into one or two. Generate the main-world summary eagerly; defer full planet/moon generation until the user selects the hex.
 - **Don't break the existing renderer.** The subsector view is an SVG sibling of the WebGPU canvas, not a replacement. The canvas stays mounted; the subsector view is layered on top or shown in a different DOM region. This avoids redoing renderer lifecycle for a 2D map.
 - **State ownership stays Rust-owned.** Per the State Ownership note above: Rust holds the canonical `Subsector`, JS snapshots it. The picking logic *can* live in TS (hex math is cheap and not a state question), but the chosen hex must be re-validated against the Rust state when it requests the system.
 

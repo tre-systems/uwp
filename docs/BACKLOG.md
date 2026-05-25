@@ -109,6 +109,12 @@ Done when:
 
 Extend the current 8×10 subsector view into a 16×10 two-subsector-wide map.
 
+Status: v1 is implemented. Rust now generates a 16×10 local region, serializes
+the region dimensions, and the SVG map / export / editor read those dimensions
+instead of assuming 80 hexes. Playwright smoke coverage selects a right-hand
+subsector hex at desktop and mobile viewports. Remaining polish for this
+backlog item is any visual refinement discovered on devices.
+
 - Generate, store, and render two adjacent subsectors as one local play region.
 - Preserve individual subsector identity while allowing routes and borders to
   cross the seam.
@@ -292,8 +298,8 @@ After the Chapter 12 matrix, the best next implementation chunk is:
 1. Harden UWP projection from continuous models.
 2. Add focused Rust tests for remaining UWP projection table shapes: atmosphere,
    starport, government, law, and tech.
-3. Start the two-subsector strip data model and rendering spike behind existing
-   map boundaries once the projection/PBG contract is firmer.
+3. Continue into Chapter 12 map semantics: communication routes, trade routes,
+   and stronger allegiance / border presentation.
 
 This keeps the product goal visible while preparing the codebase for the larger
 map and online-play work.

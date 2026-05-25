@@ -33,6 +33,36 @@ test('detail and system views render with quality controls', async ({ page }) =>
   await expect(panel.locator('.perf-profile')).toContainText('Low')
 })
 
+for (const viewport of [
+  { name: 'desktop', size: { width: 1280, height: 820 } },
+  { name: 'mobile', size: { width: 390, height: 844 } },
+] as const) {
+  test(`subsector map renders a two-subsector strip and opens right-hand systems on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport.size)
+    await openApp(page)
+
+    await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
+    await expect(page.locator('.subsector-map')).toBeVisible()
+    await expect(page.locator('[data-coord="1610"]')).toBeVisible()
+    await expect(page.locator('.subsector-seam')).toHaveCount(1)
+
+    const rightHandCoord = await page.locator('.hex-occupied').evaluateAll((nodes) => {
+      const coords = nodes
+        .map((node) => (node as SVGElement).dataset.coord ?? '')
+        .filter((coord) => Number(coord.slice(0, 2)) >= 9)
+        .sort()
+      return coords[0] ?? null
+    })
+    expect(rightHandCoord).toMatch(/^(09|1[0-6])\d{2}$/)
+
+    await page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`).click()
+    await expect(page.getByRole('tab', { name: /overview of the current solar system/i })).toHaveAttribute('aria-selected', 'true')
+
+    await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
+    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveClass(/hex-selected/)
+  })
+}
+
 async function openApp(page: Page) {
   const consoleErrors: string[] = []
   page.on('console', (message) => {

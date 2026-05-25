@@ -55,9 +55,15 @@ export interface JumpRoute {
 export interface Subsector {
   seed: number
   density: number
+  columns: number
+  rows: number
   allegiance: string
   hexes: SubsectorHex[]
   jump_routes: JumpRoute[]
+}
+
+export function subsectorHexCount(subsector: Pick<Subsector, 'columns' | 'rows'>): number {
+  return subsector.columns * subsector.rows
 }
 
 export function hexLabel(coord: HexCoord): string {
