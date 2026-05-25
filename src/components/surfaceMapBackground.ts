@@ -70,7 +70,14 @@ export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): 
       if (!proj) continue
       inside[idx] = 1
       latArr[idx] = proj.lat
-      elev[idx] = sampleBilinear(heightmap, prebake.lon_cells, prebake.lat_cells, proj.lat, proj.lon)
+      const sample = normalisedSurfaceSample(proj.lat, proj.lon)
+      elev[idx] = sampleBilinear(
+        heightmap,
+        prebake.lon_cells,
+        prebake.lat_cells,
+        sample.lat,
+        sample.lon,
+      )
     }
   }
 
@@ -219,6 +226,13 @@ function sampleBilinear(
   const h0 = h00 * (1 - fj) + h01 * fj
   const h1 = h10 * (1 - fj) + h11 * fj
   return h0 * (1 - fi) + h1 * fi
+}
+
+export function normalisedSurfaceSample(latRad: number, lonRad: number): { lat: number; lon: number } {
+  return {
+    lat: latRad / Math.PI + 0.5,
+    lon: lonRad / (2 * Math.PI) + 0.5,
+  }
 }
 
 function quantile(arr: Float32Array, q: number): number {

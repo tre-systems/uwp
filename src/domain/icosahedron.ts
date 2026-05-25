@@ -53,8 +53,8 @@ function sphericalToCart(latRad: number, lonRad: number): Vec3 {
   const cos = Math.cos(latRad)
   return {
     x: cos * Math.cos(lonRad),
-    y: cos * Math.sin(lonRad),
-    z: Math.sin(latRad),
+    y: Math.sin(latRad),
+    z: cos * Math.sin(lonRad),
   }
 }
 
@@ -163,8 +163,8 @@ export function netToSphere(x: number, y: number): { lat: number; lon: number; f
   const len = Math.hypot(p.x, p.y, p.z) || 1
   const nx = p.x / len, ny = p.y / len, nz = p.z / len
   return {
-    lat: Math.asin(Math.max(-1, Math.min(1, nz))),
-    lon: Math.atan2(ny, nx),
+    lat: Math.asin(Math.max(-1, Math.min(1, ny))),
+    lon: Math.atan2(nz, nx),
     face: faceIdx,
   }
 }
@@ -347,7 +347,7 @@ function normalise(v: Vec3): Vec3 {
 /** Convert a unit-sphere position to (latRad, lonRad). */
 export function cartToSpherical(v: Vec3): { lat: number; lon: number } {
   return {
-    lat: Math.asin(Math.max(-1, Math.min(1, v.z))),
-    lon: Math.atan2(v.y, v.x),
+    lat: Math.asin(Math.max(-1, Math.min(1, v.y))),
+    lon: Math.atan2(v.z, v.x),
   }
 }

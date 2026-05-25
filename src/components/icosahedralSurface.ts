@@ -6,6 +6,7 @@
 
 import type { PreBake } from './surfaceMapBackground'
 import {
+  cartToSpherical,
   iterFaceSubCells,
   TRI_SIDE,
 } from '../domain/icosahedron'
@@ -68,8 +69,7 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   const raws: Raw[] = []
   for (const cell of iterFaceSubCells(N)) {
     // Sphere → (lat, lon).
-    const latRad = Math.asin(Math.max(-1, Math.min(1, cell.center3D.z)))
-    const lonRad = Math.atan2(cell.center3D.y, cell.center3D.x)
+    const { lat: latRad, lon: lonRad } = cartToSpherical(cell.center3D)
     const elev = samplePrebake(opts.prebake, latRad, lonRad)
     // subUp on the yielded cell tells whether this is the up or down
     // sub-triangle within its parent face. The visible hex is centred

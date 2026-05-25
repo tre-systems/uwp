@@ -1519,14 +1519,16 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 /* Surface map ------------------------------------------------------*/
 .surface-map {
-  width: 100%;
-  max-width: 880px;
+  width: min(100%, calc((100vh - 140px) * 1.443));
+  max-width: 1120px;
   color: var(--color-text);
 }
 .surface-map svg {
   width: 100%;
+  max-height: calc(100vh - 140px);
   height: auto;
   display: block;
+  filter: drop-shadow(0 24px 50px rgba(0, 0, 0, 0.55));
 }
 .surface-empty {
   color: var(--text-dim);
@@ -1539,36 +1541,42 @@ label.color input[type="color"]::-webkit-color-swatch {
    grid and rides the same SVG viewBox, so pan / zoom keeps both
    layers aligned. */
 .surface-bg-image {
-  opacity: 0.9;
+  opacity: 1;
   pointer-events: none;
 }
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
-  fill-opacity: 0.38;
-  stroke: rgba(0, 0, 0, 0.35);
-  stroke-width: 0.6;
+  fill-opacity: 0.08;
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 0.42;
   transition: stroke var(--motion-fast), filter var(--motion-fast), fill-opacity var(--motion-fast);
 }
-.surface-hex:hover .surface-hex-shape { fill-opacity: 0.6; stroke: rgba(255, 255, 255, 0.55); }
-.surface-selected .surface-hex-shape { fill-opacity: 0.75; stroke: var(--color-accent); stroke-width: 1.6; }
+.surface-ocean .surface-hex-shape { fill-opacity: 0.025; }
+.surface-shoreline .surface-hex-shape { fill-opacity: 0.18; stroke: rgba(240, 235, 190, 0.28); }
+.surface-ice .surface-hex-shape,
+.surface-mountain .surface-hex-shape,
+.surface-volcanic .surface-hex-shape { fill-opacity: 0.12; }
+.surface-hex:hover .surface-hex-shape { fill-opacity: 0.26; stroke: rgba(255, 255, 255, 0.68); }
+.surface-selected .surface-hex-shape { fill-opacity: 0.32; stroke: var(--color-accent); stroke-width: 1.25; }
 
-/* Fold lines: heavy black strokes along every triangle edge in the
-   icosahedral net. Two layered passes so the line reads as inked
-   even when an adjacent face's edge is on top. */
+/* Fold lines: enough to show the d20 net, quiet enough that coastlines
+   and settlements remain the first read. */
 .surface-fold-lines polygon {
   fill: none;
-  stroke: rgba(0, 0, 0, 0.85);
-  stroke-width: 2.4;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 0.9;
   stroke-linejoin: round;
   pointer-events: none;
 }
 
 .surface-starport-group { pointer-events: none; }
 .surface-starport-halo {
-  fill: rgba(0, 0, 0, 0.6);
+  fill: rgba(0, 0, 0, 0.75);
+  stroke: rgba(255, 224, 128, 0.8);
+  stroke-width: 0.75;
 }
 .surface-hex:hover .surface-hex-shape {
-  filter: brightness(1.12);
+  filter: brightness(1.18);
   stroke: rgba(255, 255, 255, 0.55);
 }
 .surface-hex:focus-visible .surface-hex-shape {
@@ -1578,30 +1586,8 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .surface-selected .surface-hex-shape {
   stroke: var(--color-accent);
-  stroke-width: 1.6;
+  stroke-width: 1.25;
 }
-/* Coastline: land hexes that touch ocean draw a heavier dark outline
-   so continents read as distinct shapes on the map. Pure visual
-   convention from the canonical legacy 2d6 world maps. */
-.surface-hex.surface-coast .surface-hex-shape {
-  stroke: rgba(0, 0, 0, 0.85);
-  stroke-width: 1.2;
-}
-
-/* Single-glyph terrain symbol centred in each hex. Subdued so the
-   colour does the heavy lifting at a glance, while the glyph
-   disambiguates similar-coloured terrain types (Hill vs Mountain). */
-.surface-glyph {
-  font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-  font-size: 8.5px;
-  font-weight: 500;
-  fill: rgba(0, 0, 0, 0.55);
-  pointer-events: none;
-}
-.surface-ocean .surface-glyph,
-.surface-shoreline .surface-glyph,
-.surface-volcanic .surface-glyph { fill: rgba(255, 255, 255, 0.75); }
-.surface-ice .surface-glyph { fill: rgba(0, 0, 0, 0.45); }
 
 .surface-marker {
   font-size: 12px;
@@ -1611,11 +1597,17 @@ label.color input[type="color"]::-webkit-color-swatch {
   paint-order: stroke fill;
   pointer-events: none;
 }
-.surface-starport { font-weight: 700; }
+.surface-starport {
+  fill: #ffe680;
+  stroke: rgba(0, 0, 0, 0.95);
+  stroke-width: 1.4;
+  paint-order: stroke fill;
+  font-weight: 700;
+}
 .surface-city {
   fill: rgba(255, 255, 255, 0.95);
   stroke: rgba(0, 0, 0, 0.8);
-  stroke-width: 0.6;
+  stroke-width: 0.8;
   pointer-events: none;
 }
 .surface-city-3 { fill: #ffe9a0; }
@@ -1628,17 +1620,17 @@ label.color input[type="color"]::-webkit-color-swatch {
    readable over any terrain colour. */
 .surface-label {
   font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-  font-size: 7.5px;
+  font-size: 8.5px;
   font-weight: 600;
   letter-spacing: 0.3px;
   fill: #ffffff;
   stroke: rgba(0, 0, 0, 0.9);
-  stroke-width: 2.2;
+  stroke-width: 2.8;
   paint-order: stroke fill;
   pointer-events: none;
 }
-.surface-label-tier-3 { font-size: 8.5px; font-weight: 700; }
-.surface-label-tier-2 { font-size: 7.5px; }
+.surface-label-tier-3 { font-size: 10px; font-weight: 700; }
+.surface-label-tier-2 { font-size: 8.5px; }
 
 .sys-empty { color: var(--text-dim); font-style: italic; }
 
@@ -1865,6 +1857,8 @@ label.color input[type="color"]::-webkit-color-swatch {
   }
   .view-mode-segment { padding: 0 10px; font-size: var(--type-sm); }
   .subsector-overlay { padding: var(--space-6); }
+  .surface-map { width: 100%; }
+  .surface-map svg { max-height: calc(100vh - 96px); }
 }
 
 /* View transition ----------------------------------------------------*/

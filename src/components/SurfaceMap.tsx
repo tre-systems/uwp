@@ -133,18 +133,22 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
             aria-hidden="true"
           />
         )}
-        {/* Hex sub-cells. Each is a small flat-top hex centred on the
-            sub-triangle centroid; size matches the sub-triangle so
-            adjacent hexes interlock cleanly within a face. */}
-        {surface && surface.hexes.map((h, i) => (
-          <SubHex
-            key={i}
-            hex={h}
-            cellSize={surface.cellSize}
-            selected={!!sel && coordOfHex(h) === coordOfSel(sel)}
-          />
-        ))}
-        {/* Fold lines: heavy strokes along every triangle edge. */}
+        {/* Surface cells act as an interactive atlas grid over the rendered
+            pre-bake. Keep them visually quiet; the background carries the
+            photoreal terrain, the cells provide legacy 2d6-style picking. */}
+        {surface && (
+          <g class="surface-grid-layer">
+            {surface.hexes.map((h, i) => (
+              <SubHex
+                key={i}
+                hex={h}
+                cellSize={surface.cellSize}
+                selected={!!sel && coordOfHex(h) === coordOfSel(sel)}
+              />
+            ))}
+          </g>
+        )}
+        {/* Fold lines should explain the icosahedral net, not dominate it. */}
         <FoldLines />
         {/* Settlement / starport markers + labels, projected through
             the icosahedron from their original lat/lon. */}
@@ -166,10 +170,9 @@ interface SubHexProps {
 }
 
 function SubHex({ hex, cellSize, selected }: SubHexProps) {
-  // Hex radius set so the cell footprint covers roughly a sub-triangle.
-  // The 0.62 factor was eyeballed to make adjacent hexes touch without
-  // big overlaps on the up/down-pointing alternation.
-  const r = cellSize * 0.62
+  // Keep the atlas cells inside their source triangles. The older, larger
+  // radius made the face edges look ragged and covered the rendered terrain.
+  const r = cellSize * 0.48
   const terrainClass = hex.terrain.toLowerCase()
   const label = `${hex.terrain} · ${hex.latDeg.toFixed(1)}°`
   const coord: SurfaceHexCoord = {
@@ -192,11 +195,6 @@ function SubHex({ hex, cellSize, selected }: SubHexProps) {
       }}
     >
       <path d={hexPath(hex.x, hex.y, r)} class="surface-hex-shape" fill={terrainFill(hex.terrain)} />
-      {terrainGlyph(hex.terrain) && (
-        <text x={hex.x} y={hex.y + 3} class="surface-glyph" text-anchor="middle" aria-hidden="true">
-          {terrainGlyph(hex.terrain)}
-        </text>
-      )}
     </g>
   )
 }
@@ -291,21 +289,7 @@ const TERRAIN_FILL: Record<Terrain, string> = {
   Volcanic: '#7a382e',
 }
 
-const TERRAIN_GLYPH: Record<Terrain, string> = {
-  Ocean: '',
-  Shoreline: '',
-  Plain: '',
-  Forest: '♣',
-  Hill: '⌒',
-  Mountain: '▲',
-  Desert: '∴',
-  Tundra: '·',
-  Ice: '❄',
-  Volcanic: '⛰',
-}
-
 function terrainFill(t: Terrain): string { return TERRAIN_FILL[t] }
-function terrainGlyph(t: Terrain): string { return TERRAIN_GLYPH[t] }
 
 function settlementRadius(tier: number): number {
   switch (tier) {
