@@ -58,6 +58,8 @@ Done when:
 
 ### 2. Build A Chapter 12 Rules Coverage Matrix
 
+Status: complete. The matrix lives in `docs/CEPHEUS_CHAPTER_12.md`.
+
 Create a testable matrix for every Chapter 12 rule the app supports or has not
 yet implemented:
 
@@ -254,14 +256,13 @@ Done when:
 
 ## Current Best Next Chunk
 
-After the current review fixes are committed, the best next implementation chunk
-is:
+After the Chapter 12 matrix, the best next implementation chunk is:
 
-1. Create the Chapter 12 rules coverage matrix.
-2. Add tests for any Chapter 12 rules already implemented but not explicitly
-   covered.
+1. Harden UWP projection from continuous models.
+2. Replace binary PBG placeholders with real population multiplier, belt count,
+   and gas-giant count.
 3. Start the two-subsector strip data model and rendering spike behind existing
-   map boundaries.
+   map boundaries once the projection/PBG contract is firmer.
 
 This keeps the product goal visible while preparing the codebase for the larger
 map and online-play work.
