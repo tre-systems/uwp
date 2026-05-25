@@ -31,9 +31,15 @@
 <body>
   <div id="app"></div>
   <noscript>
-    <p style="color:#d8dde7;font-family:system-ui,sans-serif;padding:24px;max-width:540px;margin:0 auto;">
-      UWP needs JavaScript and WebGPU to render planets. Please enable both and reload.
-    </p>
+    <!-- styles.css is loaded by main.tsx, so when JS is disabled the
+         app's dark theme never paints. Inline a self-contained dark
+         background + readable text so the message isn't invisible
+         near-white-on-white. -->
+    <div style="position:fixed;inset:0;background:#05070d;color:#d8dde7;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;">
+      <p style="max-width:540px;margin:0;line-height:1.5;">
+        UWP needs JavaScript and WebGPU to render planets. Please enable both and reload.
+      </p>
+    </div>
   </noscript>
   <script type="module" src="/src/main.tsx"></script>
 </body>
