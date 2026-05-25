@@ -80,7 +80,7 @@ export function Canvas() {
       ref={ref}
       class="planet-canvas"
       role="img"
-      aria-label="Interactive 3D rendering of the generated planet or solar system. Drag to orbit, scroll to zoom."
+      aria-label="Interactive 3D rendering of the generated planet or solar system. Drag to orbit, pinch or scroll to zoom."
       tabIndex={0}
     />
   )

@@ -124,7 +124,13 @@ impl Renderer {
             &depth_view,
         );
 
-        let camera = Camera::new(width as f32 / height as f32);
+        let mut camera = Camera::new(width as f32 / height as f32);
+        camera.distance = detail_scene::camera_fit_distance(
+            camera.distance,
+            PlanetParams::default().planet_radius,
+            camera.aspect,
+            camera.fov_y,
+        );
 
         // Seed the system with a default G-class+ system (seed 1337) so the
         // System view has something to display before the JS layer hands us a
@@ -189,6 +195,8 @@ impl Renderer {
                 self.camera.distance = detail_scene::camera_fit_distance(
                     self.camera.distance,
                     self.params.planet_radius,
+                    self.camera.aspect,
+                    self.camera.fov_y,
                 );
             }
             ViewMode::System => {
@@ -274,6 +282,14 @@ impl Renderer {
             &self.depth_view,
         );
         self.camera.aspect = width as f32 / height as f32;
+        if self.view_mode == ViewMode::Detail {
+            self.camera.distance = detail_scene::camera_fit_distance(
+                self.camera.distance,
+                self.params.planet_radius,
+                self.camera.aspect,
+                self.camera.fov_y,
+            );
+        }
         self.detail_uniforms_dirty = true;
     }
 

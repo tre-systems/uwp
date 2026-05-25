@@ -59,6 +59,8 @@ export class RendererClient {
   private readonly resizeObserver: ResizeObserver
   private debugHandle: Window['uwp'] | null = null
   private lastPointer = { x: 0, y: 0 }
+  private readonly activePointers = new Map<number, { x: number; y: number }>()
+  private pinchDistance: number | null = null
   // Simulation clock the renderer reads from. Advances every frame
   // either at 1x (detail mode) or systemTimeSpeed (system mode), so
   // a paused system view freezes planet positions while picking and
@@ -380,12 +382,43 @@ export class RendererClient {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    this.dragging = true
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     this.lastPointer = { x: event.clientX, y: event.clientY }
-    this.canvas.setPointerCapture(event.pointerId)
+    try {
+      this.canvas.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic mobile tests and a few touch browsers can report pointer
+      // events after capture eligibility has already passed. Interaction
+      // still works because we track active pointers ourselves.
+    }
+    if (this.activePointers.size === 2) {
+      const [a, b] = [...this.activePointers.values()]
+      this.pinchDistance = Math.hypot(a.x - b.x, a.y - b.y)
+      this.dragging = false
+    } else {
+      this.dragging = true
+    }
   }
 
   private readonly onPointerMove = (event: PointerEvent) => {
+    if (!this.activePointers.has(event.pointerId)) return
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    if (this.activePointers.size >= 2 && this.pinchDistance != null) {
+      const [a, b] = [...this.activePointers.values()]
+      const nextDistance = Math.hypot(a.x - b.x, a.y - b.y)
+      if (nextDistance > 0) {
+        const ratio = nextDistance / Math.max(this.pinchDistance, 1)
+        this.pinchDistance = nextDistance
+        // `Planet.zoom` consumes wheel-like deltas: negative zooms in,
+        // positive zooms out. Convert a two-finger distance ratio into
+        // the same multiplicative camera-distance factor.
+        const wheelDelta = ((1 / ratio) - 1) / 0.0015
+        this.planet?.zoom(wheelDelta)
+      }
+      return
+    }
+
     if (!this.dragging) return
     const dx = event.clientX - this.lastPointer.x
     const dy = event.clientY - this.lastPointer.y
@@ -394,8 +427,16 @@ export class RendererClient {
   }
 
   private readonly endDrag = (event: PointerEvent) => {
-    this.dragging = false
-    if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId)
+    this.activePointers.delete(event.pointerId)
+    if (this.activePointers.size < 2) this.pinchDistance = null
+    this.dragging = this.activePointers.size === 1
+    const remaining = [...this.activePointers.values()][0]
+    if (remaining) this.lastPointer = remaining
+    try {
+      if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId)
+    } catch {
+      // See setPointerCapture guard above.
+    }
   }
 
   private readonly onWheel = (event: WheelEvent) => {

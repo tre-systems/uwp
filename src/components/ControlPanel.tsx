@@ -113,7 +113,7 @@ export function ControlPanel() {
         {(mode === 'detail' || mode === 'system') && <ExportPanel disabled={controlsDisabled} />}
 
         <footer class="panel-footer">
-          <span>Drag to orbit · scroll to zoom</span>
+          <span>Drag to orbit · pinch or scroll to zoom</span>
           <button
             class="link"
             onClick={() => setAboutOpen(true)}

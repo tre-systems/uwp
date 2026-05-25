@@ -71,13 +71,22 @@ pub fn create_mesh_buffers(device: &wgpu::Device, quality: f32) -> DetailMesh {
     }
 }
 
-pub fn camera_fit_distance(current_distance: f32, planet_radius: f32) -> f32 {
-    let distance = current_distance.clamp((planet_radius * 1.4).max(0.25), planet_radius * 60.0);
-    if distance > 6.0 {
-        3.0
-    } else {
-        distance
-    }
+pub fn camera_fit_distance(
+    current_distance: f32,
+    planet_radius: f32,
+    aspect: f32,
+    fov_y: f32,
+) -> f32 {
+    let radius = planet_radius.max(0.05);
+    let vertical_fov = fov_y.max(0.1);
+    let horizontal_fov = 2.0 * ((vertical_fov * 0.5).tan() * aspect.max(0.1)).atan();
+    let limiting_fov = vertical_fov.min(horizontal_fov).max(0.1);
+    // Keep a small composition margin so the atmosphere, limb glow, and
+    // first user drag don't crop the planet on narrow phone viewports.
+    let fit_distance = radius / (limiting_fov * 0.5).sin() * 1.10;
+    let min_dist = (radius * 1.4).max(0.25);
+    let max_dist = (radius * 60.0).max(60.0);
+    current_distance.max(fit_distance).clamp(min_dist, max_dist)
 }
 
 /// Recompute the full uniform struct. Use this when params, camera, or
@@ -146,6 +155,20 @@ pub fn uniforms_for(
             params.vegetation_richness,
             params.atm_banding,
         ],
+    }
+}
+
+#[cfg(test)]
+mod camera_tests {
+    use super::camera_fit_distance;
+
+    #[test]
+    fn portrait_viewports_fit_the_planet_horizontally() {
+        let desktop = camera_fit_distance(3.0, 1.0, 16.0 / 9.0, 35f32.to_radians());
+        let phone = camera_fit_distance(3.0, 1.0, 390.0 / 844.0, 35f32.to_radians());
+
+        assert!(desktop > 3.0);
+        assert!(phone > desktop * 2.0);
     }
 }
 

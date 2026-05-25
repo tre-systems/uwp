@@ -98,6 +98,10 @@
 
   /* Backdrop filter — extracted so the panel and toggle share one definition */
   --backdrop-blur: blur(18px) saturate(140%);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 
   /* Legacy aliases — kept so components migrate one at a time, not in bulk */
   --bg:           var(--color-bg);
@@ -137,6 +141,7 @@ html, body, #app {
   padding: 0;
   width: 100%;
   height: 100%;
+  min-height: 100dvh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -150,7 +155,8 @@ html, body, #app {
 .app {
   position: relative;
   width: 100%;
-  height: 100%;
+  height: 100dvh;
+  min-height: 100%;
 }
 
 .planet-canvas {
@@ -166,10 +172,10 @@ html, body, #app {
 
 .panel {
   position: fixed;
-  top: 68px;
-  right: 16px;
+  top: calc(var(--safe-top) + 68px);
+  right: calc(var(--safe-right) + 16px);
   width: 308px;
-  max-height: calc(100vh - 84px);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 84px);
   overflow-y: auto;
   padding: 18px 18px 14px;
   background: var(--panel);
@@ -195,8 +201,8 @@ html, body, #app {
 
 .panel-toggle {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  top: calc(var(--safe-top) + 16px);
+  right: calc(var(--safe-right) + 16px);
   width: 40px;
   height: 40px;
   border-radius: 10px;
@@ -225,8 +231,8 @@ html, body, #app {
 
 .view-toggle {
   position: fixed;
-  top: 16px;
-  right: 68px;
+  top: calc(var(--safe-top) + 16px);
+  right: calc(var(--safe-right) + 68px);
   height: 40px;
   padding: 0 14px;
   border-radius: 10px;
@@ -1344,7 +1350,7 @@ label.color input[type="color"]::-webkit-color-swatch {
      keeps the hex grid + jump-route greens as the only chromatic
      content on the page. */
   background: #000000;
-  padding: 72px var(--space-7) var(--space-7);
+  padding: calc(var(--safe-top) + 72px) calc(var(--safe-right) + var(--space-7)) calc(var(--safe-bottom) + var(--space-7)) calc(var(--safe-left) + var(--space-7));
   z-index: 5;
   overflow: auto;
 }
@@ -1519,13 +1525,13 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 /* Surface map ------------------------------------------------------*/
 .surface-map {
-  width: min(100%, calc((100vh - 140px) * 2.117));
+  width: min(100%, calc((100dvh - var(--safe-top) - var(--safe-bottom) - 140px) * 2.117));
   max-width: 1120px;
   color: var(--color-text);
 }
 .surface-map svg {
   width: 100%;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 140px);
   height: auto;
   display: block;
   filter: drop-shadow(0 24px 50px rgba(0, 0, 0, 0.55));
@@ -1752,12 +1758,12 @@ label.color input[type="color"]::-webkit-color-swatch {
 /* Breadcrumb -------------------------------------------------------*/
 .breadcrumb {
   position: fixed;
-  top: 20px;
-  left: 16px;
+  top: calc(var(--safe-top) + 20px);
+  left: calc(var(--safe-left) + 16px);
   /* Cap width so a long sector + hex + system + world chain doesn't run
      under the view-mode toggle on the right. The intrinsic content is
      truncated by the crumb's own ellipsis rather than visually clipped. */
-  max-width: calc(100vw - 460px);
+  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 460px);
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
@@ -1806,18 +1812,19 @@ label.color input[type="color"]::-webkit-color-swatch {
 @media (max-width: 640px) {
   .breadcrumb {
     font-size: var(--type-sm);
-    top: 64px;
-    left: 8px;
+    top: calc(var(--safe-top) + 62px);
+    left: calc(var(--safe-left) + 8px);
+    right: calc(var(--safe-right) + 8px);
     padding: 4px 10px;
-    max-width: calc(100vw - 16px);
+    max-width: none;
   }
 }
 
 /* View mode toggle -------------------------------------------------*/
 .view-mode-toggle {
   position: fixed;
-  top: 16px;
-  right: 68px;
+  top: calc(var(--safe-top) + 16px);
+  right: calc(var(--safe-right) + 68px);
   display: inline-flex;
   height: 40px;
   border-radius: 10px;
@@ -1855,14 +1862,22 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 @media (max-width: 640px) {
   .view-mode-toggle {
-    top: 12px;
-    right: 64px;
+    top: calc(var(--safe-top) + 10px);
+    right: calc(var(--safe-right) + 60px);
+    left: calc(var(--safe-left) + 8px);
     height: 44px;
   }
-  .view-mode-segment { padding: 0 10px; font-size: var(--type-sm); }
-  .subsector-overlay { padding: var(--space-6); }
+  .view-mode-segment {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: var(--type-sm);
+  }
+  .subsector-overlay {
+    padding: calc(var(--safe-top) + 112px) calc(var(--safe-right) + var(--space-6)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
+  }
   .surface-map { width: 100%; }
-  .surface-map svg { max-height: calc(100vh - 96px); }
+  .surface-map svg { max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 120px); }
 }
 
 /* View transition ----------------------------------------------------*/
@@ -2012,28 +2027,28 @@ label.color input[type="color"]::-webkit-color-swatch {
 @media (max-width: 640px) {
   .panel {
     width: calc(100% - 16px);
-    right: 8px;
-    top: 64px;
-    max-height: calc(100vh - 80px);
+    right: calc(var(--safe-right) + 8px);
+    top: calc(var(--safe-top) + 64px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 80px);
     border-radius: 12px;
   }
   .panel-closed { transform: translateY(calc(-100% - 80px)); }
   .panel-toggle {
-    top: 12px;
-    right: 12px;
+    top: calc(var(--safe-top) + 10px);
+    right: calc(var(--safe-right) + 8px);
     width: 44px;
     height: 44px;
   }
   .view-toggle {
-    top: 12px;
-    right: 64px;
+    top: calc(var(--safe-top) + 10px);
+    right: calc(var(--safe-right) + 60px);
     height: 44px;
     padding: 0 12px;
     font-size: var(--type-body);
   }
   .glossary-modal {
     width: 100%;
-    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
     border-radius: var(--radius-xl);
   }
   .glossary-backdrop { padding: var(--space-4); }
