@@ -21,7 +21,9 @@ import { useState } from 'preact/hooks'
 import {
   allegianceForCode,
   hexLabel,
+  pbgCode,
   isRouteVisible,
+  populationLabel,
   politySummaries,
   routeNeighbor,
   routesForHex,
@@ -248,6 +250,15 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
         <div class="sys-meta-row">
           <dt>Bases</dt>
           <dd>{baseList.length > 0 ? baseList.join(', ') : '—'}</dd>
+        </div>
+        <div class="sys-meta-row">
+          <dt>PBG</dt>
+          <dd>
+            {pbgCode(hex.pbg)}
+            <span class="sys-unit">
+              {populationLabel(hex.population)} people · {hex.pbg.belts} belts · {hex.pbg.gas_giants} gas giants
+            </span>
+          </dd>
         </div>
         <div class="sys-meta-row">
           <dt>Overrides</dt>

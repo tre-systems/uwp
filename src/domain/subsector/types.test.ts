@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   allegianceCounts,
   applySubsectorOverrides,
+  pbgCode,
   polityBorders,
   politySummaries,
+  populationLabel,
   routeOverrideKey,
   subsectorOverrideKey,
   visibleRoutes,
@@ -104,6 +106,21 @@ describe('polityBorders', () => {
       ['NaVa', 1, 2, { col: 1, row: 2 }],
       ['ImDi', 1, 1, { col: 1, row: 1 }],
     ])
+  })
+})
+
+describe('Chapter 12 survey helpers', () => {
+  it('formats PBG with single decimal slots and clamps out-of-range counts', () => {
+    expect(pbgCode({ population_multiplier: 6, belts: 2, gas_giants: 4 })).toBe('624')
+    expect(pbgCode({ population_multiplier: 12, belts: -1, gas_giants: 99 })).toBe('909')
+  })
+
+  it('formats generated populations compactly for the selected-hex inspector', () => {
+    expect(populationLabel(0)).toBe('0')
+    expect(populationLabel(725)).toBe('725')
+    expect(populationLabel(7_250)).toBe('7.3K')
+    expect(populationLabel(7_250_000)).toBe('7.3M')
+    expect(populationLabel(7_250_000_000)).toBe('7.3B')
   })
 })
 

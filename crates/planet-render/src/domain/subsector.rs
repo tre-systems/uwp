@@ -33,8 +33,8 @@ use super::system::{self, BodyType, SolarSystem};
 pub const SUBSECTOR_COLS: u8 = 16;
 pub const SUBSECTOR_ROWS: u8 = 10;
 pub const CLASSIC_SUBSECTOR_COLS: u8 = 8;
-const COMMUNICATION_ROUTE_THRESHOLD: i32 = 6;
-const TRADE_PROMOTES_COMMUNICATION_THRESHOLD: u8 = 7;
+const COMMUNICATION_ROUTE_THRESHOLD: i32 = 8;
+const TRADE_PROMOTES_COMMUNICATION_THRESHOLD: u8 = 8;
 const JUMP_2_COMMUNICATION_DM: i32 = -2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -464,8 +464,8 @@ fn is_communication_route(
 ) -> bool {
     // Chapter 12 says communications routes should connect only some
     // worlds so backwaters remain. This keeps high-service ports, bases,
-    // and populous worlds connected while leaving many C-port neighbours
-    // off the official courier net.
+    // populous worlds, and strong trade links connected while leaving many
+    // ordinary C-port neighbours off the official courier net.
     if matches!(a.travel_zone, TravelZone::Red) || matches!(b.travel_zone, TravelZone::Red) {
         return false;
     }
@@ -1286,6 +1286,9 @@ mod tests {
             1,
             1,
             Uwp {
+                starport: 'A',
+                atm: 3,
+                hydro: 2,
                 pop: 7,
                 ..default_route_uwp()
             },
@@ -1294,6 +1297,9 @@ mod tests {
             1,
             2,
             Uwp {
+                starport: 'C',
+                atm: 3,
+                hydro: 2,
                 pop: 7,
                 ..default_route_uwp()
             },
@@ -1302,6 +1308,9 @@ mod tests {
             1,
             3,
             Uwp {
+                starport: 'C',
+                atm: 3,
+                hydro: 2,
                 pop: 7,
                 ..default_route_uwp()
             },
@@ -1411,7 +1420,7 @@ mod tests {
             1,
             1,
             Uwp {
-                starport: 'B',
+                starport: 'A',
                 tech: 12,
                 ..default_route_uwp()
             },
@@ -1457,6 +1466,46 @@ mod tests {
         let routes = compute_jump_routes(&[industrial_hub, rich_backwater]);
 
         assert_eq!(routes[0].trade_score, 9);
+    }
+
+    #[test]
+    fn default_route_density_stays_playable_for_two_subsector_maps() {
+        let mut raw_routes = 0usize;
+        let mut communication_routes = 0usize;
+        let mut trade_routes = 0usize;
+        const SAMPLE_SEEDS: usize = 32;
+
+        for seed in 1..=SAMPLE_SEEDS as u32 {
+            let sub = generate(seed, 0.5);
+            raw_routes += sub.jump_routes.len();
+            communication_routes += sub
+                .jump_routes
+                .iter()
+                .filter(|route| route.communication)
+                .count();
+            trade_routes += sub.jump_routes.iter().filter(|route| route.trade).count();
+        }
+
+        let average_raw = raw_routes as f32 / SAMPLE_SEEDS as f32;
+        let average_communication = communication_routes as f32 / SAMPLE_SEEDS as f32;
+        let average_trade = trade_routes as f32 / SAMPLE_SEEDS as f32;
+
+        assert!(
+            (7.0..=16.0).contains(&average_raw),
+            "average raw jump routes should stay map-readable, got {average_raw}"
+        );
+        assert!(
+            (5.0..=11.0).contains(&average_communication),
+            "average communication routes should remain selective, got {average_communication}"
+        );
+        assert!(
+            (3.0..=8.0).contains(&average_trade),
+            "average trade routes should remain visible but not dominant, got {average_trade}"
+        );
+        assert!(
+            average_communication < average_raw,
+            "communication routes should be a subset of raw jump connectivity"
+        );
     }
 
     #[test]

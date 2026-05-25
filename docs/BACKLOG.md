@@ -137,25 +137,30 @@ Done when:
 
 Fill in the remaining referee-facing map data so the map is useful at the table.
 
-Status: in progress. Route semantics v1 is implemented: Rust keeps the
+Status: in progress. Route semantics v2 is implemented: Rust keeps the
 navigation `jump_routes` graph and annotates each edge with selective
-communication-route and trade-route metadata plus a trade score. Polity
+communication-route and trade-route metadata plus a trade score. The courier
+net now uses a stricter threshold than raw jump connectivity, with a generated
+route-density regression test so future tuning remains map-readable instead of
+drifting by feel. Polity
 semantics v2 is implemented: Rust generates two regional polities plus a neutral
 border band as a full 16 x 10 `polity_cells` territory layer, snaps capitals to
 occupied controlled worlds when possible, and copies occupied-world allegiance
 from that layer. The SVG now lightly tints empty territory, draws continuous
 borders across empty hexes, and marks polity capitals; the selected-hex
 inspector and text export show occupied-world counts beside claimed territory
-counts. Referee override hooks v1 are implemented for selected-hex travel zone,
+counts. The selected-hex inspector now also shows the Chapter 12 PBG triple plus
+the generated actual-population estimate behind it. Referee override hooks v1
+are implemented for selected-hex travel zone,
 allegiance, bases, route visibility, and route communication/trade metadata;
 overrides are stored as local deltas keyed by subsector seed plus generated
 hex/route endpoint seeds, then applied as a TypeScript overlay so generated Rust
 data remains resettable. Route-policy thresholds now have focused Rust tests for
 red-zone blocking, jump-2 communication penalties, trade-promoted courier links,
-and trade-score clamping.
+trade-score clamping, and average route-density bands.
 
-- Tune communication routes separately from trade routes after more map-density
-  examples are reviewed.
+- Continue tuning communication routes separately from trade routes after more
+  table-map examples are reviewed in play.
 - Surface any remaining Chapter 12 data in exports and inspector panels without
   cluttering the main map.
 

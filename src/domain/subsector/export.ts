@@ -2,6 +2,7 @@ import { deriveTradeCodes } from '../cepheus'
 import { systemName } from '../names'
 import {
   hexLabel,
+  pbgCode,
   politySummaries,
   subsectorHexCount,
   uwpToCode,
@@ -57,7 +58,7 @@ function zoneField(h: SubsectorHex): string {
 }
 
 function pbgField(h: SubsectorHex): string {
-  return `${pbgDigit(h.pbg.population_multiplier)}${pbgDigit(h.pbg.belts)}${pbgDigit(h.pbg.gas_giants)}`
+  return pbgCode(h.pbg)
 }
 
 function nameOrFallback(h: SubsectorHex): string {
@@ -68,10 +69,6 @@ function nameOrFallback(h: SubsectorHex): string {
 function padRight(s: string, w: number): string {
   if (s.length >= w) return s.slice(0, Math.max(1, w - 1)) + ' '
   return s + ' '.repeat(w - s.length)
-}
-
-function pbgDigit(value: number): string {
-  return String(Math.max(0, Math.min(9, Math.trunc(value))))
 }
 
 function headerLine(): string {

@@ -154,6 +154,18 @@ export function visibleRoutes(subsector: Pick<Subsector, 'jump_routes'>): JumpRo
   return subsector.jump_routes.filter(isRouteVisible)
 }
 
+export function pbgCode(pbg: Pbg): string {
+  return `${pbgDigit(pbg.population_multiplier)}${pbgDigit(pbg.belts)}${pbgDigit(pbg.gas_giants)}`
+}
+
+export function populationLabel(population: number): string {
+  if (!Number.isFinite(population) || population <= 0) return '0'
+  if (population >= 1_000_000_000) return `${trimNumber(population / 1_000_000_000)}B`
+  if (population >= 1_000_000) return `${trimNumber(population / 1_000_000)}M`
+  if (population >= 1_000) return `${trimNumber(population / 1_000)}K`
+  return String(Math.round(population))
+}
+
 export function routeDisplayKind(route: Pick<JumpRoute, 'communication' | 'trade'>): 'trade' | 'communication' | 'local' {
   if (route.trade) return 'trade'
   if (route.communication) return 'communication'
@@ -345,6 +357,14 @@ function dominantAllegiance(hexes: SubsectorHex[], fallback: string): string {
 
 function sameHex(a: HexCoord, b: HexCoord): boolean {
   return a.col === b.col && a.row === b.row
+}
+
+function pbgDigit(value: number): string {
+  return String(Math.max(0, Math.min(9, Math.trunc(value))))
+}
+
+function trimNumber(value: number): string {
+  return value >= 10 ? value.toFixed(0) : value.toFixed(1).replace(/\.0$/, '')
 }
 
 function hexDistance(a: HexCoord, b: HexCoord): number {
