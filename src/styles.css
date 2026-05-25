@@ -1929,7 +1929,9 @@ label.color input[type="color"]::-webkit-color-swatch {
 .onboarding-hint {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  /* iOS home-indicator area is ~34px; respect the safe inset so the
+     pill doesn't sit under the gesture bar on iPhones. */
+  bottom: calc(var(--safe-bottom) + 24px);
   transform: translateX(-50%);
   display: flex;
   gap: var(--space-6);
