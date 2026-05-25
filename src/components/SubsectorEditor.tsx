@@ -12,6 +12,8 @@ import {
 import { SeedField } from './SeedField'
 import { useState } from 'preact/hooks'
 import {
+  allegianceCounts,
+  allegianceForCode,
   hexLabel,
   routeNeighbor,
   routesForHex,
@@ -38,6 +40,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const routesCount = sub?.jump_routes.length ?? 0
   const commRoutesCount = sub?.jump_routes.filter((route) => route.communication).length ?? 0
   const tradeRoutesCount = sub?.jump_routes.filter((route) => route.trade).length ?? 0
+  const polityCounts = sub ? allegianceCounts(sub) : []
   const total = sub ? subsectorHexCount(sub) : 16 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
@@ -49,8 +52,20 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
         <h2>{sub ? `${systemName(seed)} Sector` : 'Subsector'}</h2>
         <dl class="sys-meta">
           <div class="sys-meta-row">
-            <dt>Allegiance</dt>
-            <dd>{sub?.allegiance ?? '—'}</dd>
+            <dt>Polities</dt>
+            <dd>
+              {polityCounts.length > 0
+                ? polityCounts.map(({ code, count, allegiance }) => (
+                  <span
+                    key={code}
+                    class={`polity-chip polity-chip-${Math.max(0, Math.min(5, Math.trunc(allegiance?.color_index ?? 2)))}`}
+                    title={allegiance?.name ?? code}
+                  >
+                    {code} {count}
+                  </span>
+                ))
+                : '—'}
+            </dd>
           </div>
           <div class="sys-meta-row">
             <dt>Occupied</dt>
@@ -162,6 +177,7 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
   if (hex.bases.research) baseList.push('Research')
   if (hex.bases.Aid) baseList.push('Aid')
   const name = systemName(hex.system_seed)
+  const allegiance = allegianceForCode(subsector, hex.allegiance)
   const routes = routesForHex(subsector, hex.coord)
   const commRoutes = routes.filter((route) => route.communication)
   const tradeRoutes = routes.filter((route) => route.trade)
@@ -181,6 +197,18 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
         <div class="sys-meta-row">
           <dt>Travel zone</dt>
           <dd class={`zone-tag zone-tag-${hex.travel_zone.toLowerCase()}`}>{hex.travel_zone}</dd>
+        </div>
+        <div class="sys-meta-row">
+          <dt>Allegiance</dt>
+          <dd>
+            <span
+              class={`polity-chip polity-chip-${Math.max(0, Math.min(5, Math.trunc(allegiance?.color_index ?? 2)))}`}
+              title={allegiance?.name ?? hex.allegiance}
+            >
+              {hex.allegiance}
+            </span>
+            <span class="sys-unit">{allegiance?.name ?? 'Uncatalogued'}</span>
+          </dd>
         </div>
         <div class="sys-meta-row">
           <dt>Bases</dt>

@@ -277,6 +277,9 @@ function fakeSubsector(): Subsector {
     columns: 16,
     rows: 10,
     allegiance: 'Na',
+    allegiances: [
+      { code: 'Na', name: 'Neutral Border', capital: { col: 8, row: 5 }, color_index: 2 },
+    ],
     hexes: [
       {
         coord: { col: 16, row: 10 },
@@ -298,6 +301,7 @@ function fakeSubsector(): Subsector {
           Aid: false,
         },
         travel_zone: 'Green',
+        allegiance: 'Na',
         gas_giant: true,
         belts: false,
         population: 9_000_000_000,

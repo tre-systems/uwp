@@ -5,7 +5,9 @@ import {
   subsectorSeed,
 } from '../appState'
 import {
+  allegianceForCode,
   hexLabel,
+  polityBorders,
   uwpToCode,
   type Bases,
   type HexCoord,
@@ -49,6 +51,18 @@ function hexCenter(col: number, row: number): XY {
   return { x: cx, y: cy }
 }
 
+function hexVertices(cx: number, cy: number, r: number): XY[] {
+  const pts: XY[] = []
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 180) * 60 * i
+    pts.push({
+      x: cx + r * Math.cos(a),
+      y: cy + r * Math.sin(a),
+    })
+  }
+  return pts
+}
+
 function mapWidth(columns: number): number {
   return PAD_X * 2 + (columns - 1) * COL_STEP + HEX_R
 }
@@ -59,14 +73,16 @@ function mapHeight(rows: number): number {
 
 function hexPath(cx: number, cy: number, r: number): string {
   // Flat-top hex: vertices at 0°, 60°, 120°, 180°, 240°, 300°.
-  const pts: string[] = []
-  for (let i = 0; i < 6; i++) {
-    const a = (Math.PI / 180) * 60 * i
-    const px = cx + r * Math.cos(a)
-    const py = cy + r * Math.sin(a)
-    pts.push(`${px.toFixed(2)},${py.toFixed(2)}`)
-  }
+  const pts = hexVertices(cx, cy, r).map((pt) => `${pt.x.toFixed(2)},${pt.y.toFixed(2)}`)
   return `M${pts.join(' L')}Z`
+}
+
+function edgePath(col: number, row: number, edge: number): string {
+  const { x, y } = hexCenter(col, row)
+  const pts = hexVertices(x, y, HEX_R - 0.7)
+  const a = pts[edge]
+  const b = pts[(edge + 1) % pts.length]
+  return `M${a.x.toFixed(2)},${a.y.toFixed(2)} L${b.x.toFixed(2)},${b.y.toFixed(2)}`
 }
 
 interface SubsectorMapProps {
@@ -98,6 +114,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   for (const h of subsector.hexes) {
     hexByCoord.set(`${h.coord.col},${h.coord.row}`, h)
   }
+  const borders = polityBorders(subsector)
   // Pre-compute names that are guaranteed unique across the subsector so
   // the visible map doesn't repeat the same world name on multiple hexes
   // (a quirk of the splitmix32 + small CV inventory).
@@ -148,6 +165,20 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
             })}
           </g>
         )}
+        <g class="polity-borders" aria-hidden="true">
+          {borders.map((border) => (
+            <g key={`${border.coord.col},${border.coord.row},${border.edge},${border.from},${border.to}`}>
+              <path
+                d={edgePath(border.coord.col, border.coord.row, border.edge)}
+                class="polity-border-halo"
+              />
+              <path
+                d={edgePath(border.coord.col, border.coord.row, border.edge)}
+                class="polity-border-line"
+              />
+            </g>
+          ))}
+        </g>
         {seamX != null && (
           <line
             x1={seamX}
@@ -162,6 +193,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
           Array.from({ length: rows }, (_, j) => j + 1).map((row) => {
             const key = `${col},${row}`
             const hex = hexByCoord.get(key) ?? null
+            const allegiance = hex ? allegianceForCode(subsector, hex.allegiance) : null
             const { x, y } = hexCenter(col, row)
             const isSelected = !!sel && sel.col === col && sel.row === row
             return (
@@ -175,6 +207,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
                 selected={isSelected}
                 subsectorSeed={seed}
                 displayName={nameMap.get(key)}
+                allegianceColorIndex={allegiance?.color_index ?? 2}
               />
             )
           }),
@@ -193,9 +226,10 @@ interface HexCellProps {
   selected: boolean
   subsectorSeed: number
   displayName?: string
+  allegianceColorIndex: number
 }
 
-function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName }: HexCellProps) {
+function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, allegianceColorIndex }: HexCellProps) {
   const label = `${col.toString().padStart(2, '0')}${row.toString().padStart(2, '0')}`
   if (!hex) {
     return (
@@ -231,6 +265,10 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName }
       }}
     >
       {/* Grid outline (grey, continuous across the whole subsector). */}
+      <path
+        d={hexPath(cx, cy, HEX_R - 1)}
+        class={`hex-polity-fill polity-fill-${Math.max(0, Math.min(5, Math.trunc(allegianceColorIndex)))}`}
+      />
       <path d={hexPath(cx, cy, HEX_R)} class="hex-shape" />
 
       {/* Travel-zone ring: a slightly inset concentric hex drawn on
@@ -363,5 +401,5 @@ function describe(hex: SubsectorHex): string {
   if (hex.bases.research) flags.push('research base')
   if (hex.bases.Aid) flags.push('Aid')
   const tail = flags.length > 0 ? ' (' + flags.join(', ') + ')' : ''
-  return `Hex ${hexLabel(hex.coord)}: UWP ${uwpToCode(hex.uwp)}${tail}`
+  return `Hex ${hexLabel(hex.coord)}: UWP ${uwpToCode(hex.uwp)}, allegiance ${hex.allegiance}${tail}`
 }

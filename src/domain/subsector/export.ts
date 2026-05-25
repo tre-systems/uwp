@@ -120,7 +120,8 @@ export function subsectorToText(sub: Subsector): string {
   const tradeRoutes = sub.jump_routes.filter((route) => route.trade)
   lines.push(`# Subsector region ${systemName(sub.seed)}  (seed ${sub.seed})`)
   lines.push(`# Dimensions: ${sub.columns} x ${sub.rows}`)
-  lines.push(`# Allegiance: ${sub.allegiance}`)
+  lines.push(`# Dominant allegiance: ${sub.allegiance}`)
+  lines.push(`# Polities: ${sub.allegiances.map((a) => `${a.code}=${a.name}`).join(', ') || '-'}`)
   lines.push(`# Hexes occupied: ${sub.hexes.length} / ${subsectorHexCount(sub)}`)
   lines.push(`# Routes: ${communicationRoutes.length} communications, ${tradeRoutes.length} trade`)
   lines.push('')
@@ -133,7 +134,7 @@ export function subsectorToText(sub: Subsector): string {
     return a.coord.row - b.coord.row
   })
   for (const hex of sorted) {
-    lines.push(hexLine(hex, sub.allegiance))
+    lines.push(hexLine(hex, hex.allegiance || sub.allegiance))
   }
   if (sub.jump_routes.length > 0) {
     lines.push('')

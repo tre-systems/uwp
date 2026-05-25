@@ -124,6 +124,8 @@ pub struct SubsectorHex {
     pub uwp: Uwp,
     pub bases: Bases,
     pub travel_zone: TravelZone,
+    /// Four-character allegiance/polity code for this occupied hex.
+    pub allegiance: String,
     pub gas_giant: bool,
     pub belts: bool,
     /// Actual population estimate used to derive the UWP population
@@ -144,10 +146,21 @@ pub struct Subsector {
     /// classic 8-column subsector.
     pub columns: u8,
     pub rows: u8,
-    /// Single allegiance per subsector for v1.
+    /// Dominant/default allegiance summary for legacy consumers.
     pub allegiance: String,
+    /// Polities present in this local region, including the neutral
+    /// border zone when it appears.
+    pub allegiances: Vec<Allegiance>,
     pub hexes: Vec<SubsectorHex>,
     pub jump_routes: Vec<JumpRoute>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Allegiance {
+    pub code: String,
+    pub name: String,
+    pub capital: HexCoord,
+    pub color_index: u8,
 }
 
 /// A jump-1 or jump-2 connection between two occupied hexes. Edges are
@@ -237,6 +250,9 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         }
     }
 
+    let allegiances = generate_allegiances(seed);
+    assign_hex_allegiances(&mut hexes, &allegiances);
+    let allegiance = dominant_allegiance(&hexes, &allegiances);
     let jump_routes = compute_jump_routes(&hexes);
 
     Subsector {
@@ -244,10 +260,80 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         density,
         columns: SUBSECTOR_COLS,
         rows: SUBSECTOR_ROWS,
-        allegiance: "Independent".to_string(),
+        allegiance,
+        allegiances,
         hexes,
         jump_routes,
     }
+}
+
+fn generate_allegiances(seed: u32) -> Vec<Allegiance> {
+    let names = [
+        ("ImDi", "Imperial Diocese"),
+        ("NaVa", "Navis Verge"),
+        ("CsLe", "Client League"),
+        ("FrSt", "Free Stars"),
+        ("UnCo", "Union Compact"),
+        ("ScZo", "Scout Zone"),
+    ];
+    let a = (hash_hex_seed(seed ^ 0xA11E_0001, 1, 1) as usize) % names.len();
+    let mut b = (hash_hex_seed(seed ^ 0xA11E_0002, 2, 1) as usize) % names.len();
+    if b == a {
+        b = (b + 1) % names.len();
+    }
+    vec![
+        Allegiance {
+            code: names[a].0.to_string(),
+            name: names[a].1.to_string(),
+            capital: HexCoord::new(3 + (seed as u8 % 3), 3 + ((seed >> 8) as u8 % 5)),
+            color_index: 0,
+        },
+        Allegiance {
+            code: names[b].0.to_string(),
+            name: names[b].1.to_string(),
+            capital: HexCoord::new(12 + ((seed >> 16) as u8 % 3), 3 + ((seed >> 24) as u8 % 5)),
+            color_index: 1,
+        },
+        Allegiance {
+            code: "Na".to_string(),
+            name: "Neutral Border".to_string(),
+            capital: HexCoord::new(CLASSIC_SUBSECTOR_COLS, 5),
+            color_index: 2,
+        },
+    ]
+}
+
+fn assign_hex_allegiances(hexes: &mut [SubsectorHex], allegiances: &[Allegiance]) {
+    let [left, right, neutral, ..] = allegiances else {
+        return;
+    };
+    for hex in hexes {
+        let left_distance = hex_distance(hex.coord, left.capital);
+        let right_distance = hex_distance(hex.coord, right.capital);
+        hex.allegiance = if (left_distance - right_distance).abs() <= 1 {
+            neutral.code.clone()
+        } else if left_distance < right_distance {
+            left.code.clone()
+        } else {
+            right.code.clone()
+        };
+    }
+}
+
+fn dominant_allegiance(hexes: &[SubsectorHex], allegiances: &[Allegiance]) -> String {
+    let mut best_code = allegiances.first().map(|a| a.code.as_str()).unwrap_or("Na");
+    let mut best_count = 0usize;
+    for allegiance in allegiances {
+        let count = hexes
+            .iter()
+            .filter(|hex| hex.allegiance == allegiance.code)
+            .count();
+        if count > best_count {
+            best_count = count;
+            best_code = &allegiance.code;
+        }
+    }
+    best_code.to_string()
 }
 
 /// Compute jump-1 and jump-2 connectivity between occupied hexes.
@@ -437,6 +523,7 @@ fn build_hex(
         uwp,
         bases,
         travel_zone,
+        allegiance: "Na".to_string(),
         gas_giant,
         belts,
         population,
@@ -719,6 +806,8 @@ mod tests {
         let b = generate(0xC0FFEE, 0.5);
         assert_eq!(a.columns, b.columns);
         assert_eq!(a.rows, b.rows);
+        assert_eq!(a.allegiance, b.allegiance);
+        assert_eq!(a.allegiances, b.allegiances);
         assert_eq!(a.hexes.len(), b.hexes.len());
         for (ha, hb) in a.hexes.iter().zip(b.hexes.iter()) {
             assert_eq!(ha.coord, hb.coord);
@@ -726,6 +815,7 @@ mod tests {
             assert_eq!(ha.uwp, hb.uwp);
             assert_eq!(ha.bases, hb.bases);
             assert_eq!(ha.travel_zone, hb.travel_zone);
+            assert_eq!(ha.allegiance, hb.allegiance);
             assert_eq!(ha.gas_giant, hb.gas_giant);
             assert_eq!(ha.belts, hb.belts);
             assert_eq!(ha.population, hb.population);
@@ -759,6 +849,21 @@ mod tests {
             assert!(hex.coord.col >= 1 && hex.coord.col <= SUBSECTOR_COLS);
             assert!(hex.coord.row >= 1 && hex.coord.row <= SUBSECTOR_ROWS);
         }
+    }
+
+    #[test]
+    fn allegiances_are_assigned_across_the_two_subsector_strip() {
+        let sub = generate(1, 1.0);
+
+        assert_eq!(sub.allegiances.len(), 3);
+        let codes: Vec<&str> = sub.allegiances.iter().map(|a| a.code.as_str()).collect();
+        assert!(codes.contains(&sub.allegiance.as_str()));
+        for hex in &sub.hexes {
+            assert!(codes.contains(&hex.allegiance.as_str()));
+        }
+        let left = sub.hex_at(HexCoord::new(1, 1)).expect("left hex");
+        let right = sub.hex_at(HexCoord::new(16, 10)).expect("right hex");
+        assert_ne!(left.allegiance, right.allegiance);
     }
 
     #[test]
@@ -1073,6 +1178,7 @@ mod tests {
             uwp,
             bases: Bases::default(),
             travel_zone: TravelZone::Green,
+            allegiance: "Na".to_string(),
             gas_giant: false,
             belts: false,
             population: 6_000_000,

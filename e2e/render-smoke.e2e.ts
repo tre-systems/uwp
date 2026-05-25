@@ -45,6 +45,8 @@ for (const viewport of [
     await expect(page.locator('.subsector-map')).toBeVisible()
     await expect(page.locator('[data-coord="1610"]')).toBeVisible()
     await expect(page.locator('.subsector-seam')).toHaveCount(1)
+    await expect(page.locator('.polity-borders')).toHaveCount(1)
+    await expect.poll(() => page.locator('.polity-border-line').count()).toBeGreaterThan(0)
 
     const rightHandCoord = await page.locator('.hex-occupied').evaluateAll((nodes) => {
       const coords = nodes
@@ -62,7 +64,9 @@ for (const viewport of [
     await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveClass(/hex-selected/)
 
     const panel = await openPanel(page)
+    await expect(panel.locator('dt').filter({ hasText: /^Polities$/ })).toBeVisible()
     await expect(panel.getByText(/links · \d+ comms · \d+ trade/)).toBeVisible()
+    await expect(panel.locator('dt').filter({ hasText: /^Allegiance$/ })).toBeVisible()
     await expect(panel.locator('dt').filter({ hasText: /^Routes$/ })).toBeVisible()
   })
 }

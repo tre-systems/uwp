@@ -9,6 +9,7 @@ function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): S
     uwp: { starport: 'A', size: 7, atm: 8, hydro: 8, pop: 8, gov: 9, law: 9, tech: 12 },
     bases: { naval: true, scout: true, research: false, Aid: false },
     travel_zone: 'Green',
+    allegiance: 'ImDi',
     gas_giant: true,
     belts: false,
     population: 8_000_000,
@@ -37,6 +38,11 @@ function subsector(hexes: SubsectorHex[], jump_routes: JumpRoute[] = []): Subsec
     columns: 16,
     rows: 10,
     allegiance: 'ImDi',
+    allegiances: [
+      { code: 'ImDi', name: 'Imperial Diocese', capital: { col: 4, row: 5 }, color_index: 0 },
+      { code: 'NaVa', name: 'Navis Verge', capital: { col: 13, row: 5 }, color_index: 1 },
+      { code: 'Na', name: 'Neutral Border', capital: { col: 8, row: 5 }, color_index: 2 },
+    ],
     hexes,
     jump_routes,
   }
@@ -46,25 +52,27 @@ describe('subsectorToText', () => {
   it('renders a header, divider, and one row per hex', () => {
     const text = subsectorToText(subsector([hex(3, 6)]))
     const lines = text.trim().split('\n')
-    // 5 banner comments + blank + header + divider + 1 data row
-    expect(lines).toHaveLength(9)
+    // 6 banner comments + blank + header + divider + 1 data row
+    expect(lines).toHaveLength(10)
     expect(lines[1]).toBe('# Dimensions: 16 x 10')
-    expect(lines[3]).toBe('# Hexes occupied: 1 / 160')
-    expect(lines[4]).toBe('# Routes: 0 communications, 0 trade')
-    expect(lines[6]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
-    expect(lines[7]).toMatch(/^-+\s+-+\s+-+/)
+    expect(lines[2]).toBe('# Dominant allegiance: ImDi')
+    expect(lines[3]).toBe('# Polities: ImDi=Imperial Diocese, NaVa=Navis Verge, Na=Neutral Border')
+    expect(lines[4]).toBe('# Hexes occupied: 1 / 160')
+    expect(lines[5]).toBe('# Routes: 0 communications, 0 trade')
+    expect(lines[7]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
+    expect(lines[8]).toMatch(/^-+\s+-+\s+-+/)
     // Hex 0306 with starport A, bases NS, allegiance ImDi
-    expect(lines[8]).toContain('0306')
-    expect(lines[8]).toContain('A788899-C')
-    expect(lines[8]).toContain('NS')
-    expect(lines[8]).toMatch(/ImDi$/)
+    expect(lines[9]).toContain('0306')
+    expect(lines[9]).toContain('A788899-C')
+    expect(lines[9]).toContain('NS')
+    expect(lines[9]).toMatch(/ImDi$/)
   })
 
   it('sorts hexes by col then row', () => {
     const out = subsectorToText(
       subsector([hex(16, 10), hex(1, 9), hex(9, 1)]),
     )
-    const dataLines = out.trim().split('\n').slice(8)
+    const dataLines = out.trim().split('\n').slice(9)
     expect(dataLines[0]).toContain('0109')
     expect(dataLines[1]).toContain('0901')
     expect(dataLines[2]).toContain('1610')
@@ -83,7 +91,7 @@ describe('subsectorToText', () => {
         }),
       ]),
     )
-    const lines = text.trim().split('\n').slice(8)
+    const lines = text.trim().split('\n').slice(9)
     expect(lines[0]).toMatch(/--RT/)  // research + Aid, leading hyphens preserved
     expect(lines[0]).toMatch(/\sR\s/) // red zone column
     expect(lines[1]).toMatch(/\sA\s/) // amber zone column
@@ -101,6 +109,12 @@ describe('subsectorToText', () => {
       ]),
     )
     expect(text).toMatch(/\s734\s/)
+  })
+
+  it('uses each hex allegiance in the world table', () => {
+    const text = subsectorToText(subsector([hex(9, 1, { allegiance: 'NaVa' })]))
+
+    expect(text.trim().split('\n').at(-1)).toMatch(/NaVa$/)
   })
 
   it('adds a route table with communication and trade context', () => {

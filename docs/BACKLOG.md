@@ -136,12 +136,14 @@ Fill in the remaining referee-facing map data so the map is useful at the table.
 
 Status: in progress. Route semantics v1 is implemented: Rust keeps the
 navigation `jump_routes` graph and annotates each edge with selective
-communication-route and trade-route metadata plus a trade score. The map,
-selected-hex inspector, and text export now surface communication/trade route
-context without replacing the current SVG route layer.
+communication-route and trade-route metadata plus a trade score. Polity
+semantics v1 is also implemented: Rust generates two regional polities plus a
+neutral border band, each occupied hex carries an allegiance code, and the map,
+selected-hex inspector, and text export surface route and allegiance context
+without cluttering the current SVG route layer.
 
-- Add or refine communication routes separately from trade routes.
-- Improve allegiance and polity borders beyond a single allegiance label.
+- Tune communication routes separately from trade routes.
+- Refine allegiance and polity borders beyond the generated v1 polities.
 - Add referee override hooks for travel zones, allegiance, bases, and routes.
 - Surface Chapter 12 data in exports and inspector panels without cluttering the
   main map.

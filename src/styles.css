@@ -624,6 +624,24 @@ html, body, #app {
 .route-chip-more {
   color: var(--color-text-dim);
 }
+.polity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: var(--space-2);
+  padding: 1px var(--space-3);
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: var(--radius-sm);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-text-strong);
+  font: 600 var(--type-sm)/1.4 var(--font-mono);
+}
+.polity-chip-0 { border-color: rgba(96, 165, 250, 0.58); background: rgba(96, 165, 250, 0.14); }
+.polity-chip-1 { border-color: rgba(45, 212, 191, 0.54); background: rgba(45, 212, 191, 0.12); }
+.polity-chip-2 { border-color: rgba(226, 232, 240, 0.38); background: rgba(226, 232, 240, 0.08); }
+.polity-chip-3 { border-color: rgba(244, 114, 182, 0.52); background: rgba(244, 114, 182, 0.12); }
+.polity-chip-4 { border-color: rgba(167, 139, 250, 0.52); background: rgba(167, 139, 250, 0.12); }
+.polity-chip-5 { border-color: rgba(251, 146, 60, 0.52); background: rgba(251, 146, 60, 0.12); }
 
 .panel-header {
   display: flex;
@@ -1415,6 +1433,34 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-width: 0.8;
   fill: transparent;
   transition: stroke var(--motion-fast);
+}
+.hex-polity-fill {
+  opacity: 0.22;
+  pointer-events: none;
+}
+.polity-fill-0 { fill: rgba(96, 165, 250, 0.38); }
+.polity-fill-1 { fill: rgba(45, 212, 191, 0.34); }
+.polity-fill-2 { fill: rgba(226, 232, 240, 0.16); }
+.polity-fill-3 { fill: rgba(244, 114, 182, 0.3); }
+.polity-fill-4 { fill: rgba(167, 139, 250, 0.3); }
+.polity-fill-5 { fill: rgba(251, 146, 60, 0.3); }
+.polity-borders {
+  pointer-events: none;
+}
+.polity-border-halo,
+.polity-border-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.polity-border-halo {
+  stroke: rgba(0, 0, 0, 0.82);
+  stroke-width: 4;
+}
+.polity-border-line {
+  stroke: rgba(238, 244, 255, 0.62);
+  stroke-width: 1.35;
 }
 .subsector-seam {
   stroke: rgba(155, 202, 255, 0.32);
