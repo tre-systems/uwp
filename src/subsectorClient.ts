@@ -1,6 +1,8 @@
 import { effect } from '@preact/signals'
 import { generateSubsector } from '../pkg/planet_render'
 import {
+  currentSubsector,
+  selectedHex,
   setSelectedHex,
   setSubsector,
   subsectorDensity,
@@ -21,8 +23,17 @@ import { ensureWasmReady } from './wasm'
 async function refresh(): Promise<void> {
   await ensureWasmReady()
   const sub = generateSubsector(subsectorSeed.value, subsectorDensity.value) as Subsector
+  const selected = selectedHex.value
+  const previousSelected = selected
+    ? currentSubsector.value?.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
+    : null
   setSubsector(sub)
-  setSelectedHex(null)
+  const nextSelected = selected
+    ? sub.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
+    : null
+  if (selected && (!nextSelected || (previousSelected && previousSelected.system_seed !== nextSelected.system_seed))) {
+    setSelectedHex(null)
+  }
 }
 
 let disposer: (() => void) | null = null

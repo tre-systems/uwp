@@ -401,5 +401,5 @@ function describe(hex: SubsectorHex): string {
   if (hex.bases.research) flags.push('research base')
   if (hex.bases.Aid) flags.push('Aid')
   const tail = flags.length > 0 ? ' (' + flags.join(', ') + ')' : ''
-  return `Hex ${hexLabel(hex.coord)}: UWP ${uwpToCode(hex.uwp)}, allegiance ${hex.allegiance}${tail}`
+  return `Hex ${hexLabel(hex.coord)}: UWP ${uwpToCode(hex.uwp)}, ${hex.travel_zone} zone, allegiance ${hex.allegiance}${tail}`
 }

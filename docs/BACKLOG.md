@@ -140,11 +140,14 @@ communication-route and trade-route metadata plus a trade score. Polity
 semantics v1 is also implemented: Rust generates two regional polities plus a
 neutral border band, each occupied hex carries an allegiance code, and the map,
 selected-hex inspector, and text export surface route and allegiance context
-without cluttering the current SVG route layer.
+without cluttering the current SVG route layer. Referee override hooks v1 are
+implemented for selected-hex travel zone, allegiance, and bases; overrides are
+stored as local deltas keyed by subsector seed + hex + generated system seed,
+then applied as a TypeScript overlay so generated Rust data remains resettable.
 
 - Tune communication routes separately from trade routes.
 - Refine allegiance and polity borders beyond the generated v1 polities.
-- Add referee override hooks for travel zones, allegiance, bases, and routes.
+- Add referee override hooks for route metadata and route visibility.
 - Surface Chapter 12 data in exports and inspector panels without cluttering the
   main map.
 
@@ -152,7 +155,8 @@ Done when:
 
 - a referee can inspect every occupied hex and understand its UWP, bases, trade
   codes, zone, PBG, allegiance, and route context,
-- overrides survive regeneration where appropriate,
+- travel zone, base, and allegiance overrides survive regeneration where
+  appropriate,
 - text export includes the same map facts the UI shows.
 
 ### 6. Strengthen survey rules Style System Detail

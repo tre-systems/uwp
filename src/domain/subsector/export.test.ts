@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { subsectorToText } from './export'
-import type { JumpRoute, Subsector, SubsectorHex } from './types'
+import {
+  applySubsectorOverrides,
+  subsectorOverrideKey,
+  type JumpRoute,
+  type Subsector,
+  type SubsectorHex,
+} from './types'
 
 function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): SubsectorHex {
   return {
@@ -115,6 +121,23 @@ describe('subsectorToText', () => {
     const text = subsectorToText(subsector([hex(9, 1, { allegiance: 'NaVa' })]))
 
     expect(text.trim().split('\n').at(-1)).toMatch(/NaVa$/)
+  })
+
+  it('exports referee-overridden zone, bases, and allegiance from effective subsectors', () => {
+    const raw = subsector([hex(9, 1)])
+    const effective = applySubsectorOverrides(raw, {
+      [subsectorOverrideKey(raw.seed, { col: 9, row: 1 })]: {
+        system_seed: raw.hexes[0].system_seed,
+        travel_zone: 'Red',
+        allegiance: 'NaVa',
+        bases: { naval: false, scout: false, research: true, Aid: true },
+      },
+    })
+
+    const row = subsectorToText(effective).trim().split('\n').at(-1) ?? ''
+    expect(row).toContain('--RT')
+    expect(row).toMatch(/\sR\s/)
+    expect(row).toMatch(/NaVa$/)
   })
 
   it('adds a route table with communication and trade context', () => {

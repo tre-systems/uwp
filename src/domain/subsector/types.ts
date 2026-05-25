@@ -47,6 +47,15 @@ export interface SubsectorHex {
   name: string | null
 }
 
+export interface SubsectorHexOverride {
+  system_seed?: number
+  travel_zone?: TravelZone
+  allegiance?: string
+  bases?: Bases
+}
+
+export type SubsectorOverrides = Record<string, SubsectorHexOverride>
+
 export interface Allegiance {
   code: string
   name: string
@@ -99,6 +108,32 @@ export function routeNeighbor(route: JumpRoute, coord: HexCoord): HexCoord {
   return sameHex(route.from, coord) ? route.to : route.from
 }
 
+export function subsectorOverrideKey(seed: number, coord: HexCoord): string {
+  return `${seed >>> 0}:${hexLabel(coord)}`
+}
+
+export function applySubsectorOverrides(subsector: Subsector, overrides: SubsectorOverrides): Subsector {
+  let changed = false
+  const hexes = subsector.hexes.map((hex) => {
+    const override = overrides[subsectorOverrideKey(subsector.seed, hex.coord)]
+    if (!override) return hex
+    if (override.system_seed != null && override.system_seed !== hex.system_seed) return hex
+    changed = true
+    return {
+      ...hex,
+      travel_zone: override.travel_zone ?? hex.travel_zone,
+      allegiance: override.allegiance ?? hex.allegiance,
+      bases: override.bases ? { ...override.bases } : hex.bases,
+    }
+  })
+  if (!changed) return subsector
+  return {
+    ...subsector,
+    allegiance: dominantAllegiance(hexes, subsector.allegiance),
+    hexes,
+  }
+}
+
 export function allegianceForCode(subsector: Subsector, code: string): Allegiance | null {
   return subsector.allegiances.find((allegiance) => allegiance.code === code) ?? null
 }
@@ -142,6 +177,22 @@ function forwardNeighborEdges(coord: HexCoord): Array<{ coord: HexCoord; edge: 0
     { coord: { col: coord.col + 1, row: rightUpRow }, edge: 5 },
     { coord: { col: coord.col + 1, row: rightDownRow }, edge: 0 },
   ]
+}
+
+function dominantAllegiance(hexes: SubsectorHex[], fallback: string): string {
+  const counts = new Map<string, number>()
+  for (const hex of hexes) {
+    counts.set(hex.allegiance, (counts.get(hex.allegiance) ?? 0) + 1)
+  }
+  let best = fallback
+  let bestCount = -1
+  for (const [code, count] of counts) {
+    if (count > bestCount || (count === bestCount && code.localeCompare(best) < 0)) {
+      best = code
+      bestCount = count
+    }
+  }
+  return best
 }
 
 function sameHex(a: HexCoord, b: HexCoord): boolean {

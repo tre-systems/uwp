@@ -1,7 +1,11 @@
 import {
   currentSubsector,
+  clearSubsectorHexOverride,
+  generatedSubsectorHex,
+  getSubsectorHexOverride,
   rerollSubsectorSeed,
   selectedHex,
+  setSubsectorHexOverride,
   setShowJumpRoutes,
   setSubsectorDensity,
   setSubsectorSeed,
@@ -22,6 +26,7 @@ import {
   uwpToCode,
   type Subsector,
   type SubsectorHex,
+  type TravelZone,
 } from '../domain/subsector'
 import { deriveTradeCodes, tradeCodeName } from '../domain/cepheus'
 import { systemName } from '../domain/names'
@@ -178,6 +183,8 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
   if (hex.bases.Aid) baseList.push('Aid')
   const name = systemName(hex.system_seed)
   const allegiance = allegianceForCode(subsector, hex.allegiance)
+  const generatedHex = generatedSubsectorHex(hex.coord)
+  const override = getSubsectorHexOverride(subsector.seed, hex.coord)
   const routes = routesForHex(subsector, hex.coord)
   const commRoutes = routes.filter((route) => route.communication)
   const tradeRoutes = routes.filter((route) => route.trade)
@@ -213,6 +220,10 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
         <div class="sys-meta-row">
           <dt>Bases</dt>
           <dd>{baseList.length > 0 ? baseList.join(', ') : '—'}</dd>
+        </div>
+        <div class="sys-meta-row">
+          <dt>Overrides</dt>
+          <dd>{override ? 'Edited by referee' : 'Generated'}</dd>
         </div>
         <div class="sys-meta-row">
           <dt>Features</dt>
@@ -268,6 +279,98 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
           </span>
         </div>
       )}
+      <RefereeOverrideControls
+        subsector={subsector}
+        hex={hex}
+        generatedHex={generatedHex}
+        hasOverride={!!override}
+      />
     </section>
+  )
+}
+
+function RefereeOverrideControls({
+  subsector,
+  hex,
+  generatedHex,
+  hasOverride,
+}: {
+  subsector: Subsector
+  hex: SubsectorHex
+  generatedHex: SubsectorHex | null
+  hasOverride: boolean
+}) {
+  const updateBase = (field: keyof SubsectorHex['bases'], checked: boolean) => {
+    setSubsectorHexOverride(hex.coord, {
+      bases: {
+        ...hex.bases,
+        [field]: checked,
+      },
+    })
+  }
+  const resetLabel = generatedHex
+    ? `Reset hex overrides to generated ${generatedHex.travel_zone} / ${generatedHex.allegiance}`
+    : 'Reset hex overrides'
+  return (
+    <div class="trade-codes" aria-label="Referee overrides for the selected hex">
+      <span class="trade-codes-label">Referee overrides</span>
+      <div class="trade-codes-list">
+        <label class="toggle-label">
+          <span>Zone</span>
+          <select
+            value={hex.travel_zone}
+            onChange={(e) => setSubsectorHexOverride(hex.coord, {
+              travel_zone: (e.currentTarget as HTMLSelectElement).value as TravelZone,
+            })}
+            aria-label="Override travel zone"
+          >
+            <option value="Green">Green</option>
+            <option value="Amber">Amber</option>
+            <option value="Red">Red</option>
+          </select>
+        </label>
+        <label class="toggle-label">
+          <span>Allegiance</span>
+          <select
+            value={hex.allegiance}
+            onChange={(e) => setSubsectorHexOverride(hex.coord, {
+              allegiance: (e.currentTarget as HTMLSelectElement).value,
+            })}
+            aria-label="Override allegiance"
+          >
+            {subsector.allegiances.map((a) => (
+              <option key={a.code} value={a.code}>{a.code} · {a.name}</option>
+            ))}
+          </select>
+        </label>
+        <fieldset class="route-codes" aria-label="Override bases">
+          <legend class="trade-codes-label">Bases</legend>
+          {([
+            ['naval', 'Naval'],
+            ['scout', 'Scout'],
+            ['research', 'Research'],
+            ['Aid', 'Aid'],
+          ] as const).map(([field, label]) => (
+            <label class="toggle-label" key={field}>
+              <input
+                type="checkbox"
+                checked={hex.bases[field]}
+                onChange={(e) => updateBase(field, (e.currentTarget as HTMLInputElement).checked)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </fieldset>
+        <button
+          type="button"
+          onClick={() => clearSubsectorHexOverride(hex.coord)}
+          disabled={!hasOverride}
+          title={resetLabel}
+          aria-label={resetLabel}
+        >
+          Reset overrides
+        </button>
+      </div>
+    </div>
   )
 }

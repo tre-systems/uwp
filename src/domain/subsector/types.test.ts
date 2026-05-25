@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { polityBorders, type Subsector, type SubsectorHex } from './types'
+import {
+  allegianceCounts,
+  applySubsectorOverrides,
+  polityBorders,
+  subsectorOverrideKey,
+  type Subsector,
+  type SubsectorHex,
+} from './types'
 
 function hex(col: number, row: number, allegiance: string): SubsectorHex {
   return {
@@ -46,5 +53,86 @@ describe('polityBorders', () => {
 
   it('does not outline empty neighbours in v1', () => {
     expect(polityBorders(subsector([hex(1, 1, 'ImDi')]))).toEqual([])
+  })
+})
+
+describe('applySubsectorOverrides', () => {
+  it('applies selected hex map fact overrides without mutating generated data', () => {
+    const original = hex(1, 1, 'ImDi')
+    const sub = subsector([original])
+    const out = applySubsectorOverrides(sub, {
+      [subsectorOverrideKey(sub.seed, original.coord)]: {
+        system_seed: original.system_seed,
+        travel_zone: 'Red',
+        allegiance: 'NaVa',
+        bases: { naval: true, scout: false, research: true, Aid: false },
+      },
+    })
+
+    expect(out).not.toBe(sub)
+    expect(out.hexes[0]).toMatchObject({
+      travel_zone: 'Red',
+      allegiance: 'NaVa',
+      bases: { naval: true, scout: false, research: true, Aid: false },
+    })
+    expect(original).toMatchObject({
+      travel_zone: 'Green',
+      allegiance: 'ImDi',
+      bases: { naval: false, scout: false, research: false, Aid: false },
+    })
+  })
+
+  it('ignores overrides for other seeds or coordinates', () => {
+    const sub = subsector([hex(1, 1, 'ImDi')])
+
+    expect(applySubsectorOverrides(sub, {
+      [subsectorOverrideKey(2, { col: 1, row: 1 })]: { travel_zone: 'Red' },
+      [subsectorOverrideKey(sub.seed, { col: 2, row: 1 })]: { travel_zone: 'Amber' },
+    })).toBe(sub)
+  })
+
+  it('ignores stale overrides when the generated world seed changes', () => {
+    const sub = subsector([hex(1, 1, 'ImDi')])
+
+    expect(applySubsectorOverrides(sub, {
+      [subsectorOverrideKey(sub.seed, { col: 1, row: 1 })]: {
+        system_seed: 999,
+        travel_zone: 'Red',
+      },
+    })).toBe(sub)
+  })
+
+  it('preserves unspecified generated fields for partial overrides', () => {
+    const sub = subsector([hex(1, 1, 'ImDi')])
+    const out = applySubsectorOverrides(sub, {
+      [subsectorOverrideKey(sub.seed, { col: 1, row: 1 })]: {
+        system_seed: sub.hexes[0].system_seed,
+        travel_zone: 'Amber',
+      },
+    })
+
+    expect(out.hexes[0]).toMatchObject({
+      travel_zone: 'Amber',
+      allegiance: 'ImDi',
+      bases: sub.hexes[0].bases,
+    })
+  })
+
+  it('updates derived allegiance counts and borders on the effective subsector', () => {
+    const sub = subsector([hex(1, 1, 'ImDi'), hex(1, 2, 'ImDi')])
+    const out = applySubsectorOverrides(sub, {
+      [subsectorOverrideKey(sub.seed, { col: 1, row: 2 })]: {
+        system_seed: sub.hexes[1].system_seed,
+        allegiance: 'NaVa',
+      },
+    })
+
+    expect(allegianceCounts(out).map(({ code, count }) => [code, count])).toEqual([
+      ['ImDi', 1],
+      ['NaVa', 1],
+    ])
+    expect(polityBorders(out)).toEqual([
+      { coord: { col: 1, row: 1 }, edge: 1, from: 'ImDi', to: 'NaVa' },
+    ])
   })
 })

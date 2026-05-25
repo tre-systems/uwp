@@ -68,6 +68,23 @@ for (const viewport of [
     await expect(panel.getByText(/links · \d+ comms · \d+ trade/)).toBeVisible()
     await expect(panel.locator('dt').filter({ hasText: /^Allegiance$/ })).toBeVisible()
     await expect(panel.locator('dt').filter({ hasText: /^Routes$/ })).toBeVisible()
+
+    await panel.getByLabel('Override travel zone').selectOption('Red')
+    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .zone-ring-red`)).toHaveCount(1)
+    await expect(panel.locator('.zone-tag-red')).toHaveText('Red')
+
+    await panel.getByRole('checkbox', { name: 'Research' }).check()
+    await panel.getByRole('checkbox', { name: 'Aid' }).check()
+    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-research`)).toHaveCount(1)
+    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-Aid`)).toHaveCount(1)
+
+    const allegianceSelect = panel.getByLabel('Override allegiance')
+    const nextAllegiance = await allegianceSelect.evaluate((select) => {
+      const el = select as HTMLSelectElement
+      return [...el.options].find((option) => option.value !== el.value)?.value ?? el.value
+    })
+    await allegianceSelect.selectOption(nextAllegiance)
+    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveAttribute('aria-label', new RegExp(`allegiance ${nextAllegiance}`))
   })
 }
 

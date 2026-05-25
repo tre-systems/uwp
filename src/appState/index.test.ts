@@ -6,7 +6,11 @@ import {
   renderQualityMode,
   registerRendererControls,
   rerollPlanet,
+  clearSubsectorHexOverride,
+  currentSubsector,
   currentSystem,
+  generatedSubsectorHex,
+  getSubsectorHexOverride,
   closeRegionView,
   openRegionView,
   regionHex,
@@ -17,6 +21,8 @@ import {
   selectedSurfaceCell,
   selectedSurfaceHex,
   setSubsector,
+  setSubsectorHexOverride,
+  setSubsectorOverrides,
   setRenderPerformanceSnapshot,
   setRenderQualityMode,
   setParamsSnapshot,
@@ -215,6 +221,64 @@ describe('appState renderer command boundary', () => {
     uwp.value = initialUwp
     systemSeed.value = initialSeed
     viewMode.value = initialView
+  })
+
+  it('applies referee overrides as an effective subsector and can reset to generated facts', () => {
+    const sub = fakeSubsector()
+    setSubsectorOverrides({})
+    setSubsector(sub)
+
+    setSubsectorHexOverride({ col: 16, row: 10 }, {
+      travel_zone: 'Red',
+      allegiance: 'Na',
+      bases: { naval: true, scout: false, research: true, Aid: false },
+    })
+
+    expect(getSubsectorHexOverride(99, { col: 16, row: 10 })).toMatchObject({
+      system_seed: 0x12345678,
+      travel_zone: 'Red',
+    })
+    expect(generatedSubsectorHex({ col: 16, row: 10 })).toMatchObject({
+      travel_zone: 'Green',
+      bases: { naval: false, scout: true, research: false, Aid: false },
+    })
+    expect(currentSubsector.value?.hexes[0]).toMatchObject({
+      travel_zone: 'Red',
+      bases: { naval: true, scout: false, research: true, Aid: false },
+    })
+
+    clearSubsectorHexOverride({ col: 16, row: 10 })
+
+    expect(getSubsectorHexOverride(99, { col: 16, row: 10 })).toBeNull()
+    expect(currentSubsector.value?.hexes[0]).toMatchObject({
+      travel_zone: 'Green',
+      bases: { naval: false, scout: true, research: false, Aid: false },
+    })
+
+    setSubsector(null)
+  })
+
+  it('keeps overrides across regeneration for the same world but ignores stale system seeds', () => {
+    const sub = fakeSubsector()
+    setSubsectorOverrides({})
+    setSubsector(sub)
+
+    setSubsectorHexOverride({ col: 16, row: 10 }, { travel_zone: 'Amber' })
+    setSubsector(fakeSubsector())
+    expect(currentSubsector.value?.hexes[0].travel_zone).toBe('Amber')
+
+    setSubsector({
+      ...fakeSubsector(),
+      hexes: [{
+        ...fakeSubsector().hexes[0],
+        system_seed: 0x87654321,
+      }],
+    })
+
+    expect(currentSubsector.value?.hexes[0].travel_zone).toBe('Green')
+
+    setSubsector(null)
+    setSubsectorOverrides({})
   })
 
   it('stores render quality mode changes as app state', () => {

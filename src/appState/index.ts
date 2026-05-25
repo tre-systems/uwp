@@ -9,7 +9,15 @@ import {
 } from '../uwp'
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
 import type { SolarSystem } from '../domain/system'
-import type { HexCoord, Subsector, SubsectorUwp } from '../domain/subsector'
+import {
+  applySubsectorOverrides,
+  subsectorOverrideKey,
+  type HexCoord,
+  type Subsector,
+  type SubsectorHexOverride,
+  type SubsectorOverrides,
+  type SubsectorUwp,
+} from '../domain/subsector'
 import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
 
@@ -83,9 +91,11 @@ export const systemSeed = signal<number>(1337)
 export const currentSystem = signal<SolarSystem | null>(null)
 export const subsectorSeed = signal<number>(0xC0FFEE)
 export const subsectorDensity = signal<number>(0.5)
+const generatedSubsector = signal<Subsector | null>(null)
 export const currentSubsector = signal<Subsector | null>(null)
 export const selectedHex = signal<HexCoord | null>(null)
 export const showJumpRoutes = signal<boolean>(true)
+export const subsectorOverrides = signal<SubsectorOverrides>({})
 export const hoverTarget = signal<HoverTarget | null>(null)
 export const currentSurfaceMap = signal<SurfaceMap | null>(null)
 export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
@@ -176,7 +186,8 @@ export function rerollPlanet(index: number) {
 }
 
 export function setSubsector(sub: Subsector | null) {
-  currentSubsector.value = sub
+  generatedSubsector.value = sub
+  currentSubsector.value = sub ? applySubsectorOverrides(sub, subsectorOverrides.value) : null
 }
 
 export function setSubsectorSeed(seed: number) {
@@ -197,6 +208,50 @@ export function setSelectedHex(coord: HexCoord | null) {
 
 export function setShowJumpRoutes(visible: boolean) {
   showJumpRoutes.value = visible
+}
+
+export function setSubsectorOverrides(overrides: SubsectorOverrides) {
+  subsectorOverrides.value = overrides
+  const sub = generatedSubsector.value
+  currentSubsector.value = sub ? applySubsectorOverrides(sub, overrides) : null
+}
+
+export function setSubsectorHexOverride(coord: HexCoord, patch: SubsectorHexOverride) {
+  const sub = generatedSubsector.value ?? currentSubsector.value
+  if (!sub) return
+  const generatedHex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
+  if (!generatedHex) return
+  const key = subsectorOverrideKey(sub.seed, coord)
+  const previous = subsectorOverrides.value[key] ?? {}
+  const next: SubsectorHexOverride = {
+    ...previous,
+    system_seed: generatedHex.system_seed,
+    ...patch,
+    bases: patch.bases ? { ...patch.bases } : previous.bases,
+  }
+  setSubsectorOverrides({
+    ...subsectorOverrides.value,
+    [key]: next,
+  })
+}
+
+export function clearSubsectorHexOverride(coord: HexCoord) {
+  const sub = generatedSubsector.value ?? currentSubsector.value
+  if (!sub) return
+  const key = subsectorOverrideKey(sub.seed, coord)
+  if (!subsectorOverrides.value[key]) return
+  const next = { ...subsectorOverrides.value }
+  delete next[key]
+  setSubsectorOverrides(next)
+}
+
+export function getSubsectorHexOverride(seed: number, coord: HexCoord): SubsectorHexOverride | null {
+  return subsectorOverrides.value[subsectorOverrideKey(seed, coord)] ?? null
+}
+
+export function generatedSubsectorHex(coord: HexCoord) {
+  const sub = generatedSubsector.value
+  return sub?.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row) ?? null
 }
 
 export function setHoverTarget(target: HoverTarget | null) {
