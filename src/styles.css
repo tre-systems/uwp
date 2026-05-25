@@ -1897,6 +1897,17 @@ label.color input[type="color"]::-webkit-color-swatch {
   cursor: not-allowed;
   opacity: 0.55;
 }
+/* During the WASM/system-load transient the user can already be on a
+   view whose data hasn't populated yet — the segment is `.active` AND
+   `:disabled` at the same time. Without this override the disabled
+   styling wipes out the active highlight and the user's current
+   location reads dimmer than the alternatives. Keep the active
+   colour, drop the opacity; cursor: not-allowed still conveys the
+   non-interactive state. */
+.view-mode-segment.active:disabled {
+  color: var(--color-text-strong);
+  opacity: 1;
+}
 
 @media (max-width: 640px) {
   .view-mode-toggle {
