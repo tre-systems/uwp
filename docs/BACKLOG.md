@@ -83,10 +83,13 @@ Done when:
 Make the continuous-to-UWP layer the canonical bridge between science and
 Cepheus rules.
 
-Status: in progress. The PBG subtask is now Rust-owned: subsector hexes carry
-an actual population estimate plus a serialized PBG triple derived from that
-population, asteroid-belt count, and gas/ice-giant count. Text export consumes
-that triple instead of inventing `5xx` placeholders.
+Status: in progress. The PBG subtask is Rust-owned: subsector hexes carry an
+actual population estimate plus a serialized PBG triple derived from that
+population, asteroid-belt count, and gas/ice-giant count. The first projection
+hardening pass is also in place: Rust table helpers now pin size / atmosphere /
+hydrographics consistency, starport adjusted-roll thresholds, government/law
+zero-world rules, and tech-level DMs/minimums; TypeScript projection now uses
+Cepheus hydrographics buckets and lower-bound population exponents.
 
 - Audit every UWP field to confirm the app stores richer values where useful and
   only rounds at the UWP boundary.

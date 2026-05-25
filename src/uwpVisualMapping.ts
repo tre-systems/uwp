@@ -120,8 +120,9 @@ export function paramsPatchFromUwp(code: string): Partial<Params> | null {
 
 export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
   const { size, atm, hydro, pop, tech } = uwp
-  const atmCode = roundedCode(atm, 0, 15)
-  const hydroCode = roundedCode(hydro, 0, 10)
+  const sizeCode = roundedCode(size, 0, 10)
+  const atmCode = sizeCode === 0 ? 0 : roundedCode(atm, 0, 15)
+  const hydroCode = sizeCode <= 1 ? 0 : roundedCode(hydro, 0, 10)
   const atmo = atmoConfig(atmCode)
   const palette = paletteForUwp(atmCode, hydroCode)
 
@@ -129,12 +130,12 @@ export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
   // fraction. The renderer converts this to a terrain quantile, so 25% really
   // reads as roughly one quarter ocean instead of waiting for a hidden height
   // threshold to cross the generated terrain distribution.
-  const sea_level = clamp(hydro, 0, 10) / 10
+  const sea_level = clamp(sizeCode <= 1 ? 0 : hydro, 0, 10) / 10
   const atmCrater = atmCode <= 1 ? 1.0 : atmCode <= 3 ? 0.6 : atmCode <= 5 ? 0.25 : 0.0
   const hydroCrater = hydroCode <= 1 ? 1.0 : hydroCode <= 3 ? 0.6 : 0.2
   const crater_density = Math.min(1, atmCrater * hydroCrater)
   const atmVeg = atmCode >= 4 && atmCode <= 9 ? 1.0 : atmCode === 3 || atmCode === 13 ? 0.4 : 0
-  const hydroVeg = hydro >= 3 && hydro <= 8 ? 1.0 : hydro >= 2 ? 0.6 : 0.0
+  const hydroVeg = hydroCode >= 3 && hydroCode <= 8 ? 1.0 : hydroCode >= 2 ? 0.6 : 0.0
   const vegetation_richness = atmVeg * hydroVeg
   const habitableAtm = atmCode >= 2 && atmCode <= 9 && atmCode !== 11 && atmCode !== 12
   const tech_factor = clamp((tech - 2) / 5, 0, 1)

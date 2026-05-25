@@ -339,33 +339,7 @@ fn project_uwp(system: &SolarSystem, rng: &mut Rng) -> Uwp {
             })
     };
 
-    let (size, hydro, atm) = if let Some(p) = main {
-        let size = clamp_digit((p.radius_earth * 8.0).round() as i32, 0, 10);
-        let hydro = clamp_digit(
-            (p.climate.liquid_water_fraction * 10.0).round() as i32,
-            0,
-            10,
-        );
-        // Atmosphere code: rough heuristic. Habitable + significant water →
-        // standard (6); hot + dry → thin (3); cold/airless → 0; large gas-bag
-        // worlds get a dense (8) or exotic value.
-        let atm = if size == 0 {
-            0
-        } else if p.climate.habitability > 0.55 {
-            6
-        } else if p.climate.habitability > 0.25 {
-            4
-        } else if p.temperature_k > 500.0 {
-            10
-        } else if p.temperature_k < 180.0 {
-            1
-        } else {
-            2
-        };
-        (size as u8, hydro as u8, atm as u8)
-    } else {
-        (0, 0, 0)
-    };
+    let (size, hydro, atm) = main_world_physical_codes(main);
 
     // Population: weighted by main-world habitability with a wide
     // distribution. A handful of empty / barren hexes occur naturally.
@@ -373,23 +347,103 @@ fn project_uwp(system: &SolarSystem, rng: &mut Rng) -> Uwp {
     let base_pop = (hab * 9.0) as i32;
     let pop = clamp_digit(base_pop + rng.roll(2) - 7, 0, 12) as u8;
 
-    // Government: Cepheus standard "2D6-7+pop" clamped.
-    let gov = clamp_digit(rng.roll(2) - 7 + pop as i32, 0, 15) as u8;
-    // Law: "2D6-7+gov" clamped.
-    let law = clamp_digit(rng.roll(2) - 7 + gov as i32, 0, 15) as u8;
+    let gov = government_for_roll(rng.roll(2), pop);
+    let law = law_for_roll(rng.roll(2), gov);
 
-    // Starport: Cepheus standard 2D6 with population DM.
-    let pop_dm = (pop as i32 / 3) - 2;
-    let starport = match rng.roll(2) + pop_dm {
+    let starport = starport_for_roll(rng.roll(2), pop);
+    let tech = tech_level_for_roll(rng.d6(), starport, size, atm, hydro, pop, gov);
+
+    Uwp {
+        starport,
+        size,
+        atm,
+        hydro,
+        pop,
+        gov,
+        law,
+        tech,
+    }
+}
+
+fn main_world_physical_codes(main: Option<&system::Planet>) -> (u8, u8, u8) {
+    let Some(p) = main else {
+        return (0, 0, 0);
+    };
+
+    let size = clamp_digit((p.radius_earth * 8.0).round() as i32, 0, 10) as u8;
+    // Cepheus size 0 is asteroid-scale. Size 0 has no atmosphere or water;
+    // size 1 may retain a trace/thin atmosphere in this science-first model
+    // but Chapter 12 still forces hydrographics to 0 for size 0 or 1.
+    if size == 0 {
+        return (0, 0, 0);
+    }
+
+    let hydro = clamp_digit(
+        (p.climate.liquid_water_fraction * 10.0).round() as i32,
+        0,
+        10,
+    ) as u8;
+    if size == 1 {
+        return (size, 0, atmosphere_code(size, p));
+    }
+
+    (size, hydro, atmosphere_code(size, p))
+}
+
+fn atmosphere_code(size: u8, planet: &system::Planet) -> u8 {
+    if size == 0 {
+        0
+    } else if planet.climate.habitability > 0.55 {
+        6
+    } else if planet.climate.habitability > 0.25 {
+        4
+    } else if planet.temperature_k > 500.0 {
+        10
+    } else if planet.temperature_k < 180.0 {
+        1
+    } else {
+        2
+    }
+}
+
+fn government_for_roll(roll_2d6: i32, pop: u8) -> u8 {
+    if pop == 0 {
+        return 0;
+    }
+    clamp_digit(roll_2d6 - 7 + pop as i32, 0, 15) as u8
+}
+
+fn law_for_roll(roll_2d6: i32, gov: u8) -> u8 {
+    if gov == 0 {
+        return 0;
+    }
+    clamp_digit(roll_2d6 - 7 + gov as i32, 0, 15) as u8
+}
+
+fn starport_for_roll(roll_2d6: i32, pop: u8) -> char {
+    // Cepheus primary starport: adjusted roll = 2D6 - 7 + Population.
+    match roll_2d6 - 7 + pop as i32 {
         i if i <= 2 => 'X',
         3..=4 => 'E',
         5..=6 => 'D',
         7..=8 => 'C',
         9..=10 => 'B',
         _ => 'A',
-    };
+    }
+}
 
-    // Tech: Cepheus modifiers folded into a single roll.
+fn tech_level_for_roll(
+    roll_d6: i32,
+    starport: char,
+    size: u8,
+    atm: u8,
+    hydro: u8,
+    pop: u8,
+    gov: u8,
+) -> u8 {
+    if pop == 0 {
+        return 0;
+    }
     let mut tech_dm = 0i32;
     tech_dm += match starport {
         'A' => 6,
@@ -406,26 +460,44 @@ fn project_uwp(system: &SolarSystem, rng: &mut Rng) -> Uwp {
     if atm <= 3 || atm >= 10 {
         tech_dm += 1;
     }
-    if hydro >= 9 {
+    if hydro == 0 || hydro == 9 {
         tech_dm += 1;
+    } else if hydro >= 10 {
+        tech_dm += 2;
     }
     if (1..=5).contains(&pop) {
         tech_dm += 1;
     } else if pop >= 9 {
-        tech_dm += pop as i32 - 7;
+        tech_dm += if pop >= 10 { 4 } else { 2 };
     }
-    let tech = clamp_digit(rng.d6() + tech_dm, 0, 15) as u8;
+    tech_dm += match gov {
+        0 | 5 => 1,
+        13 | 14 => -2,
+        _ => 0,
+    };
+    let mut tech = clamp_digit(roll_d6 + tech_dm, 0, 15) as u8;
+    tech = tech.max(minimum_tech_level(atm, hydro, pop));
+    tech.min(15)
+}
 
-    Uwp {
-        starport,
-        size,
-        atm,
-        hydro,
-        pop,
-        gov,
-        law,
-        tech,
+fn minimum_tech_level(atm: u8, hydro: u8, pop: u8) -> u8 {
+    if pop == 0 {
+        return 0;
     }
+    let mut min_tl = 0;
+    if (hydro == 0 || hydro == 10) && pop >= 6 {
+        min_tl = min_tl.max(4);
+    }
+    if matches!(atm, 4 | 7 | 9) {
+        min_tl = min_tl.max(5);
+    }
+    if atm <= 3 || (10..=12).contains(&atm) {
+        min_tl = min_tl.max(7);
+    }
+    if matches!(atm, 13 | 14) && hydro == 10 {
+        min_tl = min_tl.max(7);
+    }
+    min_tl
 }
 
 fn roll_bases(uwp: &Uwp, rng: &mut Rng) -> Bases {
@@ -508,6 +580,7 @@ fn clamp_digit(value: i32, lo: i32, hi: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::climate::ClimateSummary;
 
     #[test]
     fn deterministic_for_same_seed() {
@@ -586,6 +659,72 @@ mod tests {
     }
 
     #[test]
+    fn physical_codes_round_from_main_world_and_suppress_size_zero_water() {
+        let tiny_wet = test_planet(0.04, 288.0, 0.8, 0.9);
+        assert_eq!(main_world_physical_codes(Some(&tiny_wet)), (0, 0, 0));
+
+        let small_wet = test_planet(0.18, 288.0, 0.8, 0.9);
+        assert_eq!(main_world_physical_codes(Some(&small_wet)), (1, 0, 6));
+
+        let earthlike = test_planet(1.06, 288.0, 0.74, 0.9);
+        assert_eq!(main_world_physical_codes(Some(&earthlike)), (8, 7, 6));
+
+        let ocean_super_earth = test_planet(1.8, 288.0, 1.2, 0.4);
+        assert_eq!(
+            main_world_physical_codes(Some(&ocean_super_earth)),
+            (10, 10, 4)
+        );
+    }
+
+    #[test]
+    fn atmosphere_code_tracks_habitability_and_temperature_extremes() {
+        let habitable = test_planet(1.0, 288.0, 0.7, 0.8);
+        let marginal = test_planet(1.0, 250.0, 0.3, 0.3);
+        let inferno = test_planet(1.0, 650.0, 0.0, 0.0);
+        let frozen = test_planet(1.0, 120.0, 0.0, 0.0);
+        let barren = test_planet(1.0, 260.0, 0.0, 0.0);
+
+        assert_eq!(atmosphere_code(8, &habitable), 6);
+        assert_eq!(atmosphere_code(8, &marginal), 4);
+        assert_eq!(atmosphere_code(8, &inferno), 10);
+        assert_eq!(atmosphere_code(8, &frozen), 1);
+        assert_eq!(atmosphere_code(8, &barren), 2);
+    }
+
+    #[test]
+    fn government_law_and_starport_table_shapes_are_clamped() {
+        assert_eq!(government_for_roll(2, 0), 0);
+        assert_eq!(government_for_roll(7, 7), 7);
+        assert_eq!(government_for_roll(12, 12), 15);
+
+        assert_eq!(law_for_roll(2, 0), 0);
+        assert_eq!(law_for_roll(12, 0), 0);
+        assert_eq!(law_for_roll(7, 9), 9);
+        assert_eq!(law_for_roll(12, 15), 15);
+
+        assert_eq!(starport_for_roll(2, 0), 'X');
+        assert_eq!(starport_for_roll(12, 0), 'D');
+        assert_eq!(starport_for_roll(7, 6), 'D');
+        assert_eq!(starport_for_roll(8, 6), 'C');
+        assert_eq!(starport_for_roll(12, 12), 'A');
+    }
+
+    #[test]
+    fn tech_level_applies_world_dms_and_clamps() {
+        assert_eq!(tech_level_for_roll(1, 'A', 8, 6, 7, 6, 7), 7);
+        assert_eq!(tech_level_for_roll(6, 'A', 8, 6, 7, 0, 0), 0);
+        assert_eq!(tech_level_for_roll(1, 'X', 8, 6, 7, 6, 7), 0);
+        assert_eq!(tech_level_for_roll(1, 'D', 5, 6, 5, 5, 7), 2);
+        assert_eq!(tech_level_for_roll(6, 'A', 1, 10, 9, 10, 7), 15);
+        assert_eq!(tech_level_for_roll(1, 'D', 8, 3, 5, 6, 7), 7);
+        assert_eq!(tech_level_for_roll(1, 'D', 8, 7, 5, 6, 7), 5);
+        assert_eq!(tech_level_for_roll(1, 'D', 8, 6, 0, 6, 7), 4);
+        assert_eq!(tech_level_for_roll(1, 'D', 8, 13, 10, 6, 7), 7);
+        assert_eq!(tech_level_for_roll(1, 'D', 8, 6, 7, 6, 5), 2);
+        assert_eq!(tech_level_for_roll(6, 'D', 8, 6, 7, 6, 13), 4);
+    }
+
+    #[test]
     fn pbg_is_derived_from_population_and_system_counts() {
         let pbg = pbg_from_parts(7_000_000, 6, 12, 4);
 
@@ -659,5 +798,39 @@ mod tests {
     fn label_format() {
         assert_eq!(HexCoord::new(3, 4).label(), "0304");
         assert_eq!(HexCoord::new(8, 10).label(), "0810");
+    }
+
+    fn test_planet(
+        radius_earth: f32,
+        temperature_k: f32,
+        liquid_water_fraction: f32,
+        habitability: f32,
+    ) -> system::Planet {
+        system::Planet {
+            orbit_au: 1.0,
+            eccentricity: 0.0,
+            inclination_deg: 0.0,
+            mass_earth: radius_earth.max(0.01),
+            radius_earth,
+            body_type: BodyType::Terrestrial,
+            temperature_k,
+            phase_rad: 0.0,
+            day_seconds: 86_400.0,
+            seed: 1,
+            in_habitable_zone: true,
+            moons: vec![],
+            climate: ClimateSummary {
+                mean_surface_temp_k: temperature_k,
+                min_surface_temp_k: temperature_k - 20.0,
+                max_surface_temp_k: temperature_k + 20.0,
+                greenhouse_k: 0.0,
+                liquid_water_fraction,
+                ice_fraction: 0.0,
+                aridity: 1.0 - liquid_water_fraction.clamp(0.0, 1.0),
+                habitability,
+                thermal_inertia: liquid_water_fraction.clamp(0.0, 1.0),
+                mean_rainfall_mm: 0.0,
+            },
+        }
     }
 }

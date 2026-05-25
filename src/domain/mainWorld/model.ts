@@ -46,15 +46,22 @@ export function uwpToMainWorldModel(uwp: UwpDigits): MainWorldModel {
 }
 
 export function mainWorldModelToUwp(model: MainWorldModel): UwpDigits {
+  const size = clampRound(model.radiusEarth * 8, 0, 10)
+  const pop = populationExponent(model.population)
+  const atm = size === 0 ? 0 : clampRound(model.atmosphereCode, 0, 15)
+  const hydro = size <= 1 ? 0 : hydrographicsCode(model.hydrographicsPercent)
+  const gov = pop === 0 ? 0 : clampRound(model.governmentCode, 0, 15)
+  const law = gov === 0 ? 0 : clampRound(model.lawLevel, 0, 15)
+  const tech = pop === 0 ? 0 : clampRound(model.techLevel, 0, 15)
   return {
     starport: starportFromQuality(model.starportQuality),
-    size: clampRound(model.radiusEarth * 8, 0, 10),
-    atm: clampRound(model.atmosphereCode, 0, 15),
-    hydro: clampRound(model.hydrographicsPercent / 10, 0, 10),
-    pop: populationExponent(model.population),
-    gov: clampRound(model.governmentCode, 0, 15),
-    law: clampRound(model.lawLevel, 0, 15),
-    tech: clampRound(model.techLevel, 0, 15),
+    size,
+    atm,
+    hydro,
+    pop,
+    gov,
+    law,
+    tech,
   }
 }
 
@@ -79,7 +86,13 @@ function clampRound(value: number, min: number, max: number) {
 
 function populationExponent(population: number) {
   if (population <= 0) return 0
-  return clampRound(Math.log10(population), 0, 12)
+  return Math.max(0, Math.min(12, Math.floor(Math.log10(population))))
+}
+
+function hydrographicsCode(percent: number) {
+  const pct = Math.max(0, Math.min(100, percent))
+  if (pct <= 5) return 0
+  return Math.max(0, Math.min(10, Math.floor((pct + 4) / 10)))
 }
 
 function starportFromQuality(quality: number) {

@@ -30,6 +30,23 @@ describe('paramsPatchFromUwp', () => {
     })
   })
 
+  it('reconciles impossible tiny-world UWP values into plausible visuals', () => {
+    expect(paramsPatchFromUwp('A0AA999-F')).toMatchObject({
+      sea_level: 0,
+      atmosphere_density: 0,
+      cloud_coverage: 0,
+      crater_density: 1,
+      vegetation_richness: 0,
+      planet_radius: 0.18,
+    })
+
+    expect(paramsPatchFromUwp('A1A9999-F')).toMatchObject({
+      sea_level: 0,
+      atmosphere_density: 0.65,
+      planet_radius: 0.18,
+    })
+  })
+
   it('does not emit city lights for corrosive worlds even with high population and tech', () => {
     expect(paramsPatchFromUwp('A8B9C00-F')).toMatchObject({
       atmosphere_density: 1,

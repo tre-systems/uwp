@@ -38,16 +38,16 @@ describe('main world model', () => {
     ).toEqual({
       starport: 'X',
       size: 0,
-      atm: 15,
-      hydro: 10,
+      atm: 0,
+      hydro: 0,
       pop: 0,
       gov: 0,
-      law: 15,
-      tech: 15,
+      law: 0,
+      tech: 0,
     })
   })
 
-  it('rounds population from actual population rather than integer-only UI state', () => {
+  it('projects population from lower-bound exponents rather than rounded UI state', () => {
     const sparse = mainWorldModelToUwp(uwpToMainWorldModel({
       starport: 'C',
       size: 4,
@@ -73,7 +73,52 @@ describe('main world model', () => {
     })
 
     expect(sparse.pop).toBe(0)
-    expect(millionScale.pop).toBe(7)
+    expect(millionScale.pop).toBe(6)
+  })
+
+  it('uses Cepheus hydrographics buckets and physical zero-world constraints', () => {
+    const base = uwpToMainWorldModel({
+      starport: 'B',
+      size: 8,
+      atm: 6,
+      hydro: 5,
+      pop: 6,
+      gov: 7,
+      law: 4,
+      tech: 10,
+    })
+
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 0 }).hydro).toBe(0)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 5 }).hydro).toBe(0)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 6 }).hydro).toBe(1)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 15 }).hydro).toBe(1)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 16 }).hydro).toBe(2)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 95 }).hydro).toBe(9)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 96 }).hydro).toBe(10)
+    expect(mainWorldModelToUwp({ ...base, hydrographicsPercent: 100 }).hydro).toBe(10)
+
+    expect(mainWorldModelToUwp({ ...base, radiusEarth: 0.12, hydrographicsPercent: 95 }).hydro).toBe(0)
+  })
+
+  it('forces government law and tech to zero for uninhabited worlds', () => {
+    expect(
+      mainWorldModelToUwp({
+        radiusEarth: 1,
+        gravityEarth: 1,
+        atmosphereCode: 6,
+        hydrographicsPercent: 70,
+        population: 0,
+        governmentCode: 12,
+        lawLevel: 12,
+        techLevel: 12,
+        starportQuality: 0.5,
+      }),
+    ).toMatchObject({
+      pop: 0,
+      gov: 0,
+      law: 0,
+      tech: 0,
+    })
   })
 
   it('summarizes the generated physical main world without needing UI state', () => {
