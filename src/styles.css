@@ -138,6 +138,21 @@
   outline-offset: 1px;
 }
 
+/* Move content off-screen while keeping it in the a11y tree. Used for
+   aria-live status messages whose only sighted equivalent is a small
+   icon swap. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 * { box-sizing: border-box; }
 html, body, #app {
   margin: 0;

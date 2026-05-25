@@ -37,16 +37,29 @@ export function ShareButton({ disabled }: ShareButtonProps) {
     setTimeout(() => setStatus('idle'), 1800)
   }
 
+  // Screen readers see the visual icon swap (🔗 → ✓ / !) as nothing —
+  // expose the same signal through aria-live on a visually-hidden
+  // sibling so keyboard / SR users get confirmation when they activate
+  // the button.
+  const liveMessage =
+    status === 'copied' ? 'Link copied to clipboard'
+    : status === 'error' ? 'Copy failed'
+    : ''
   return (
-    <button
-      type="button"
-      class={`ghost share-trigger share-status-${status}`}
-      onClick={onCopy}
-      disabled={disabled}
-      title="Copy a shareable link to this chart"
-      aria-label="Copy chart link"
-    >
-      {status === 'copied' ? '✓' : status === 'error' ? '!' : '🔗'}
-    </button>
+    <>
+      <button
+        type="button"
+        class={`ghost share-trigger share-status-${status}`}
+        onClick={onCopy}
+        disabled={disabled}
+        title="Copy a shareable link to this chart"
+        aria-label="Copy chart link"
+      >
+        {status === 'copied' ? '✓' : status === 'error' ? '!' : '🔗'}
+      </button>
+      <span class="visually-hidden" aria-live="polite" role="status">
+        {liveMessage}
+      </span>
+    </>
   )
 }
