@@ -4,6 +4,7 @@ import {
   defaultUwp,
   parseUwpDigits,
   randomUwpDigits,
+  reconcileUwpDigits,
   type UwpDigits,
   uwpToCode,
 } from '../uwp'
@@ -341,7 +342,7 @@ export function selectHex(coord: HexCoord): void {
 }
 
 function applySubsectorUwp(hexUwp: SubsectorUwp, seed: number): void {
-  const nextUwp: UwpDigits = {
+  const nextUwp = reconcileUwpDigits({
     starport: hexUwp.starport,
     size: hexUwp.size,
     atm: hexUwp.atm,
@@ -350,7 +351,7 @@ function applySubsectorUwp(hexUwp: SubsectorUwp, seed: number): void {
     gov: hexUwp.gov,
     law: hexUwp.law,
     tech: hexUwp.tech,
-  }
+  })
   uwp.value = nextUwp
   setParams({ ...params.value, ...paramsPatchFromUwpDigits(nextUwp), seed })
 }
@@ -371,7 +372,7 @@ export function applyUwp(code: string): boolean {
 }
 
 export function setUwpField<K extends keyof UwpDigits>(field: K, value: UwpDigits[K]) {
-  uwp.value = { ...uwp.value, [field]: value }
+  uwp.value = reconcileUwpDigits({ ...uwp.value, [field]: value })
   updateParams(paramsPatchFromUwpDigits(uwp.value))
 }
 

@@ -171,6 +171,7 @@ The requested refactor baseline is now in place:
 - `ControlPanel.tsx` is a shell; UWP code, starport, world profile, society, view controls, and system table live in focused components.
 - Product UI calls typed actions such as `rerollPlanet(index)` instead of `window.uwp`; the window handle remains debug-only.
 - UWP sliders can hold intermediate values; UWP output rounds/buckets those values into Cepheus-compatible digits.
+- Direct UWP entry and slider edits are reconciled through `reconcileUwpDigits`: size 0 forces atmosphere/hydrographics 0, size 1 forces hydrographics 0, uninhabited worlds force government/law/tech 0, non-finite values clamp, and population caps at Cepheus `A`.
 - Runtime frame-time monitoring can downshift from high → balanced → low render profiles on slow devices.
 - The Performance panel exposes the effective render profile, FPS, frame time, target FPS, render-target size, shader quality, and manual Auto/High/Balanced/Low overrides.
 - Rust system-view uniform packing and camera fitting live in `crates/planet-render/src/scenes/system.rs`.

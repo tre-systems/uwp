@@ -57,8 +57,6 @@ export const POP_DESC: readonly string[] = [
   'Hundreds of millions',
   'Billions',
   'Tens of billions',
-  'Hundreds of billions',
-  'Trillions',
 ]
 
 export const GOV_DESC: readonly string[] = [

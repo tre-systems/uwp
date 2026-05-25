@@ -14,7 +14,7 @@ export function SocietyEditor({ uwp, disabled, onFieldChange }: SocietyEditorPro
       <UwpSliderField
         label="Population"
         value={uwp.pop}
-        max={12}
+        max={10}
         descriptions={POP_DESC}
         disabled={disabled}
         onChange={(v) => onFieldChange('pop', v)}

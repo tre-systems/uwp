@@ -85,16 +85,19 @@ Cepheus rules.
 
 Status: in progress. The PBG subtask is Rust-owned: subsector hexes carry an
 actual population estimate plus a serialized PBG triple derived from that
-population, asteroid-belt count, and gas/ice-giant count. The first projection
+population, asteroid-belt count, and gas/ice-giant count. The projection
 hardening pass is also in place: Rust table helpers now pin size / atmosphere /
-hydrographics consistency, starport adjusted-roll thresholds, government/law
-zero-world rules, and tech-level DMs/minimums; TypeScript projection now uses
-Cepheus hydrographics buckets and lower-bound population exponents.
+hydrographics SRD percentage buckets, starport adjusted-roll thresholds,
+government/law zero-world rules, population cap `A`, and tech-level
+DMs/minimums including Government 7. TypeScript projection now uses Cepheus
+hydrographics buckets, lower-bound population exponents capped at `A`,
+non-finite input guards, and direct-UWP reconciliation before product UI/export
+paths consume the UWP snapshot.
 
 - Audit every UWP field to confirm the app stores richer values where useful and
   only rounds at the UWP boundary.
-- Add edge-case tests for rounding thresholds, impossible combinations, and
-  referee-entered UWP reconciliation.
+- Add edge-case tests for remaining rounding thresholds, impossible
+  combinations, and referee-entered UWP reconciliation as new invariants land.
 - Ensure population modifier/PBG can be derived from actual population, belt
   count, and gas-giant count.
 
@@ -313,13 +316,12 @@ Done when:
 
 ## Current Best Next Chunk
 
-After the Chapter 12 matrix, the best next implementation chunk is:
+After the UWP projection hardening pass, the best next implementation chunk is:
 
-1. Harden UWP projection from continuous models.
-2. Add focused Rust tests for remaining UWP projection table shapes: atmosphere,
-   starport, government, law, and tech.
-3. Continue Chapter 12 map semantics with stronger allegiance / border
-   presentation and referee route overrides.
+1. Complete Chapter 12 map semantics by tuning route-density thresholds and
+   adding route metadata/visibility overrides.
+2. Or, if staying in projection work, move authored-world population toward an
+   actual-population source of truth rather than only UWP-shaped digits.
 
 This keeps the product goal visible while preparing the codebase for the larger
 map and online-play work.

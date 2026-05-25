@@ -77,4 +77,28 @@ describe('paramsPatchFromUwp', () => {
     expect(paramsPatchFromUwp('??')).toBeNull()
     expect(paramsPatchFromUwp('Z867974-D')).toBeNull()
   })
+
+  it('sanitizes non-finite direct digit values before producing renderer params', () => {
+    const patch = paramsPatchFromUwpDigits({
+      starport: 'A',
+      size: Number.NaN,
+      atm: Number.POSITIVE_INFINITY,
+      hydro: Number.NEGATIVE_INFINITY,
+      pop: Number.NaN,
+      gov: Number.POSITIVE_INFINITY,
+      law: Number.NaN,
+      tech: Number.POSITIVE_INFINITY,
+    })
+
+    expect(patch).toMatchObject({
+      sea_level: 0,
+      atmosphere_density: 0,
+      cloud_coverage: 0,
+      crater_density: 1,
+      vegetation_richness: 0,
+      population_intensity: 0,
+      planet_radius: 0.18,
+    })
+    expect(Object.values(patch).flat().every((value) => Number.isFinite(value))).toBe(true)
+  })
 })

@@ -28,6 +28,8 @@ import {
   setParamsSnapshot,
   setSurfaceMap,
   setSystemSnapshot,
+  setUwpField,
+  setUwpFromCode,
   systemSeed,
   updateParams,
   uwp,
@@ -221,6 +223,87 @@ describe('appState renderer command boundary', () => {
     uwp.value = initialUwp
     systemSeed.value = initialSeed
     viewMode.value = initialView
+  })
+
+  it('reconciles direct UWP entry into continuous renderer params', () => {
+    const initialParams = { ...params.value }
+    const initialUwp = { ...uwp.value }
+
+    expect(setUwpFromCode('A867974-D')).toBe(true)
+
+    expect(uwp.value).toMatchObject({
+      starport: 'A',
+      size: 8,
+      atm: 6,
+      hydro: 7,
+      pop: 9,
+      gov: 7,
+      law: 4,
+      tech: 13,
+    })
+    expect(params.value).toMatchObject({
+      planet_radius: 1,
+      atmosphere_density: 0.45,
+      sea_level: 0.7,
+      vegetation_richness: 1,
+    })
+
+    const afterValidUwp = { ...uwp.value }
+    const afterValidParams = { ...params.value }
+
+    expect(setUwpFromCode('Z867974-D')).toBe(false)
+    expect(uwp.value).toEqual(afterValidUwp)
+    expect(params.value).toEqual(afterValidParams)
+
+    expect(setUwpFromCode('A0AA999-F')).toBe(true)
+    expect(uwp.value).toMatchObject({
+      size: 0,
+      atm: 0,
+      hydro: 0,
+      pop: 9,
+      gov: 9,
+      law: 9,
+      tech: 15,
+    })
+    expect(params.value).toMatchObject({
+      planet_radius: 0.18,
+      atmosphere_density: 0,
+      sea_level: 0,
+      vegetation_richness: 0,
+    })
+
+    uwp.value = initialUwp
+    setParamsSnapshot(initialParams)
+  })
+
+  it('keeps slider-edited values continuous while params use rounded game buckets where needed', () => {
+    const initialParams = { ...params.value }
+    const initialUwp = { ...uwp.value }
+
+    uwp.value = {
+      starport: 'A',
+      size: 8,
+      atm: 6,
+      hydro: 7,
+      pop: 8,
+      gov: 7,
+      law: 4,
+      tech: 12,
+    }
+
+    setUwpField('hydro', 7.5)
+    setUwpField('size', 8.4)
+    setUwpField('pop', 8.5)
+
+    expect(uwp.value.hydro).toBe(7.5)
+    expect(uwp.value.size).toBe(8.4)
+    expect(uwp.value.pop).toBe(8.5)
+    expect(params.value.sea_level).toBeCloseTo(0.75)
+    expect(params.value.planet_radius).toBeCloseTo(1.05)
+    expect(params.value.population_intensity).toBeCloseTo(0.5)
+
+    uwp.value = initialUwp
+    setParamsSnapshot(initialParams)
   })
 
   it('applies referee overrides as an effective subsector and can reset to generated facts', () => {

@@ -81,15 +81,17 @@ export function mainWorldSummary(system: SolarSystem | null): MainWorldSummary |
 }
 
 function clampRound(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min
   return Math.max(min, Math.min(max, Math.round(value)))
 }
 
 function populationExponent(population: number) {
-  if (population <= 0) return 0
-  return Math.max(0, Math.min(12, Math.floor(Math.log10(population))))
+  if (!Number.isFinite(population) || population <= 0) return 0
+  return Math.max(0, Math.min(10, Math.floor(Math.log10(population))))
 }
 
 function hydrographicsCode(percent: number) {
+  if (!Number.isFinite(percent)) return 0
   const pct = Math.max(0, Math.min(100, percent))
   if (pct <= 5) return 0
   return Math.max(0, Math.min(10, Math.floor((pct + 4) / 10)))

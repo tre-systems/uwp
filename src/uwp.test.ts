@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseUwp, parseUwpDigits, uwpHex, uwpToCode } from './uwp'
+import { parseUwp, parseUwpDigits, reconcileUwpDigits, uwpHex, uwpToCode } from './uwp'
 
 describe('parseUwpDigits', () => {
   it('parses a complete UWP code into editable digit state', () => {
@@ -45,7 +45,45 @@ describe('parseUwpDigits', () => {
       size: 10,
       atm: 10,
       hydro: 10,
+      pop: 10,
+      tech: 15,
+    })
+  })
+
+  it('reconciles physically impossible referee-entered UWP digits', () => {
+    expect(parseUwpDigits('A0AA999-F')).toMatchObject({
+      size: 0,
+      atm: 0,
+      hydro: 0,
+      pop: 9,
+      gov: 9,
+      law: 9,
+      tech: 15,
+    })
+
+    expect(parseUwpDigits('A1A9999-F')).toMatchObject({
+      size: 1,
+      atm: 10,
+      hydro: 0,
+    })
+
+    expect(reconcileUwpDigits({
+      starport: 'Z',
+      size: 8,
+      atm: 12,
+      hydro: Number.NEGATIVE_INFINITY,
       pop: 12,
+      gov: 15,
+      law: Number.NaN,
+      tech: 15,
+    })).toEqual({
+      starport: 'X',
+      size: 8,
+      atm: 12,
+      hydro: 0,
+      pop: 10,
+      gov: 15,
+      law: 0,
       tech: 15,
     })
   })

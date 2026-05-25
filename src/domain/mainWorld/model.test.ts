@@ -58,22 +58,28 @@ describe('main world model', () => {
       law: 0,
       tech: 7,
     }))
+    const populatedModel = uwpToMainWorldModel({
+      starport: 'B',
+      size: 8,
+      atm: 6,
+      hydro: 7,
+      pop: 6,
+      gov: 7,
+      law: 4,
+      tech: 10,
+    })
     const millionScale = mainWorldModelToUwp({
-      ...uwpToMainWorldModel({
-        starport: 'B',
-        size: 8,
-        atm: 6,
-        hydro: 7,
-        pop: 6,
-        gov: 7,
-        law: 4,
-        tech: 10,
-      }),
+      ...populatedModel,
       population: 3.2e6,
     })
 
     expect(sparse.pop).toBe(0)
     expect(millionScale.pop).toBe(6)
+    expect(mainWorldModelToUwp({ ...populatedModel, population: 999_999 }).pop).toBe(5)
+    expect(mainWorldModelToUwp({ ...populatedModel, population: 1_000_000 }).pop).toBe(6)
+    expect(mainWorldModelToUwp({ ...populatedModel, population: 9_999_999 }).pop).toBe(6)
+    expect(mainWorldModelToUwp({ ...populatedModel, population: 10_000_000 }).pop).toBe(7)
+    expect(mainWorldModelToUwp({ ...populatedModel, population: 1e12 }).pop).toBe(10)
   })
 
   it('uses Cepheus hydrographics buckets and physical zero-world constraints', () => {
@@ -114,6 +120,31 @@ describe('main world model', () => {
         starportQuality: 0.5,
       }),
     ).toMatchObject({
+      pop: 0,
+      gov: 0,
+      law: 0,
+      tech: 0,
+    })
+  })
+
+  it('clamps non-finite continuous values before projecting to UWP digits', () => {
+    expect(
+      mainWorldModelToUwp({
+        radiusEarth: Number.NaN,
+        gravityEarth: Number.POSITIVE_INFINITY,
+        atmosphereCode: Number.POSITIVE_INFINITY,
+        hydrographicsPercent: Number.NaN,
+        population: Number.POSITIVE_INFINITY,
+        governmentCode: Number.NaN,
+        lawLevel: Number.POSITIVE_INFINITY,
+        techLevel: Number.NEGATIVE_INFINITY,
+        starportQuality: Number.NaN,
+      }),
+    ).toEqual({
+      starport: 'X',
+      size: 0,
+      atm: 0,
+      hydro: 0,
       pop: 0,
       gov: 0,
       law: 0,

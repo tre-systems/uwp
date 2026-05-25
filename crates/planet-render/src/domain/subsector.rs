@@ -563,7 +563,7 @@ fn project_uwp(system: &SolarSystem, rng: &mut Rng) -> Uwp {
     // distribution. A handful of empty / barren hexes occur naturally.
     let hab = main.map(|p| p.climate.habitability).unwrap_or(0.0);
     let base_pop = (hab * 9.0) as i32;
-    let pop = clamp_digit(base_pop + rng.roll(2) - 7, 0, 12) as u8;
+    let pop = clamp_digit(base_pop + rng.roll(2) - 7, 0, 10) as u8;
 
     let gov = government_for_roll(rng.roll(2), pop);
     let law = law_for_roll(rng.roll(2), gov);
@@ -596,11 +596,7 @@ fn main_world_physical_codes(main: Option<&system::Planet>) -> (u8, u8, u8) {
         return (0, 0, 0);
     }
 
-    let hydro = clamp_digit(
-        (p.climate.liquid_water_fraction * 10.0).round() as i32,
-        0,
-        10,
-    ) as u8;
+    let hydro = hydrographics_code(p.climate.liquid_water_fraction);
     if size == 1 {
         return (size, 0, atmosphere_code(size, p));
     }
@@ -621,6 +617,15 @@ fn atmosphere_code(size: u8, planet: &system::Planet) -> u8 {
         1
     } else {
         2
+    }
+}
+
+fn hydrographics_code(water_fraction: f32) -> u8 {
+    let pct = (water_fraction.clamp(0.0, 1.0) * 100.0).round() as i32;
+    if pct <= 5 {
+        0
+    } else {
+        clamp_digit((pct + 4) / 10, 0, 10) as u8
     }
 }
 
@@ -690,6 +695,7 @@ fn tech_level_for_roll(
     }
     tech_dm += match gov {
         0 | 5 => 1,
+        7 => 2,
         13 | 14 => -2,
         _ => 0,
     };
@@ -875,7 +881,7 @@ mod tests {
             assert!(u.size <= 10);
             assert!(u.atm <= 15);
             assert!(u.hydro <= 10);
-            assert!(u.pop <= 12);
+            assert!(u.pop <= 10);
             assert!(u.gov <= 15);
             assert!(u.law <= 15);
             assert!(u.tech <= 15);
@@ -899,11 +905,19 @@ mod tests {
 
     #[test]
     fn physical_codes_round_from_main_world_and_suppress_size_zero_water() {
+        assert_eq!(main_world_physical_codes(None), (0, 0, 0));
+
         let tiny_wet = test_planet(0.04, 288.0, 0.8, 0.9);
         assert_eq!(main_world_physical_codes(Some(&tiny_wet)), (0, 0, 0));
 
         let small_wet = test_planet(0.18, 288.0, 0.8, 0.9);
         assert_eq!(main_world_physical_codes(Some(&small_wet)), (1, 0, 6));
+
+        let dry_edge = test_planet(0.99, 288.0, 0.05, 0.9);
+        assert_eq!(main_world_physical_codes(Some(&dry_edge)), (8, 0, 6));
+
+        let wet_edge = test_planet(0.99, 288.0, 0.06, 0.9);
+        assert_eq!(main_world_physical_codes(Some(&wet_edge)), (8, 1, 6));
 
         let earthlike = test_planet(1.06, 288.0, 0.74, 0.9);
         assert_eq!(main_world_physical_codes(Some(&earthlike)), (8, 7, 6));
@@ -931,29 +945,55 @@ mod tests {
     }
 
     #[test]
+    fn hydrographics_code_uses_cepheus_percentage_buckets() {
+        assert_eq!(hydrographics_code(0.00), 0);
+        assert_eq!(hydrographics_code(0.05), 0);
+        assert_eq!(hydrographics_code(0.06), 1);
+        assert_eq!(hydrographics_code(0.15), 1);
+        assert_eq!(hydrographics_code(0.16), 2);
+        assert_eq!(hydrographics_code(0.95), 9);
+        assert_eq!(hydrographics_code(0.96), 10);
+        assert_eq!(hydrographics_code(1.00), 10);
+    }
+
+    #[test]
     fn government_law_and_starport_table_shapes_are_clamped() {
         assert_eq!(government_for_roll(2, 0), 0);
+        assert_eq!(government_for_roll(2, 1), 0);
         assert_eq!(government_for_roll(7, 7), 7);
         assert_eq!(government_for_roll(12, 12), 15);
 
         assert_eq!(law_for_roll(2, 0), 0);
         assert_eq!(law_for_roll(12, 0), 0);
+        assert_eq!(law_for_roll(2, 1), 0);
         assert_eq!(law_for_roll(7, 9), 9);
         assert_eq!(law_for_roll(12, 15), 15);
+    }
 
+    #[test]
+    fn starport_table_boundaries_follow_adjusted_roll() {
+        // adjusted = 2D6 - 7 + Population
         assert_eq!(starport_for_roll(2, 0), 'X');
-        assert_eq!(starport_for_roll(12, 0), 'D');
+        assert_eq!(starport_for_roll(3, 6), 'X');
+        assert_eq!(starport_for_roll(4, 6), 'E');
+        assert_eq!(starport_for_roll(5, 6), 'E');
+        assert_eq!(starport_for_roll(6, 6), 'D');
         assert_eq!(starport_for_roll(7, 6), 'D');
         assert_eq!(starport_for_roll(8, 6), 'C');
+        assert_eq!(starport_for_roll(9, 6), 'C');
+        assert_eq!(starport_for_roll(10, 6), 'B');
+        assert_eq!(starport_for_roll(11, 6), 'B');
+        assert_eq!(starport_for_roll(12, 6), 'A');
+        assert_eq!(starport_for_roll(12, 0), 'D');
         assert_eq!(starport_for_roll(12, 12), 'A');
     }
 
     #[test]
     fn tech_level_applies_world_dms_and_clamps() {
-        assert_eq!(tech_level_for_roll(1, 'A', 8, 6, 7, 6, 7), 7);
+        assert_eq!(tech_level_for_roll(1, 'A', 8, 6, 7, 6, 7), 9);
         assert_eq!(tech_level_for_roll(6, 'A', 8, 6, 7, 0, 0), 0);
         assert_eq!(tech_level_for_roll(1, 'X', 8, 6, 7, 6, 7), 0);
-        assert_eq!(tech_level_for_roll(1, 'D', 5, 6, 5, 5, 7), 2);
+        assert_eq!(tech_level_for_roll(1, 'D', 5, 6, 5, 5, 7), 4);
         assert_eq!(tech_level_for_roll(6, 'A', 1, 10, 9, 10, 7), 15);
         assert_eq!(tech_level_for_roll(1, 'D', 8, 3, 5, 6, 7), 7);
         assert_eq!(tech_level_for_roll(1, 'D', 8, 7, 5, 6, 7), 5);
