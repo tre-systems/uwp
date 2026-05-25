@@ -32,6 +32,8 @@ export function UwpSliderField({
         step={0.1}
         value={value}
         disabled={disabled}
+        aria-label={label}
+        aria-valuetext={desc ? `${uwpHex(value)} — ${desc}` : uwpHex(value)}
         onInput={(e) => onChange(parseFloat((e.currentTarget as HTMLInputElement).value))}
       />
       <div class="uwp-slider-desc">{desc}</div>

@@ -27,6 +27,7 @@ export function Slider({ label, value, min, max, step = 0.001, disabled = false,
         step={step}
         value={value}
         disabled={disabled}
+        aria-label={label}
         onInput={(e) => onInput(parseFloat((e.currentTarget as HTMLInputElement).value))}
       />
     </div>
