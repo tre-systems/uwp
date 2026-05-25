@@ -81,20 +81,25 @@ export function Breadcrumb() {
   }
 
   return (
-    <nav class="breadcrumb" aria-label="Navigation depth">
-      {crumbs.map((c, i) => (
-        <span key={c.label} class="breadcrumb-item">
-          {i > 0 && <span class="breadcrumb-sep" aria-hidden="true">›</span>}
-          <button
-            type="button"
-            class={`breadcrumb-crumb${c.active ? ' active' : ''}${c.muted ? ' muted' : ''}`}
-            onClick={c.onClick}
-            aria-current={c.active ? 'page' : undefined}
-          >
-            {c.label}
-          </button>
-        </span>
-      ))}
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      {/* WCAG breadcrumb pattern: an ordered list inside a nav. Screen
+          readers announce the item count and let users navigate the
+          list with the list rotor / quick-key. */}
+      <ol class="breadcrumb-list">
+        {crumbs.map((c, i) => (
+          <li key={c.label} class="breadcrumb-item">
+            {i > 0 && <span class="breadcrumb-sep" aria-hidden="true">›</span>}
+            <button
+              type="button"
+              class={`breadcrumb-crumb${c.active ? ' active' : ''}${c.muted ? ' muted' : ''}`}
+              onClick={c.onClick}
+              aria-current={c.active ? 'page' : undefined}
+            >
+              {c.label}
+            </button>
+          </li>
+        ))}
+      </ol>
     </nav>
   )
 }

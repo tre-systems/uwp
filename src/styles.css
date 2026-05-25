@@ -1904,6 +1904,18 @@ label.color input[type="color"]::-webkit-color-swatch {
   pointer-events: auto;
   overflow: hidden;
 }
+.breadcrumb-list {
+  /* The <ol> is a semantic wrapper added for the WCAG breadcrumb
+     pattern. Strip the default list styling so the chips look the
+     same as they did when the wrapper was a flat span. */
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
 .breadcrumb-item {
   display: inline-flex;
   align-items: center;
