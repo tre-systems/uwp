@@ -176,7 +176,7 @@ export function RegionView() {
             onClick={closeRegionView}
             aria-label="Close region view"
           >
-            X
+            ✕
           </button>
         </header>
         <div class="region-canvas-wrap" style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT }}>

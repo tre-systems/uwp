@@ -44,7 +44,7 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
             onClick={onClose}
             aria-label="Close about"
           >
-            X
+            ✕
           </button>
         </header>
         <div class="glossary-body">

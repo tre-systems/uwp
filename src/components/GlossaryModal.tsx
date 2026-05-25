@@ -121,7 +121,7 @@ export function GlossaryModal({ open, onClose }: GlossaryModalProps) {
             onClick={onClose}
             aria-label="Close glossary"
           >
-            X
+            ✕
           </button>
         </header>
         <div class="glossary-body">

@@ -2057,6 +2057,10 @@ label.color input[type="color"]::-webkit-color-swatch {
     max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
     border-radius: var(--radius-xl);
   }
+  /* Bump the modal close button to the iOS 44pt touch-target minimum
+     on phones — 30px misses easily and matches the panel-toggle's
+     mobile sizing. */
+  .glossary-close { width: 44px; height: 44px; }
   .glossary-backdrop { padding: var(--space-4); }
   .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
