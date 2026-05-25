@@ -13,6 +13,8 @@ import { SeedField } from './SeedField'
 import { useState } from 'preact/hooks'
 import {
   hexLabel,
+  routeNeighbor,
+  routesForHex,
   subsectorHexCount,
   subsectorToText,
   uwpToCode,
@@ -34,6 +36,8 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const routesVisible = showJumpRoutes.value
   const occupied = sub?.hexes.length ?? 0
   const routesCount = sub?.jump_routes.length ?? 0
+  const commRoutesCount = sub?.jump_routes.filter((route) => route.communication).length ?? 0
+  const tradeRoutesCount = sub?.jump_routes.filter((route) => route.trade).length ?? 0
   const total = sub ? subsectorHexCount(sub) : 16 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
@@ -78,7 +82,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
                   disabled={disabled}
                   onChange={(e) => setShowJumpRoutes((e.currentTarget as HTMLInputElement).checked)}
                 />
-                <span>{routesCount} link{routesCount === 1 ? '' : 's'}</span>
+                <span>{routesCount} links · {commRoutesCount} comms · {tradeRoutesCount} trade</span>
               </label>
             </dd>
           </div>
@@ -97,7 +101,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
         {sub && <SubsectorExportRow subsector={sub} disabled={disabled} />}
       </section>
 
-      {selectedDetail && <HexDetailSection hex={selectedDetail} />}
+      {sub && selectedDetail && <HexDetailSection subsector={sub} hex={selectedDetail} />}
     </>
   )
 }
@@ -142,7 +146,7 @@ function SubsectorExportRow({ subsector, disabled }: { subsector: Subsector; dis
   )
 }
 
-function HexDetailSection({ hex }: { hex: SubsectorHex }) {
+function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: SubsectorHex }) {
   const tradeCodes = deriveTradeCodes({
     size: hex.uwp.size,
     atm: hex.uwp.atm,
@@ -158,6 +162,14 @@ function HexDetailSection({ hex }: { hex: SubsectorHex }) {
   if (hex.bases.research) baseList.push('Research')
   if (hex.bases.Aid) baseList.push('Aid')
   const name = systemName(hex.system_seed)
+  const routes = routesForHex(subsector, hex.coord)
+  const commRoutes = routes.filter((route) => route.communication)
+  const tradeRoutes = routes.filter((route) => route.trade)
+  const routeChips = routes
+    .filter((route) => route.communication || route.trade)
+    .slice()
+    .sort((a, b) => Number(b.trade) - Number(a.trade) || b.trade_score - a.trade_score || a.jump - b.jump)
+    .slice(0, 4)
   return (
     <section>
       <h2>{name} · {hexLabel(hex.coord)}</h2>
@@ -183,7 +195,34 @@ function HexDetailSection({ hex }: { hex: SubsectorHex }) {
             {!hex.gas_giant && !hex.belts ? '—' : null}
           </dd>
         </div>
+        <div class="sys-meta-row">
+          <dt>Routes</dt>
+          <dd>{commRoutes.length} comms · {tradeRoutes.length} trade</dd>
+        </div>
       </dl>
+      {routeChips.length > 0 && (
+        <div class="route-codes" aria-label="Routes touching the selected hex">
+          <span class="trade-codes-label">Route links</span>
+          <span class="trade-codes-list">
+            {routeChips.map((route) => {
+              const neighbor = routeNeighbor(route, hex.coord)
+              const label = `${hexLabel(neighbor)} J-${route.jump}${route.trade ? ` T${route.trade_score}` : ' C'}`
+              return (
+                <span
+                  key={`${neighbor.col},${neighbor.row},${route.jump},${route.trade_score}`}
+                  class={`route-chip${route.trade ? ' route-chip-trade' : ' route-chip-comm'}`}
+                  title={route.trade ? 'Trade route' : 'Communications route'}
+                >
+                  {label}
+                </span>
+              )
+            })}
+            {routes.length > routeChips.length && (
+              <span class="route-chip route-chip-more">+{routes.length - routeChips.length}</span>
+            )}
+          </span>
+        </div>
+      )}
       {tradeCodes.length > 0 && (
         <div class="trade-codes" aria-label="Trade codes for the selected hex">
           <span class="trade-codes-label">Trade codes</span>

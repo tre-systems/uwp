@@ -134,6 +134,12 @@ Done when:
 
 Fill in the remaining referee-facing map data so the map is useful at the table.
 
+Status: in progress. Route semantics v1 is implemented: Rust keeps the
+navigation `jump_routes` graph and annotates each edge with selective
+communication-route and trade-route metadata plus a trade score. The map,
+selected-hex inspector, and text export now surface communication/trade route
+context without replacing the current SVG route layer.
+
 - Add or refine communication routes separately from trade routes.
 - Improve allegiance and polity borders beyond a single allegiance label.
 - Add referee override hooks for travel zones, allegiance, bases, and routes.
@@ -298,8 +304,8 @@ After the Chapter 12 matrix, the best next implementation chunk is:
 1. Harden UWP projection from continuous models.
 2. Add focused Rust tests for remaining UWP projection table shapes: atmosphere,
    starport, government, law, and tech.
-3. Continue into Chapter 12 map semantics: communication routes, trade routes,
-   and stronger allegiance / border presentation.
+3. Continue Chapter 12 map semantics with stronger allegiance / border
+   presentation and referee route overrides.
 
 This keeps the product goal visible while preparing the codebase for the larger
 map and online-play work.

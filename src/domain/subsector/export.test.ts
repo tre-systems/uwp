@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { subsectorToText } from './export'
-import type { Subsector, SubsectorHex } from './types'
+import type { JumpRoute, Subsector, SubsectorHex } from './types'
 
 function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): SubsectorHex {
   return {
@@ -18,7 +18,19 @@ function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): S
   }
 }
 
-function subsector(hexes: SubsectorHex[]): Subsector {
+function route(fromCol: number, fromRow: number, toCol: number, toRow: number, overrides: Partial<JumpRoute> = {}): JumpRoute {
+  return {
+    from: { col: fromCol, row: fromRow },
+    to: { col: toCol, row: toRow },
+    jump: 1,
+    communication: true,
+    trade: false,
+    trade_score: 0,
+    ...overrides,
+  }
+}
+
+function subsector(hexes: SubsectorHex[], jump_routes: JumpRoute[] = []): Subsector {
   return {
     seed: 0xFEEDFACE,
     density: 0.5,
@@ -26,7 +38,7 @@ function subsector(hexes: SubsectorHex[]): Subsector {
     rows: 10,
     allegiance: 'ImDi',
     hexes,
-    jump_routes: [],
+    jump_routes,
   }
 }
 
@@ -38,6 +50,7 @@ describe('subsectorToText', () => {
     expect(lines).toHaveLength(9)
     expect(lines[1]).toBe('# Dimensions: 16 x 10')
     expect(lines[3]).toBe('# Hexes occupied: 1 / 160')
+    expect(lines[4]).toBe('# Routes: 0 communications, 0 trade')
     expect(lines[6]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
     expect(lines[7]).toMatch(/^-+\s+-+\s+-+/)
     // Hex 0306 with starport A, bases NS, allegiance ImDi
@@ -88,5 +101,23 @@ describe('subsectorToText', () => {
       ]),
     )
     expect(text).toMatch(/\s734\s/)
+  })
+
+  it('adds a route table with communication and trade context', () => {
+    const text = subsectorToText(
+      subsector(
+        [hex(1, 1), hex(1, 2), hex(2, 2)],
+        [
+          route(1, 1, 1, 2, { communication: true, trade: true, trade_score: 8 }),
+          route(1, 1, 2, 2, { jump: 2, communication: false, trade: false, trade_score: 0 }),
+        ],
+      ),
+    )
+
+    expect(text).toContain('# Routes: 1 communications, 1 trade')
+    expect(text).toContain('# Route table')
+    expect(text).toContain('From  To    Jump  Comm  Trade Score')
+    expect(text).toMatch(/0101\s+0102\s+J-1\s+Y\s+Y\s+8/)
+    expect(text).toMatch(/0101\s+0202\s+J-2\s+-\s+-\s+-/)
   })
 })

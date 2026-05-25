@@ -60,6 +60,10 @@ for (const viewport of [
 
     await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
     await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveClass(/hex-selected/)
+
+    const panel = await openPanel(page)
+    await expect(panel.getByText(/links · \d+ comms · \d+ trade/)).toBeVisible()
+    await expect(panel.locator('dt').filter({ hasText: /^Routes$/ })).toBeVisible()
   })
 }
 

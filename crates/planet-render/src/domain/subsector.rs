@@ -158,6 +158,12 @@ pub struct JumpRoute {
     pub to: HexCoord,
     /// 1 = jump-1 link, 2 = jump-2 link.
     pub jump: u8,
+    /// Selective message/government courier line from Chapter 12.
+    pub communication: bool,
+    /// Commercial tie between complementary trade-code worlds.
+    pub trade: bool,
+    /// 0..9 rough commercial importance for map/export presentation.
+    pub trade_score: u8,
 }
 
 impl Subsector {
@@ -255,15 +261,132 @@ fn compute_jump_routes(hexes: &[SubsectorHex]) -> Vec<JumpRoute> {
         for b in occupied.iter().skip(i + 1) {
             let d = hex_distance(a.coord, b.coord);
             if d == 1 || d == 2 {
+                let trade_score = trade_route_score(a, b, d);
                 routes.push(JumpRoute {
                     from: a.coord,
                     to: b.coord,
                     jump: d as u8,
+                    communication: is_communication_route(a, b, d, trade_score),
+                    trade: trade_score > 0,
+                    trade_score,
                 });
             }
         }
     }
     routes
+}
+
+fn is_communication_route(
+    a: &SubsectorHex,
+    b: &SubsectorHex,
+    distance: i32,
+    trade_score: u8,
+) -> bool {
+    // Chapter 12 says communications routes should connect only some
+    // worlds so backwaters remain. This keeps high-service ports, bases,
+    // and populous worlds connected while leaving many C-port neighbours
+    // off the official courier net.
+    if matches!(a.travel_zone, TravelZone::Red) || matches!(b.travel_zone, TravelZone::Red) {
+        return false;
+    }
+    let score = communication_endpoint_score(a)
+        + communication_endpoint_score(b)
+        + if distance == 1 { 0 } else { -2 };
+    score >= 6 || trade_score >= 7
+}
+
+fn communication_endpoint_score(hex: &SubsectorHex) -> i32 {
+    let port = match hex.uwp.starport {
+        'A' => 4,
+        'B' => 3,
+        'C' => 2,
+        _ => 0,
+    };
+    let population = if hex.uwp.pop >= 9 {
+        2
+    } else if hex.uwp.pop >= 7 {
+        1
+    } else {
+        0
+    };
+    let bases = i32::from(hex.bases.naval)
+        + i32::from(hex.bases.scout)
+        + i32::from(hex.bases.research)
+        + i32::from(hex.bases.Aid);
+    let zone = match hex.travel_zone {
+        TravelZone::Green => 0,
+        TravelZone::Amber => -1,
+        TravelZone::Red => -4,
+    };
+    port + population + bases + zone
+}
+
+fn trade_route_score(a: &SubsectorHex, b: &SubsectorHex, distance: i32) -> u8 {
+    if matches!(a.travel_zone, TravelZone::Red) || matches!(b.travel_zone, TravelZone::Red) {
+        return 0;
+    }
+    if !is_trade_pair(a, b) {
+        return 0;
+    }
+    let score =
+        4 + trade_endpoint_score(a) + trade_endpoint_score(b) + if distance == 1 { 1 } else { 0 };
+    score.clamp(1, 9) as u8
+}
+
+fn trade_endpoint_score(hex: &SubsectorHex) -> i32 {
+    let port = match hex.uwp.starport {
+        'A' => 2,
+        'B' => 1,
+        'C' => 0,
+        _ => -3,
+    };
+    let pop = if hex.uwp.pop >= 9 {
+        2
+    } else if hex.uwp.pop >= 7 {
+        1
+    } else {
+        0
+    };
+    let tl = if hex.uwp.tech >= 12 { 1 } else { 0 };
+    port + pop + tl
+}
+
+fn is_trade_pair(a: &SubsectorHex, b: &SubsectorHex) -> bool {
+    (is_industrial_or_high_tech(a) && is_resource_or_backwater(b))
+        || (is_industrial_or_high_tech(b) && is_resource_or_backwater(a))
+        || (is_high_pop_or_rich(a) && is_food_or_water_world(b))
+        || (is_high_pop_or_rich(b) && is_food_or_water_world(a))
+}
+
+fn is_industrial_or_high_tech(hex: &SubsectorHex) -> bool {
+    let u = hex.uwp;
+    let industrial = matches!(u.atm, 0..=2 | 4 | 7 | 9) && u.pop >= 9;
+    industrial || u.tech >= 12
+}
+
+fn is_resource_or_backwater(hex: &SubsectorHex) -> bool {
+    let u = hex.uwp;
+    let asteroid = u.size == 0 && u.atm == 0 && u.hydro == 0;
+    let desert = u.atm >= 2 && u.hydro == 0;
+    let ice_capped = u.atm <= 1 && u.hydro >= 1;
+    let non_industrial = (4..=6).contains(&u.pop);
+    asteroid || desert || ice_capped || non_industrial
+}
+
+fn is_high_pop_or_rich(hex: &SubsectorHex) -> bool {
+    let u = hex.uwp;
+    let rich = matches!(u.atm, 6 | 8) && (6..=8).contains(&u.pop) && (4..=9).contains(&u.gov);
+    u.pop >= 9 || rich
+}
+
+fn is_food_or_water_world(hex: &SubsectorHex) -> bool {
+    let u = hex.uwp;
+    let agricultural =
+        (4..=9).contains(&u.size) && (4..=8).contains(&u.atm) && (5..=7).contains(&u.hydro);
+    let garden =
+        matches!(u.atm, 5 | 6 | 8) && (4..=9).contains(&u.size) && (4..=8).contains(&u.hydro);
+    let water = u.hydro == 10;
+    agricultural || garden || water
 }
 
 /// Hex-grid distance using the "doubled-coordinate" trick for a
@@ -608,6 +731,7 @@ mod tests {
             assert_eq!(ha.population, hb.population);
             assert_eq!(ha.pbg, hb.pbg);
         }
+        assert_eq!(a.jump_routes, b.jump_routes);
     }
 
     #[test]
@@ -801,24 +925,127 @@ mod tests {
             assert!(matches!(a.uwp.starport, 'A' | 'B' | 'C'));
             assert!(matches!(b.uwp.starport, 'A' | 'B' | 'C'));
             assert!(r.jump == 1 || r.jump == 2);
+            assert_eq!(r.trade, r.trade_score > 0);
             let d = hex_distance(r.from, r.to);
             assert_eq!(d as u8, r.jump);
         }
     }
 
     #[test]
-    fn jump_routes_cross_two_subsector_boundary() {
-        let a = route_test_hex(8, 5, 'A');
-        let b = route_test_hex(9, 5, 'B');
+    fn jump_routes_cross_two_subsector_boundary_and_mark_comms() {
+        let a = route_test_hex_with_uwp(
+            8,
+            5,
+            Uwp {
+                starport: 'A',
+                pop: 8,
+                ..default_route_uwp()
+            },
+        );
+        let b = route_test_hex_with_uwp(
+            9,
+            5,
+            Uwp {
+                starport: 'B',
+                pop: 8,
+                ..default_route_uwp()
+            },
+        );
         let c = route_test_hex(10, 5, 'D');
         let routes = compute_jump_routes(&[a, b, c]);
 
-        assert!(routes.iter().any(|r| {
-            r.from == HexCoord::new(8, 5) && r.to == HexCoord::new(9, 5) && r.jump == 1
-        }));
+        let seam = routes
+            .iter()
+            .find(|r| r.from == HexCoord::new(8, 5) && r.to == HexCoord::new(9, 5))
+            .expect("A/B seam route");
+        assert_eq!(seam.jump, 1);
+        assert!(seam.communication);
         assert!(!routes
             .iter()
             .any(|r| { r.from == HexCoord::new(9, 5) && r.to == HexCoord::new(10, 5) }));
+    }
+
+    #[test]
+    fn communication_routes_are_selective() {
+        let c_port = route_test_hex(1, 1, 'C');
+        let other_c_port = route_test_hex(1, 2, 'C');
+        let routes = compute_jump_routes(&[c_port, other_c_port]);
+
+        assert_eq!(routes.len(), 1);
+        assert!(!routes[0].communication);
+
+        let hub = route_test_hex_with_uwp(
+            1,
+            1,
+            Uwp {
+                starport: 'A',
+                pop: 9,
+                ..default_route_uwp()
+            },
+        );
+        let partner = route_test_hex_with_uwp(
+            1,
+            2,
+            Uwp {
+                starport: 'B',
+                pop: 8,
+                ..default_route_uwp()
+            },
+        );
+        let routes = compute_jump_routes(&[hub, partner]);
+        assert!(routes[0].communication);
+    }
+
+    #[test]
+    fn trade_routes_follow_chapter_12_pairings() {
+        let industrial = route_test_hex_with_uwp(
+            1,
+            1,
+            Uwp {
+                starport: 'A',
+                atm: 4,
+                pop: 9,
+                tech: 12,
+                ..default_route_uwp()
+            },
+        );
+        let non_industrial = route_test_hex_with_uwp(
+            1,
+            2,
+            Uwp {
+                starport: 'C',
+                pop: 5,
+                tech: 7,
+                ..default_route_uwp()
+            },
+        );
+        let unmatched = route_test_hex_with_uwp(
+            1,
+            3,
+            Uwp {
+                starport: 'C',
+                atm: 3,
+                hydro: 2,
+                pop: 7,
+                tech: 8,
+                ..default_route_uwp()
+            },
+        );
+        let routes = compute_jump_routes(&[industrial, non_industrial, unmatched]);
+
+        let trade = routes
+            .iter()
+            .find(|r| r.from == HexCoord::new(1, 1) && r.to == HexCoord::new(1, 2))
+            .expect("industrial/non-industrial route");
+        assert!(trade.trade);
+        assert!(trade.trade_score >= 7);
+
+        let ordinary = routes
+            .iter()
+            .find(|r| r.from == HexCoord::new(1, 2) && r.to == HexCoord::new(1, 3))
+            .expect("ordinary jump route");
+        assert!(!ordinary.trade);
+        assert_eq!(ordinary.trade_score, 0);
     }
 
     #[test]
@@ -829,19 +1056,21 @@ mod tests {
     }
 
     fn route_test_hex(col: u8, row: u8, starport: char) -> SubsectorHex {
+        route_test_hex_with_uwp(
+            col,
+            row,
+            Uwp {
+                starport,
+                ..default_route_uwp()
+            },
+        )
+    }
+
+    fn route_test_hex_with_uwp(col: u8, row: u8, uwp: Uwp) -> SubsectorHex {
         SubsectorHex {
             coord: HexCoord::new(col, row),
             system_seed: 1,
-            uwp: Uwp {
-                starport,
-                size: 8,
-                atm: 6,
-                hydro: 7,
-                pop: 6,
-                gov: 7,
-                law: 4,
-                tech: 9,
-            },
+            uwp,
             bases: Bases::default(),
             travel_zone: TravelZone::Green,
             gas_giant: false,
@@ -853,6 +1082,19 @@ mod tests {
                 gas_giants: 0,
             },
             name: None,
+        }
+    }
+
+    fn default_route_uwp() -> Uwp {
+        Uwp {
+            starport: 'C',
+            size: 8,
+            atm: 6,
+            hydro: 7,
+            pop: 6,
+            gov: 7,
+            law: 4,
+            tech: 9,
         }
     }
 

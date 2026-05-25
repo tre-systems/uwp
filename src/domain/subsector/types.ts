@@ -50,6 +50,9 @@ export interface JumpRoute {
   from: HexCoord
   to: HexCoord
   jump: 1 | 2
+  communication: boolean
+  trade: boolean
+  trade_score: number
 }
 
 export interface Subsector {
@@ -68,6 +71,20 @@ export function subsectorHexCount(subsector: Pick<Subsector, 'columns' | 'rows'>
 
 export function hexLabel(coord: HexCoord): string {
   return `${coord.col.toString().padStart(2, '0')}${coord.row.toString().padStart(2, '0')}`
+}
+
+export function routesForHex(subsector: Subsector, coord: HexCoord): JumpRoute[] {
+  return subsector.jump_routes.filter((route) =>
+    sameHex(route.from, coord) || sameHex(route.to, coord),
+  )
+}
+
+export function routeNeighbor(route: JumpRoute, coord: HexCoord): HexCoord {
+  return sameHex(route.from, coord) ? route.to : route.from
+}
+
+function sameHex(a: HexCoord, b: HexCoord): boolean {
+  return a.col === b.col && a.row === b.row
 }
 
 // Cepheus pseudo-hex digit rendering: 0-9 then A-F for 10-15.

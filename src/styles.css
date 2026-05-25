@@ -601,6 +601,29 @@ html, body, #app {
   background: var(--color-accent-hover);
   outline: none;
 }
+.route-codes {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.route-chip {
+  display: inline-block;
+  padding: 1px var(--space-3);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: var(--radius-sm);
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-strong);
+  font: 600 var(--type-sm)/1.4 var(--font-mono);
+}
+.route-chip-trade {
+  border-color: rgba(248, 191, 86, 0.62);
+  background: rgba(248, 191, 86, 0.14);
+}
+.route-chip-more {
+  color: var(--color-text-dim);
+}
 
 .panel-header {
   display: flex;
@@ -1438,6 +1461,16 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke: rgba(255, 200, 110, 0.55);
   stroke-width: 1.1;
   stroke-dasharray: 3 3;
+}
+.jump-route-local {
+  stroke: rgba(130, 150, 170, 0.32);
+}
+.jump-route-comm {
+  stroke: rgba(78, 200, 102, 0.72);
+}
+.jump-route-trade {
+  stroke: rgba(248, 191, 86, 0.88);
+  stroke-width: 2;
 }
 
 .toggle-label {

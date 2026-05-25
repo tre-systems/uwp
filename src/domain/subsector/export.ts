@@ -89,13 +89,40 @@ function hexLine(h: SubsectorHex, allegiance: string): string {
   return fields.map((f, i) => padRight(f, COLS[i].width)).join('').trimEnd()
 }
 
+function routeLine(route: Subsector['jump_routes'][number]): string {
+  const comm = route.communication ? 'Y' : '-'
+  const trade = route.trade ? 'Y' : '-'
+  const score = route.trade ? String(route.trade_score) : '-'
+  return [
+    padRight(hexLabel(route.from), 6),
+    padRight(hexLabel(route.to), 6),
+    padRight(`J-${route.jump}`, 6),
+    padRight(comm, 6),
+    padRight(trade, 6),
+    score,
+  ].join('').trimEnd()
+}
+
+function routeDividerLine(): string {
+  return [
+    padRight('-----', 6),
+    padRight('-----', 6),
+    padRight('-----', 6),
+    padRight('-----', 6),
+    padRight('-----', 6),
+    '-----',
+  ].join('').trimEnd()
+}
+
 export function subsectorToText(sub: Subsector): string {
   const lines: string[] = []
+  const communicationRoutes = sub.jump_routes.filter((route) => route.communication)
+  const tradeRoutes = sub.jump_routes.filter((route) => route.trade)
   lines.push(`# Subsector region ${systemName(sub.seed)}  (seed ${sub.seed})`)
   lines.push(`# Dimensions: ${sub.columns} x ${sub.rows}`)
   lines.push(`# Allegiance: ${sub.allegiance}`)
   lines.push(`# Hexes occupied: ${sub.hexes.length} / ${subsectorHexCount(sub)}`)
-  lines.push(`# Jump routes: ${sub.jump_routes.length}`)
+  lines.push(`# Routes: ${communicationRoutes.length} communications, ${tradeRoutes.length} trade`)
   lines.push('')
   lines.push(headerLine())
   lines.push(dividerLine())
@@ -107,6 +134,22 @@ export function subsectorToText(sub: Subsector): string {
   })
   for (const hex of sorted) {
     lines.push(hexLine(hex, sub.allegiance))
+  }
+  if (sub.jump_routes.length > 0) {
+    lines.push('')
+    lines.push('# Route table')
+    lines.push('From  To    Jump  Comm  Trade Score')
+    lines.push(routeDividerLine())
+    const sortedRoutes = [...sub.jump_routes].sort((a, b) => {
+      const from = hexLabel(a.from).localeCompare(hexLabel(b.from))
+      if (from !== 0) return from
+      const to = hexLabel(a.to).localeCompare(hexLabel(b.to))
+      if (to !== 0) return to
+      return a.jump - b.jump
+    })
+    for (const route of sortedRoutes) {
+      lines.push(routeLine(route))
+    }
   }
   return lines.join('\n') + '\n'
 }
