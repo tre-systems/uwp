@@ -25,10 +25,20 @@ function markDismissed(): void {
   }
 }
 
+// Touch devices "pinch" to zoom; mouse / trackpad users "scroll".
+// matchMedia is the standard way to check this — fall back to false on
+// the SSR-safe path where window is missing.
+function detectCoarsePointer(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia('(pointer: coarse)').matches
+}
+
 export function OnboardingHint() {
   const [visible, setVisible] = useState(false)
+  const [coarse, setCoarse] = useState(false)
 
   useEffect(() => {
+    setCoarse(detectCoarsePointer())
     if (readDismissed()) return
     // Wait a beat so the hint doesn't pop in over the loading overlay.
     const showTimer = window.setTimeout(() => setVisible(true), 600)
@@ -71,7 +81,7 @@ export function OnboardingHint() {
         <kbd>drag</kbd> orbit
       </span>
       <span class="onboarding-hint-row">
-        <kbd>scroll</kbd> zoom
+        <kbd>{coarse ? 'pinch' : 'scroll'}</kbd> zoom
       </span>
       <span class="onboarding-hint-row">
         <kbd>menu</kbd> open controls
