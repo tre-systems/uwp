@@ -2108,6 +2108,13 @@ label.color input[type="color"]::-webkit-color-swatch {
      on phones — 30px misses easily and matches the panel-toggle's
      mobile sizing. */
   .glossary-close { width: 44px; height: 44px; }
+  /* Same 44pt rule for the row of header actions inside the panel —
+     the share and glossary icon buttons sit at 32×33 by default which
+     is well below the iOS minimum. Randomize/Reset are wide enough
+     that the extra few pixels of height don't hurt either. */
+  .panel-actions button { min-height: 44px; }
+  .panel-actions .share-trigger,
+  .panel-actions .glossary-trigger { min-width: 44px; }
   .glossary-backdrop { padding: var(--space-4); }
   .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
