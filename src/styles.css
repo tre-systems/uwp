@@ -1880,6 +1880,13 @@ label.color input[type="color"]::-webkit-color-swatch {
   }
   .subsector-overlay {
     padding: calc(var(--safe-top) + 112px) calc(var(--safe-right) + var(--space-6)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
+    /* On phones the wide-but-short subsector strip and the icosahedral
+       surface net don't fill the portrait viewport, so vertical-centring
+       leaves a 200px gap between the breadcrumb and the map. Anchor to
+       the top instead — the map then flows directly under the breadcrumb
+       and any leftover space sits below where it reads as scrollable
+       room rather than missing content. */
+    align-items: flex-start;
   }
   /* Mobile panel is a top-anchored full-width drop-down, not a right
      sidebar, so the 340px desktop gutter would squash the hex grid
