@@ -1,13 +1,10 @@
 //! legacy 2d6-style hex world map for a single planet.
 //!
-//! Climate-driven v1: rather than waiting on the procedural surface
-//! pre-bake (Compute Roadmap item 1), this implementation drives terrain
-//! classification straight from the planet's existing ClimateSummary plus
-//! latitude and a low-frequency seed noise. It won't match the globe's
-//! per-fragment noise stack — that consistency arrives with the pre-bake
-//! — but it WILL match the broad bands a user perceives (polar caps,
-//! temperate belts, hot deserts) and it gives Cepheus GMs a usable hex
-//! world map today.
+//! The map samples the same Rust surface pre-bake the globe uploads as its
+//! terrain atlas, then applies climate bands and Cepheus settlement rules.
+//! The pre-bake module caches the most recent seed/water pair, so map
+//! generation can share work with the renderer and JS preview instead of
+//! rebuilding the height field several times during a view change.
 //!
 //! Reference: Cepheus Engine SRD, Book 3, World Mapping section.
 

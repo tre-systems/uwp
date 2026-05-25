@@ -32,6 +32,13 @@ import type { SolarSystem } from '../domain/system'
 import type { SurfaceMap } from '../domain/surfaceMap'
 import { ensureWasmReady } from '../wasm'
 
+interface SurfacePrebakeSnapshot {
+  lon_cells: number
+  lat_cells: number
+  heightmap: Float32Array
+  sea_level_threshold: number
+}
+
 declare global {
   interface Window {
     uwp?: {
@@ -67,6 +74,11 @@ export class RendererClient {
   private fpsSampleFrames = 0
   private lastFps = 0
   private lastFrameMs = 0
+  private surfacePrebakeCache: {
+    seed: number
+    waterFraction: number
+    bake: SurfacePrebakeSnapshot
+  } | null = null
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.profile = detectRenderProfile()
@@ -160,7 +172,7 @@ export class RendererClient {
     this.planet?.pointAtSurface(latDeg, lonDeg)
   }
 
-  getSurfacePrebake(): { lon_cells: number; lat_cells: number; heightmap: Float32Array | number[] } | null {
+  getSurfacePrebake(): SurfacePrebakeSnapshot | null {
     // The Rust surface_map::generate path uses params.seed (the visual
     // appearance seed) - NOT the main world's per-planet seed - when
     // it calls surface_prebake::generate. The background here has to
@@ -168,9 +180,33 @@ export class RendererClient {
     // the hex grid's terrain classifications.
     const planet = this.planet
     if (!planet) return null
+    const seed = params.value.seed >>> 0
+    const waterFraction = params.value.sea_level
+    const cached = this.surfacePrebakeCache
+    if (
+      cached &&
+      cached.seed === seed &&
+      Math.abs(cached.waterFraction - waterFraction) < 0.0005
+    ) {
+      return cached.bake
+    }
     try {
-      const bake = generateSurfacePrebake(params.value.seed, params.value.sea_level)
-      return bake as { lon_cells: number; lat_cells: number; heightmap: Float32Array | number[] }
+      const bake = generateSurfacePrebake(seed, waterFraction) as {
+        lon_cells: number
+        lat_cells: number
+        heightmap: Float32Array | number[]
+      }
+      const heightmap = bake.heightmap instanceof Float32Array
+        ? bake.heightmap
+        : Float32Array.from(bake.heightmap)
+      const snapshot: SurfacePrebakeSnapshot = {
+        lon_cells: bake.lon_cells,
+        lat_cells: bake.lat_cells,
+        heightmap,
+        sea_level_threshold: quantileHeight(heightmap, waterFraction),
+      }
+      this.surfacePrebakeCache = { seed, waterFraction, bake: snapshot }
+      return snapshot
     } catch (err) {
       console.warn('generateSurfacePrebake failed', err)
       return null
@@ -183,10 +219,9 @@ export class RendererClient {
 
   private refreshSystemSnapshot() {
     setSystemSnapshot(this.getSystem())
-    // The surface map is keyed to the main world, so refresh it whenever
-    // the system snapshot changes. Cheap (one hex-grid pass) and keeps
-    // the Surface view always showing the live main world.
-    if (this.planet) {
+    // Surface map generation includes the surface pre-bake, so keep it
+    // lazy: update it immediately only while the Surface view is visible.
+    if (this.planet && viewMode.value === 'surface') {
       setSurfaceMapSnapshot(this.getSurfaceMap())
     }
   }
@@ -194,7 +229,11 @@ export class RendererClient {
   private installEffects() {
     this.disposers.push(
       effect(() => {
-        this.planet?.setViewMode(viewMode.value)
+        const mode = viewMode.value
+        this.planet?.setViewMode(mode)
+        if (this.planet && mode === 'surface') {
+          setSurfaceMapSnapshot(this.getSurfaceMap())
+        }
       }),
       effect(() => {
         this.applyRenderQualityMode(renderQualityMode.value)
@@ -284,10 +323,10 @@ export class RendererClient {
   private setParams(nextParams: typeof params.value) {
     setParamsSnapshot(nextParams)
     this.planet?.setParams(this.renderParams())
-    // Surface map depends on sea_level / ice_latitude / atmosphere - both
-    // for hex terrain and inspector readouts. Refresh so the Surface view
-    // tracks the planet the user is editing.
-    if (this.planet) {
+    // Surface map depends on sea_level / ice_latitude / atmosphere, but
+    // generating it also runs the Rust pre-bake. Refresh it while visible
+    // and let tab entry lazily regenerate it otherwise.
+    if (this.planet && viewMode.value === 'surface') {
       setSurfaceMapSnapshot(this.getSurfaceMap())
     }
   }
@@ -437,4 +476,12 @@ export class RendererClient {
     event.preventDefault()
     this.planet?.zoom(event.deltaY)
   }
+}
+
+function quantileHeight(heightmap: Float32Array, q: number): number {
+  if (heightmap.length === 0) return 0
+  const sorted = Array.from(heightmap)
+  sorted.sort((a, b) => a - b)
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(q * sorted.length)))
+  return sorted[idx] ?? 0
 }

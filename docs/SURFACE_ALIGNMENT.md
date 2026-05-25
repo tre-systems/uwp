@@ -6,6 +6,28 @@ Rust surface pre-bake for coastlines and major terrain; the remaining work is
 to replace coarse logical surface cells with a Rust-owned atlas of stable cell
 ids and to make region views sample local atlas patches.
 
+## Current Performance Correction
+
+The first fully shared pre-bake pass proved too eager: changing world controls
+could regenerate the 1024 x 512 Rust heightmap through the renderer, the hidden
+surface map, and the JS preview path even when the user was not looking at the
+Surface view. The app now treats surface-map generation as a visible/lazy path:
+
+- `surface_prebake::generate` caches the latest `(seed, water)` bake so the
+  renderer atlas, Rust surface map, and JS preview can share one computation.
+- `RendererClient` caches the normalized JS preview bake and its sea-level
+  threshold.
+- `SurfaceMap` requests the preview bake once per seed/water setting, reuses it
+  for grid classification and background rendering, and delays the raster
+  background until after the tab can paint.
+- Mobile and touch backgrounds use a smaller raster target; the hex grid stays
+  vector/pickable.
+
+This is the preferred near-term approach: keep Rust authoritative for the heavy
+surface data, but do not eagerly run that work from every UI mutation. If the
+surface still feels wrong after this pass, the next decision should be visual
+model quality (palette/terrain algorithm), not more synchronous generation.
+
 ## Research Notes
 
 - Modern spherical hex systems are usually discrete global grid systems (DGGS)

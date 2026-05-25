@@ -26,6 +26,23 @@ describe('icosahedral surface cells', () => {
       expect(Number.isFinite(hex.lonDeg)).toBe(true)
     }
   })
+
+  it('normalises plain JS height arrays once and still produces finite terrain', () => {
+    const surface = buildIcosahedralSurface({
+      prebake: {
+        lon_cells: 4,
+        lat_cells: 2,
+        heightmap: [-0.5, -0.2, 0.2, 0.5, -0.4, -0.1, 0.3, 0.6],
+      },
+      waterFraction: 0.5,
+      iceFraction: 0,
+      meanTempK: 288,
+      subdivisions: 4,
+    })
+
+    expect(surface.hexes.length).toBeGreaterThan(0)
+    expect(surface.hexes.every((hex) => Number.isFinite(hex.elevation))).toBe(true)
+  })
 })
 
 function flatPrebake() {

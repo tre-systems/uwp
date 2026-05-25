@@ -61,6 +61,9 @@ export interface BuildOptions {
 export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   const N = Math.max(2, Math.min(16, Math.floor(opts.subdivisions)))
   const hexes: IcosaHex[] = []
+  const heightmap = opts.prebake.heightmap instanceof Float32Array
+    ? opts.prebake.heightmap
+    : Float32Array.from(opts.prebake.heightmap)
   // First pass: collect every sub-cell with sampled elevation. We
   // need every elevation before we can pick the sea-level quantile,
   // so the actual terrain classification happens in pass 2.
@@ -79,7 +82,13 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
     for (let x = xOffset; x <= NET_WIDTH + xStep; x += xStep) {
       const projected = netToSphere(x, y)
       if (!projected) continue
-      const elev = samplePrebake(opts.prebake, projected.lat, projected.lon)
+      const elev = samplePrebake(
+        heightmap,
+        opts.prebake.lon_cells,
+        opts.prebake.lat_cells,
+        projected.lat,
+        projected.lon,
+      )
       raws.push({
         x,
         y,
@@ -136,12 +145,13 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
 
 // ---------- Pre-bake sampling ----------
 
-function samplePrebake(prebake: PreBake, latRad: number, lonRad: number): number {
-  const lonCells = prebake.lon_cells
-  const latCells = prebake.lat_cells
-  const heightmap = prebake.heightmap instanceof Float32Array
-    ? prebake.heightmap
-    : Float32Array.from(prebake.heightmap)
+function samplePrebake(
+  heightmap: Float32Array,
+  lonCells: number,
+  latCells: number,
+  latRad: number,
+  lonRad: number,
+): number {
   // Rust convention: lat_norm 0 = south pole, 1 = north pole;
   // lon_norm wraps 0..1 around the planet starting at lon=0 (positive x).
   const latNorm = (latRad / Math.PI) + 0.5

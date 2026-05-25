@@ -40,9 +40,9 @@ import {
 // an unfolded d20-style legacy 2d6 world map.
 
 const SUBDIVISIONS = 12
-const MIN_BACKGROUND_WIDTH = 1536
-const DESKTOP_BACKGROUND_WIDTH = 2560
-const TOUCH_BACKGROUND_WIDTH = 2048
+const MIN_BACKGROUND_WIDTH = 1024
+const DESKTOP_BACKGROUND_WIDTH = 1536
+const TOUCH_BACKGROUND_WIDTH = 1152
 const SURFACE_FACE_CLIP_ID = 'surface-face-clip'
 const SURFACE_COORD_COLS = 32
 const SURFACE_COORD_ROWS = 16
@@ -67,13 +67,15 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   const mainWorld = system && system.main_world >= 0 ? system.planets[system.main_world] ?? null : null
   const meanTempK = mainWorld?.climate.mean_surface_temp_k ?? mainWorld?.temperature_k ?? 288
   const iceFraction = mainWorld?.climate.ice_fraction ?? 0.0
+  const prebake = useMemo(() => {
+    if (!map) return null
+    return getSurfacePrebake()
+  }, [map?.seed, seaLevelParam])
 
   // Rebuild the icosahedral hex set whenever the inputs that drive
   // terrain / sea level / temperature change. Done synchronously in a
   // useMemo so the UI repaints atomically.
   const surface = useMemo(() => {
-    if (!map) return null
-    const prebake = getSurfacePrebake()
     if (!prebake) return null
     return buildIcosahedralSurface({
       prebake,
@@ -82,22 +84,41 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       meanTempK,
       subdivisions: SUBDIVISIONS,
     })
-  }, [map?.seed, seaLevelParam, iceFraction, meanTempK])
+  }, [prebake, seaLevelParam, iceFraction, meanTempK])
 
   // Rendered background, recomputed alongside the surface.
   const [bgUrl, setBgUrl] = useState<string | null>(null)
   useEffect(() => {
-    if (!map) { setBgUrl(null); return }
-    const prebake = getSurfacePrebake()
-    if (!prebake) { setBgUrl(null); return }
-    const url = renderSurfaceBackground(prebake, {
-      waterFraction: seaLevelParam,
-      iceLatitudeDeg,
-      meanTempK,
-      width: surfaceBackgroundWidth(containerRef.current),
-    })
-    setBgUrl(url)
-  }, [map?.seed, seaLevelParam, iceLatitudeDeg, meanTempK])
+    if (!map || !prebake) { setBgUrl(null); return }
+    let cancelled = false
+    const render = () => {
+      if (cancelled) return
+      const url = renderSurfaceBackground(prebake, {
+        waterFraction: seaLevelParam,
+        iceLatitudeDeg,
+        meanTempK,
+        width: surfaceBackgroundWidth(containerRef.current),
+      })
+      if (cancelled) return
+      setBgUrl(url)
+    }
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    if (idleWindow.requestIdleCallback) {
+      const id = idleWindow.requestIdleCallback(render, { timeout: 350 })
+      return () => {
+        cancelled = true
+        idleWindow.cancelIdleCallback?.(id)
+      }
+    }
+    const timeout = window.setTimeout(render, 16)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [map?.seed, prebake, seaLevelParam, iceLatitudeDeg, meanTempK])
 
   useEffect(() => {
     setSelectedCellKey(null)

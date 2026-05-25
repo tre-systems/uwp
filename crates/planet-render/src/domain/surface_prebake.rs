@@ -15,9 +15,8 @@
 //!      texture so the plates don't read as flat polygons.
 //!
 //! Output: a `PreBake` struct holding a heightmap (lat × lon grid of f32
-//! in [-1, 1]) and a coarse biome classification. v1 is sampled by
-//! `surface_map::generate` instead of the cheap inline noise to give the
-//! hex map continental-scale features it didn't have before.
+//! in [-1, 1]) plus plate ids. The detail globe uploads this as its terrain
+//! atlas, and the surface map samples it so broad coastlines agree.
 //!
 //! Pairing item 1 (pre-bake) with item 3 (tectonics) is intentional —
 //! the doc treats them as separate compute items but tectonics' output
@@ -25,17 +24,30 @@
 //! avoids the duplication the doc warned against in the World Surface
 //! Map roadmap.
 //!
-//! Future shader integration (planet.wgsl sampling this pre-bake
-//! instead of running its own noise stack) is the natural follow-on;
-//! the data path is in place, only the GPU bind-group + WGSL sampling
-//! code remain.
+//! Generation is intentionally cached for the last `(seed, water)` pair. The
+//! renderer, the surface-map generator, and the JS preview often request the
+//! same bake back-to-back, and recomputing a 1024×512 plate/noise field on
+//! every path made world changes feel sluggish on mobile.
 
 #![allow(dead_code)]
+
+use std::cell::RefCell;
 
 use serde::{Deserialize, Serialize};
 
 pub const PREBAKE_LON: usize = 1024;
 pub const PREBAKE_LAT: usize = 512;
+
+thread_local! {
+    static LAST_PREBAKE: RefCell<Option<PreBakeCache>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone)]
+struct PreBakeCache {
+    seed: u32,
+    water_bits: u32,
+    bake: PreBake,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreBake {
@@ -127,8 +139,31 @@ impl Rng {
 /// deliberately high enough for the globe shader and zoomable surface map
 /// to share smooth coastlines without visible atlas blockiness.
 pub fn generate(seed: u32, water_fraction: f32) -> PreBake {
+    let water = water_fraction.clamp(0.0, 1.0);
+    let water_bits = water.to_bits();
+    if let Some(cached) = LAST_PREBAKE.with(|slot| {
+        let slot = slot.borrow();
+        slot.as_ref()
+            .filter(|cached| cached.seed == seed && cached.water_bits == water_bits)
+            .map(|cached| cached.bake.clone())
+    }) {
+        return cached;
+    }
+
+    let bake = generate_uncached(seed, water);
+    LAST_PREBAKE.with(|slot| {
+        *slot.borrow_mut() = Some(PreBakeCache {
+            seed,
+            water_bits,
+            bake: bake.clone(),
+        });
+    });
+    bake
+}
+
+fn generate_uncached(seed: u32, water_fraction: f32) -> PreBake {
     let mut rng = Rng::new(seed);
-    let plates = make_plates(&mut rng, water_fraction.clamp(0.0, 1.0));
+    let plates = make_plates(&mut rng, water_fraction);
 
     let mut heightmap = vec![0.0f32; PREBAKE_LAT * PREBAKE_LON];
     let mut plate_id = vec![0u8; PREBAKE_LAT * PREBAKE_LON];

@@ -14,6 +14,7 @@ export interface PreBake {
   lon_cells: number
   lat_cells: number
   heightmap: number[] | Float32Array
+  sea_level_threshold?: number
 }
 
 interface RenderOptions {
@@ -42,7 +43,9 @@ export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): 
   const heightmap = prebake.heightmap instanceof Float32Array
     ? prebake.heightmap
     : Float32Array.from(prebake.heightmap)
-  const seaLevel = quantile(heightmap, clamp(opts.waterFraction, 0, 1))
+  const seaLevel = typeof prebake.sea_level_threshold === 'number'
+    ? prebake.sea_level_threshold
+    : quantile(heightmap, clamp(opts.waterFraction, 0, 1))
 
   const canvas = document.createElement('canvas')
   canvas.width = width

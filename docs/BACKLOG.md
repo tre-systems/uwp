@@ -191,6 +191,11 @@ and region views. The shared atlas has been raised to 1024 x 512, with
 centre-aligned sampling in Rust, WGSL, and TypeScript so the globe and surface
 map avoid blocky/jagged coastline drift. Plate baseline elevation is now
 smoothed across neighboring plates so continent edges are less geometric.
+The first eager integration made world edits sluggish, so the current rule is
+that expensive surface generation must be shared and lazy: the Rust pre-bake
+caches the latest seed/water pair, the JS preview path caches the normalized
+heightmap and sea threshold, and hidden Surface views do not regenerate maps on
+every slider movement.
 
 - Follow the alignment target in `docs/SURFACE_ALIGNMENT.md`: one Rust-owned
   surface atlas should drive the globe, world map, inspector, region view, and
@@ -201,6 +206,9 @@ smoothed across neighboring plates so continent edges are less geometric.
   elevation alignment.)*
 - Keep shader quality profiles, mobile fallbacks, and render-target scaling
   intact.
+- Do not run the full surface map/pre-bake path from hidden UI. Surface data
+  should refresh when entering Surface or when controls change while Surface is
+  visible.
 
 Done when:
 

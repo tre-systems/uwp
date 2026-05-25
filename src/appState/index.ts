@@ -43,6 +43,7 @@ export interface SurfacePrebake {
   lon_cells: number
   lat_cells: number
   heightmap: Float32Array | number[]
+  sea_level_threshold?: number
 }
 
 export interface RendererControls {
@@ -275,7 +276,9 @@ export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null, cell: Surfa
   selectedSurfaceCell.value = cell
 }
 
-/** Refresh the surface map from the current main world's climate. Cheap. */
+/** Refresh the surface map from the current main world's climate.
+ *  This can trigger Rust surface pre-bake work, so callers should prefer
+ *  doing it on Surface-view entry or when the Surface view is already visible. */
 export function refreshSurfaceMap(): void {
   const map = rendererControls?.getSurfaceMap() ?? null
   currentSurfaceMap.value = map
