@@ -113,7 +113,14 @@ export function ControlPanel() {
         {(mode === 'detail' || mode === 'system') && <ExportPanel disabled={controlsDisabled} />}
 
         <footer class="panel-footer">
-          <span>Drag to orbit · pinch or scroll to zoom</span>
+          {/* The 3D detail / system views orbit a camera; the 2D
+              subsector / surface SVGs only pan. Show the verb that
+              actually applies in this mode. */}
+          <span>
+            {mode === 'detail' || mode === 'system'
+              ? 'Drag to orbit · pinch or scroll to zoom'
+              : 'Drag to pan · pinch or scroll to zoom'}
+          </span>
           <button
             class="link"
             onClick={() => setAboutOpen(true)}
