@@ -2172,6 +2172,12 @@ label.color input[type="color"]::-webkit-color-swatch {
   .panel-actions button { min-height: 44px; }
   .panel-actions .share-trigger,
   .panel-actions .glossary-trigger { min-width: 44px; }
+  /* Save frame / Planet card and the Auto/High/Balanced/Low quality
+     segments also sit below the iOS minimum — 33px and 27px tall
+     respectively. Bump both groups so the export and performance
+     controls are comfortable on a phone. */
+  .export-btn { min-height: 44px; }
+  .quality-segment { min-height: 44px; }
   .glossary-backdrop { padding: var(--space-4); }
   .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
