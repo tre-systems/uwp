@@ -13,6 +13,7 @@ import {
   installSubsectorOverridePersistence,
   loadPersistedSubsectorOverrides,
 } from './appState/subsectorOverridePersistence'
+import { installDocumentTitle } from './appState/documentTitle'
 import {
   paramsPatchFromUwpDigits,
   setParamsSnapshot,
@@ -33,6 +34,7 @@ loadPersistedSubsectorOverrides()
 installPreferencePersistence()
 installUrlStateMirror()
 installSubsectorOverridePersistence()
+installDocumentTitle()
 // Project the default (or persisted) UWP into the visual params so the
 // planet the user sees on first frame matches the UWP code displayed in
 // the panel. Without this, population_intensity / sea_level / atmosphere
