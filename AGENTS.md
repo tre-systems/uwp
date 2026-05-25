@@ -303,7 +303,7 @@ The roadmap started as ten high-ROI Rust compute opportunities; v1 is now shippe
 
 ### Shipped
 
-- **1. Procedural surface pre-bake** → `c3ffb12`. `domain::surface_prebake` produces a 192×96 lat/lon heightmap per seed by combining plate-tectonic uplift/rift with multi-octave value noise. `surface_map::generate` samples it for the hex map; `generateSurfacePrebake(seed, water)` exposes it for future shader bind-group work.
+- **1. Procedural surface pre-bake** → `c3ffb12`, extended by current GPU upload work. `domain::surface_prebake` produces a 192×96 lat/lon heightmap per seed by combining plate-tectonic uplift/rift with multi-octave value noise. `surface_map::generate` samples it for the hex map; the detail renderer uploads the same raw heightmap as a `planet.wgsl` terrain atlas and packs a quantile-derived sea threshold so the globe waterline follows the same hydrographics fraction as the world map.
 - **3. Tectonics simulation** → `c3ffb12`. Shipped together with the pre-bake: 6-10 plate centres with tangential drift, convergence at boundaries drives uplift (mountains), divergence drives rifts (basins). Per-cell plate IDs preserved for future biome / colouring work.
 - **6. Hover / click ray-pick** → `26d014f`. `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; `Canvas.tsx` routes pointermove + click; `HoverTooltip` surfaces class/orbit/mass/Teq.
 - **7. N-body / Kepler propagator with binary perturbations** → `4ae34ac`. Newton-iterated Kepler propagation with seed-derived argument of periapsis + `binary_kick` Kozai-Lidov approximation.
@@ -319,7 +319,7 @@ The roadmap started as ten high-ROI Rust compute opportunities; v1 is now shippe
 
 ### Conditional (deferred — pick up when a downstream feature demands it)
 
-- **GPU integration of the pre-bake.** The pre-bake heightmap is computed and exposed; `planet.wgsl` still runs its own noise stack rather than sampling the baked data. Wiring the bake into a GPU cube-map (or 2D lat-lon texture), adding a bind-group entry, and switching the shader to sample would (a) make the rendered globe and the surface hex map agree at the pixel level and (b) collapse per-fragment shader cost ~5-10×. Sequence: copy the heightmap into a `wgpu::Texture`, expose the sampler in the planet bind-group, replace the FBM continent term in `planet.wgsl` with a texture sample.
+- **GPU integration of the pre-bake — v1 shipped.** The detail renderer now copies the pre-bake into a `wgpu::Texture` and `planet.wgsl` samples it for elevation/coastline decisions. Remaining conditional extensions: upload richer atlas/biome buffers once Rust owns stable surface-cell ids, and add visual regression coverage across globe/map/region/export views.
 - **Tectonics evolution.** v1 ships a single-pass plate convergence/divergence model. Iterating it for N timesteps with simple erosion would produce more weathered terrain (smoothed mountain ranges, oxbow-like river valleys). Useful once the GPU pre-bake landing makes terrain detail visible on the globe.
 
 When implementing any of these, the same boundary rules apply: the Rust crate owns the computation and its output buffers; the JS layer requests it through a typed WASM method and observes results through a reactive snapshot signal. Don't shortcut through `window.uwp` for non-debug code.
@@ -473,7 +473,7 @@ src/components/
 
 ### Phases
 
-Phases 1-6 are shipped on a climate-driven v1 (`6785193`). The original spec assumed the procedural pre-bake had landed; this implementation instead derives terrain straight from `ClimateSummary` + latitude + a small value-noise field. The on-screen globe and the hex map agree on broad bands (polar caps, temperate belts, equatorial deserts) but don't share per-pixel noise — that consistency arrives with the pre-bake.
+Phases 1-6 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integration). The world map and globe now share the Rust pre-bake for coastlines and major elevation. Region drill-downs opened from the icosahedral map now carry the clicked visual cell's terrain, latitude, temperature, and elevation. The remaining mismatch is at the atlas-cell level: the visible icosahedral cells are still TypeScript-generated rather than Rust-owned stable ids, and the region view still paints a local procedural landscape instead of sampling an atlas patch.
 
 1. **Rust surface-map generation.** *Shipped → `6785193`.* `domain::surface_map::generate` walks a 32×16 hex grid, picks sea level by quantile of a three-octave value noise so ocean fraction tracks `climate.liquid_water_fraction`, classifies terrain (Ocean / Shoreline / Plain / Forest / Hill / Mountain / Desert / Tundra / Ice / Volcanic) from elevation + latitude + climate + body-type. Four unit tests pin determinism, grid extent, ocean-fraction tracking, and polar-ice growth on a synthesised cold world.
 

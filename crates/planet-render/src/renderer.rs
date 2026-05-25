@@ -27,6 +27,8 @@ pub struct Renderer {
     system_pipeline: wgpu::RenderPipeline,
 
     detail_mesh: detail_scene::DetailMesh,
+    terrain_bind_group_layout: wgpu::BindGroupLayout,
+    terrain_atlas: detail_scene::TerrainAtlas,
 
     uniform_buffer: wgpu::Buffer,
     uniforms_bind_group: wgpu::BindGroup,
@@ -103,6 +105,13 @@ impl Renderer {
             &uniforms_layout,
             &system_resources.bind_group_layout,
         );
+        let initial_params = PlanetParams::default();
+        let terrain_atlas = detail_scene::create_terrain_atlas(
+            &device,
+            &queue,
+            &pipelines.terrain_bind_group_layout,
+            &initial_params,
+        );
 
         let depth_view = detail_scene::create_depth_view(&device, width, height);
         let scene_view = detail_scene::create_scene_view(&device, width, height);
@@ -155,6 +164,8 @@ impl Renderer {
             atmosphere_pipeline: pipelines.atmosphere,
             system_pipeline: pipelines.system,
             detail_mesh,
+            terrain_bind_group_layout: pipelines.terrain_bind_group_layout,
+            terrain_atlas,
             uniform_buffer,
             uniforms_bind_group,
             system_uniform_buffer: system_resources.uniform_buffer,
@@ -165,7 +176,7 @@ impl Renderer {
             atmosphere_bind_group,
             depth_view,
             camera,
-            params: PlanetParams::default(),
+            params: initial_params,
             rotation_t: 0.0,
             last_time: 0.0,
             view_mode: ViewMode::Detail,
@@ -176,7 +187,17 @@ impl Renderer {
     }
 
     pub fn set_params(&mut self, params: PlanetParams) {
+        let terrain_changed = self.params.seed != params.seed
+            || (self.params.sea_level - params.sea_level).abs() > f32::EPSILON;
         self.params = params;
+        if terrain_changed {
+            self.terrain_atlas = detail_scene::create_terrain_atlas(
+                &self.device,
+                &self.queue,
+                &self.terrain_bind_group_layout,
+                &self.params,
+            );
+        }
         self.detail_uniforms_dirty = true;
     }
 
@@ -341,6 +362,7 @@ impl Renderer {
                 self.rotation_t,
                 self.config.width,
                 self.config.height,
+                self.terrain_atlas.sea_level_threshold,
             );
             self.detail_uniforms_dirty = false;
         } else {
@@ -393,6 +415,7 @@ impl Renderer {
                         index_buffer: &self.detail_mesh.index_buffer,
                         num_indices: self.detail_mesh.num_indices,
                         uniforms_bind_group: &self.uniforms_bind_group,
+                        terrain_bind_group: &self.terrain_atlas.bind_group,
                         atmosphere_bind_group: &self.atmosphere_bind_group,
                         scene_view: &self.scene_view,
                         depth_view: &self.depth_view,

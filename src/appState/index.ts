@@ -9,8 +9,8 @@ import {
 } from '../uwp'
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
 import type { SolarSystem } from '../domain/system'
-import type { HexCoord, Subsector } from '../domain/subsector'
-import type { SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
+import type { HexCoord, Subsector, SubsectorUwp } from '../domain/subsector'
+import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
 
 export * from '../params'
@@ -89,10 +89,12 @@ export const showJumpRoutes = signal<boolean>(true)
 export const hoverTarget = signal<HoverTarget | null>(null)
 export const currentSurfaceMap = signal<SurfaceMap | null>(null)
 export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
+export const selectedSurfaceCell = signal<SurfaceHex | null>(null)
 /** When non-null, the RegionView modal renders the procedural landscape
  *  inside this surface hex. Set via openRegionView; cleared by Escape /
  *  backdrop / explicit close. */
 export const regionHex = signal<SurfaceHexCoord | null>(null)
+export const regionSurfaceCell = signal<SurfaceHex | null>(null)
 /** Time-scale multiplier for the System scene's orbital animation.
  *  0 = paused. 1 = real-time (a planet's orbital period maps to its
  *  Kepler year). 5×/20× let the user watch a system evolve quickly.
@@ -213,8 +215,9 @@ export function setSurfaceMap(map: SurfaceMap | null) {
   currentSurfaceMap.value = map
 }
 
-export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null) {
+export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null, cell: SurfaceHex | null = null) {
   selectedSurfaceHex.value = coord
+  selectedSurfaceCell.value = cell
 }
 
 /** Refresh the surface map from the current main world's climate. Cheap. */
@@ -222,6 +225,7 @@ export function refreshSurfaceMap(): void {
   const map = rendererControls?.getSurfaceMap() ?? null
   currentSurfaceMap.value = map
   selectedSurfaceHex.value = null
+  selectedSurfaceCell.value = null
 }
 
 /** Fetch the Rust pre-bake heightmap for the current main world (used
@@ -243,22 +247,23 @@ export function pointAtSurface(latDeg: number, lonDeg: number): void {
  * switches to Main World view the rendered globe is already aimed at
  * the chosen hex.
  */
-export function selectAndFocusSurfaceHex(coord: SurfaceHexCoord): void {
-  setSelectedSurfaceHex(coord)
+export function selectAndFocusSurfaceHex(coord: SurfaceHexCoord, cell: SurfaceHex | null = null): void {
+  setSelectedSurfaceHex(coord, cell)
   const map = currentSurfaceMap.value
-  if (!map) return
-  const hex = map.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
+  const hex = cell ?? map?.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
   if (!hex) return
   pointAtSurface(hex.latitude_deg, hex.longitude_deg)
 }
 
 /** Open the procedural Region detail modal for a surface hex. */
-export function openRegionView(coord: SurfaceHexCoord): void {
+export function openRegionView(coord: SurfaceHexCoord, cell: SurfaceHex | null = null): void {
   regionHex.value = coord
+  regionSurfaceCell.value = cell
 }
 
 export function closeRegionView(): void {
   regionHex.value = null
+  regionSurfaceCell.value = null
 }
 
 /**
@@ -272,8 +277,24 @@ export function selectHex(coord: HexCoord): void {
   const hex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
   if (!hex) return
   setSelectedHex(coord)
+  applySubsectorUwp(hex.uwp, hex.system_seed)
   setSystemSeed(hex.system_seed)
   setViewMode('system')
+}
+
+function applySubsectorUwp(hexUwp: SubsectorUwp, seed: number): void {
+  const nextUwp: UwpDigits = {
+    starport: hexUwp.starport,
+    size: hexUwp.size,
+    atm: hexUwp.atm,
+    hydro: hexUwp.hydro,
+    pop: hexUwp.pop,
+    gov: hexUwp.gov,
+    law: hexUwp.law,
+    tech: hexUwp.tech,
+  }
+  uwp.value = nextUwp
+  setParams({ ...params.value, ...paramsPatchFromUwpDigits(nextUwp), seed })
 }
 
 export function updateParams(patch: Partial<Params>) {

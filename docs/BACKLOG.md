@@ -161,18 +161,28 @@ Done when:
 Make the photorealistic globe and the surface map sample the same Rust-generated
 surface data.
 
+Status: in progress. The main-world globe now samples a GPU texture generated
+from the Rust surface pre-bake instead of running an independent continent
+noise stack. Hydrographics is treated as the authored target water fraction,
+and the shader receives both the raw height atlas and a quantile-derived sea
+threshold so the globe's waterline follows the same semantics as the world map
+and region views.
+
 - Follow the alignment target in `docs/SURFACE_ALIGNMENT.md`: one Rust-owned
   surface atlas should drive the globe, world map, inspector, region view, and
   exports.
 - Upload the Rust surface pre-bake as a GPU texture or cube-map.
 - Replace the planet shader's independent continent/noise stack with texture
-  sampling from the authoritative pre-bake.
+  sampling from the authoritative pre-bake. *(v1 shipped for coastline /
+  elevation alignment.)*
 - Keep shader quality profiles, mobile fallbacks, and render-target scaling
   intact.
 
 Done when:
 
 - the globe and surface map agree on coastlines and major terrain,
+- double-clicking a visual surface hex opens a region view seeded from that
+  exact clicked cell's terrain, latitude, temperature, and elevation,
 - fragment shader cost drops measurably on mobile,
 - visual quality is equal or better than the current shader-only planet.
 

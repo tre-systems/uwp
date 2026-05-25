@@ -17,6 +17,7 @@ pub struct Pipelines {
     pub atmosphere: wgpu::RenderPipeline,
     pub system: wgpu::RenderPipeline,
     pub atmosphere_bind_group_layout: wgpu::BindGroupLayout,
+    pub terrain_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -112,6 +113,12 @@ pub fn create_pipelines(
         bind_group_layouts: &[uniforms_layout],
         push_constant_ranges: &[],
     });
+    let terrain_bind_group_layout = detail::create_terrain_layout(device);
+    let planet_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("planet_pipeline_layout"),
+        bind_group_layouts: &[uniforms_layout, &terrain_bind_group_layout],
+        push_constant_ranges: &[],
+    });
 
     let atmosphere_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -186,7 +193,7 @@ pub fn create_pipelines(
     };
 
     Pipelines {
-        planet: create_planet_pipeline(device, &scene_layout, &planet_shader, vertex_layout),
+        planet: create_planet_pipeline(device, &planet_layout, &planet_shader, vertex_layout),
         background: create_background_pipeline(device, &scene_layout, &background_shader),
         atmosphere: create_atmosphere_pipeline(
             device,
@@ -196,6 +203,7 @@ pub fn create_pipelines(
         ),
         system: create_system_pipeline(device, &system_layout, &system_shader, swapchain_format),
         atmosphere_bind_group_layout,
+        terrain_bind_group_layout,
     }
 }
 

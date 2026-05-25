@@ -6,7 +6,7 @@ describe('paramsPatchFromUwp', () => {
     const patch = paramsPatchFromUwp('A867974-D')
 
     expect(patch).toMatchObject({
-      sea_level: 0.68,
+      sea_level: 0.7,
       atmosphere_density: 0.45,
       cloud_coverage: 0.22,
       vegetation_richness: 1,
@@ -19,7 +19,7 @@ describe('paramsPatchFromUwp', () => {
 
   it('maps airless dry worlds to cratered barren bodies', () => {
     expect(paramsPatchFromUwp('A000000-0')).toMatchObject({
-      sea_level: 0.05,
+      sea_level: 0,
       atmosphere_density: 0,
       cloud_coverage: 0,
       crater_density: 1,
@@ -50,7 +50,7 @@ describe('paramsPatchFromUwp', () => {
       tech: 12.5,
     })
 
-    expect(patch.sea_level).toBeCloseTo(0.725)
+    expect(patch.sea_level).toBeCloseTo(0.75)
     expect(patch.planet_radius).toBeCloseTo(1.05)
     expect(patch.population_intensity).toBeCloseTo(0.5)
     expect(patch.atmosphere_density).toBe(0.45)

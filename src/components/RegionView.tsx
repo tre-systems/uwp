@@ -3,6 +3,7 @@ import {
   closeRegionView,
   currentSurfaceMap,
   regionHex,
+  regionSurfaceCell,
 } from '../appState'
 import { hexCoordLabel, terrainLabel } from '../domain/surfaceMap'
 import { systemName } from '../domain/names'
@@ -24,6 +25,7 @@ const FRAME_HEIGHT = 600
 
 export function RegionView() {
   const hex = regionHex.value
+  const exactCell = regionSurfaceCell.value
   const map = currentSurfaceMap.value
   const containerRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -53,7 +55,7 @@ export function RegionView() {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const surfaceHex = map.hexes.find((h) => h.coord.col === hex.col && h.coord.row === hex.row)
+    const surfaceHex = exactCell ?? map.hexes.find((h) => h.coord.col === hex.col && h.coord.row === hex.row)
     if (!surfaceHex) return
 
     // Devicepixelratio-scaled drawing buffer so the render stays sharp
@@ -132,10 +134,10 @@ export function RegionView() {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
     }
-  }, [hex, map])
+  }, [hex, exactCell, map])
 
   if (!hex || !map) return null
-  const surfaceHex = map.hexes.find((h) => h.coord.col === hex.col && h.coord.row === hex.row)
+  const surfaceHex = exactCell ?? map.hexes.find((h) => h.coord.col === hex.col && h.coord.row === hex.row)
   if (!surfaceHex) return null
 
   const title = `${systemName(mix32(map.seed, mix32(hex.col, hex.row)))} (${hexCoordLabel(hex)})`

@@ -5,6 +5,8 @@
 // colors, lights with a directional sun, layers procedural clouds, and adds a
 // Fresnel atmosphere rim. Output is linear; framebuffer is sRGB so gamma is automatic.
 
+@group(1) @binding(0) var terrain_atlas: texture_2d<f32>;
+
 // ---------- Noise ----------
 
 fn hash3(p: vec3<f32>) -> vec3<f32> {
@@ -216,57 +218,41 @@ fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
     return vec2<f32>(-b - s, -b + s);
 }
 
-// Combined continental + ridged terrain field. Result is roughly in [-1, 1] so
-// downstream biome thresholds are predictable.
-//
-// Continents are domain-warped so coastlines flow organically instead of reading
-// as round noise-blobs. The shaping curve (pow(|x|, 0.85)) pushes the histogram
-// slightly bi-modal for clearer ocean/land separation.
+// Authoritative terrain field. The Rust pre-bake is uploaded as a small
+// raw-height atlas: -1 = low basin, +1 = highland. The signed sea-height
+// quantile is packed separately in the uniform so the hydrographics slider
+// remains an intended water fraction while relief stays smooth.
 fn terrain_field(dir: vec3<f32>) -> f32 {
-    let freq = u.planet_params.z;
-    let oct  = i32(u.planet_params.w);
-    let off  = u.seed_block.xyz;
-    let p = dir * freq + off;
+    let dims = textureDimensions(terrain_atlas);
+    let w = i32(dims.x);
+    let h = i32(dims.y);
 
-    let warp = vec3<f32>(
-        fbm(p * 0.55 + vec3<f32>( 0.0,  17.3, 0.0), 3),
-        fbm(p * 0.55 + vec3<f32>(43.1,   0.0, 0.0), 3),
-        fbm(p * 0.55 + vec3<f32>( 0.0,   0.0, 71.9), 3),
-    ) * 0.45;
-    let pw = p + warp;
+    let lat = asin(clamp(dir.y, -1.0, 1.0));
+    let lon = atan2(dir.z, dir.x);
+    let lat_u = clamp(lat / 3.14159265359 + 0.5, 0.0, 1.0) * f32(h - 1);
+    let lon_u = fract(lon / 6.28318530718 + 0.5) * f32(w);
 
-    let continents = fbm(pw, oct);
-    let ridges     = ridged_fbm(pw * 2.7 + vec3<f32>(13.7, 91.3, 47.1), max(oct - 1, 2));
-    let shaped = sign(continents) * pow(abs(continents), 0.85);
-    let base = shaped * 0.85 + (ridges - 0.55) * 0.30;
+    let i0 = i32(floor(lat_u));
+    let i1 = min(i0 + 1, h - 1);
+    let j0 = i32(floor(lon_u)) % w;
+    let j1 = (j0 + 1) % w;
+    let fi = fract(lat_u);
+    let fj = fract(lon_u);
 
-    // Plate-boundary uplift. Voronoi (F2 - F1) is small where two plates
-    // meet; we narrow that band into a thin ridge and gate it by a low-freq
-    // noise so most of the cell network stays silent — only a few segments
-    // become real mountain chains (Andes/Himalaya shape). The chain is
-    // additionally suppressed underwater so the Voronoi grid doesn't show
-    // through deep ocean as a visible lattice.
-    let plate_p = dir * 2.4 + off * 0.6;
-    // Domain-warp the Voronoi input with a low-freq noise field so the
-    // boundary lines bend organically — without this they read as the
-    // straight piecewise edges of a Voronoi diagram, not real ranges.
-    let plate_warp = vec3<f32>(
-        fbm(plate_p * 0.6 + vec3<f32>( 23.0,   7.0,  91.0), 3),
-        fbm(plate_p * 0.6 + vec3<f32>(-41.0,  53.0,  17.0), 3),
-        fbm(plate_p * 0.6 + vec3<f32>( 67.0, -29.0, -83.0), 3),
-    ) * 0.55;
-    let pv = plate_voronoi(plate_p + plate_warp);
-    let boundary = pv.y - pv.x;
-    let plate_ridge = pow(1.0 - smoothstep(0.0, 0.10, boundary), 2.5);
-    let chain_gate = smoothstep(-0.05, 0.45, fbm(dir * 1.3 + off * 1.3, 2));
-    let land_factor = smoothstep(-0.1, 0.25, base);
-    // Fine ridge perturbation so the crest itself isn't a clean curve.
-    let crest_jitter = (fbm(dir * 18.0 + off * 0.9, 2) * 0.5 + 0.5);
-    let plate_h = plate_ridge * chain_gate * (0.03 + land_factor * 0.15)
-                * (0.75 + crest_jitter * 0.5);
+    let h00 = textureLoad(terrain_atlas, vec2<i32>(j0, i0), 0).x;
+    let h01 = textureLoad(terrain_atlas, vec2<i32>(j1, i0), 0).x;
+    let h10 = textureLoad(terrain_atlas, vec2<i32>(j0, i1), 0).x;
+    let h11 = textureLoad(terrain_atlas, vec2<i32>(j1, i1), 0).x;
+    let h0 = mix(h00, h01, fj);
+    let h1 = mix(h10, h11, fj);
+    return mix(h0, h1, fi);
+}
 
-    let crater = craters(dir);
-    return clamp(base + plate_h + crater, -1.0, 1.0);
+fn relief_above_sea(h: f32, sea_h: f32) -> f32 {
+    let above = max(h - sea_h, 0.0);
+    // Ease the first few metres of coastline into the base sphere so the
+    // pre-baked waterline does not create a visible vertical wall on the mesh.
+    return above * smoothstep(0.0, 0.08, above);
 }
 
 // ---------- Vertex ----------
@@ -287,9 +273,9 @@ fn vs_main(in: VsIn) -> VsOut {
     let dir = normalize(in.position);
     let h = terrain_field(dir);
 
-    let sea_h        = u.planet_params.x * 2.0 - 1.0;
+    let sea_h        = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
-    let above        = max(h - sea_h, 0.0);
+    let above        = relief_above_sea(h, sea_h);
     let base_radius  = u.resolution.w;
     let radius       = base_radius + above * mountain_amp * base_radius;
     let local_pos    = dir * radius;
@@ -334,7 +320,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // the globe while the mesh continues to provide depth and terrain relief.
     let dir = surface_dir_from_screen(in.ndc, in.sphere_dir);
     let h = terrain_field(dir);
-    let sea_h = u.planet_params.x * 2.0 - 1.0;
+    let sea_h = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
     let above_water = h > sea_h;
     // Normalised height above sea level in roughly [0, 1] regardless of sea_h,
@@ -357,8 +343,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let h0 = h;
         let ht = terrain_field(normalize(dir + tangent * eps));
         let hb = terrain_field(normalize(dir + bitangent * eps));
-        let dx = (max(ht - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
-        let dy = (max(hb - sea_h, 0.0) - max(h0 - sea_h, 0.0)) * mountain_amp / (eps * above_range);
+        let dx = (relief_above_sea(ht, sea_h) - relief_above_sea(h0, sea_h)) * mountain_amp / (eps * above_range);
+        let dy = (relief_above_sea(hb, sea_h) - relief_above_sea(h0, sea_h)) * mountain_amp / (eps * above_range);
         local_normal = normalize(dir - tangent * dx - bitangent * dy);
         slope = 1.0 - clamp(dot(local_normal, dir), 0.0, 1.0);
         // Fine-scale land detail — perturbs the lit normal so flat plateaus pick

@@ -3,6 +3,7 @@ use glam::{Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
+use crate::domain::surface_prebake;
 use crate::mesh::cubesphere;
 use crate::params::PlanetParams;
 
@@ -25,7 +26,7 @@ pub struct DetailUniforms {
     pub atmosphere_color: [f32; 4],
     /// xyz = noise seed offset, w = ice_latitude
     pub seed_block: [f32; 4],
-    /// x = sea_level, y = mountain_amp, z = noise_freq, w = noise_octaves
+    /// x = water fraction, y = mountain_amp, z = signed sea height, w = unused
     pub planet_params: [f32; 4],
     /// x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     pub misc: [f32; 4],
@@ -39,6 +40,105 @@ pub struct DetailMesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
+}
+
+pub struct TerrainAtlas {
+    _texture: wgpu::Texture,
+    pub bind_group: wgpu::BindGroup,
+    pub sea_level_threshold: f32,
+}
+
+pub fn create_terrain_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("terrain_atlas_layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    })
+}
+
+pub fn create_terrain_atlas(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    params: &PlanetParams,
+) -> TerrainAtlas {
+    let bake = surface_prebake::generate(params.seed, params.sea_level);
+    let sea_level_threshold = quantile_height(&bake.heightmap, params.sea_level);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("terrain_atlas"),
+        size: wgpu::Extent3d {
+            width: bake.lon_cells,
+            height: bake.lat_cells,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("terrain_atlas_bind_group"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&view),
+        }],
+    });
+    // `write_texture` only needs the view during bind-group creation; the
+    // texture handle keeps the underlying resource alive after `view` drops.
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytemuck::cast_slice(&bake.heightmap),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(bake.lon_cells * std::mem::size_of::<f32>() as u32),
+            rows_per_image: Some(bake.lat_cells),
+        },
+        wgpu::Extent3d {
+            width: bake.lon_cells,
+            height: bake.lat_cells,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    TerrainAtlas {
+        _texture: texture,
+        bind_group,
+        sea_level_threshold,
+    }
+}
+
+fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
+    if heightmap.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = heightmap.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let target_below = (water_fraction.clamp(0.0, 1.0) * sorted.len() as f32)
+        .clamp(0.0, sorted.len() as f32) as usize;
+    if target_below == 0 {
+        sorted[0] - 0.001
+    } else if target_below >= sorted.len() {
+        sorted[sorted.len() - 1] + 0.001
+    } else {
+        sorted[target_below]
+    }
 }
 
 pub fn mesh_resolution(quality: f32) -> u32 {
@@ -100,6 +200,7 @@ pub fn uniforms_for(
     rotation_t: f32,
     width: u32,
     height: u32,
+    sea_level_threshold: f32,
 ) -> DetailUniforms {
     // Spin around the planet's local Y, then apply a seed-derived tilt so
     // each world has its own axial inclination instead of standing bolt-upright.
@@ -134,8 +235,8 @@ pub fn uniforms_for(
         planet_params: [
             params.sea_level,
             params.mountain_height,
-            params.noise_frequency,
-            params.noise_octaves as f32,
+            sea_level_threshold,
+            0.0,
         ],
         misc: [
             params.atmosphere_density,
@@ -296,6 +397,7 @@ pub struct DetailRenderPass<'a> {
     pub index_buffer: &'a wgpu::Buffer,
     pub num_indices: u32,
     pub uniforms_bind_group: &'a wgpu::BindGroup,
+    pub terrain_bind_group: &'a wgpu::BindGroup,
     pub atmosphere_bind_group: &'a wgpu::BindGroup,
     pub scene_view: &'a wgpu::TextureView,
     pub depth_view: &'a wgpu::TextureView,
@@ -335,6 +437,7 @@ pub fn encode_render(
 
         pass.set_pipeline(pass_input.planet_pipeline);
         pass.set_bind_group(0, pass_input.uniforms_bind_group, &[]);
+        pass.set_bind_group(1, pass_input.terrain_bind_group, &[]);
         pass.set_vertex_buffer(0, pass_input.vertex_buffer.slice(..));
         pass.set_index_buffer(pass_input.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..pass_input.num_indices, 0, 0..1);
@@ -364,12 +467,25 @@ pub fn encode_render(
 
 #[cfg(test)]
 mod tests {
-    use super::DetailUniforms;
+    use super::{quantile_height, DetailUniforms};
 
     #[test]
     fn detail_uniform_contract_stays_shader_aligned() {
         assert_eq!(std::mem::size_of::<DetailUniforms>(), 400);
         assert_eq!(std::mem::align_of::<DetailUniforms>(), 4);
         assert_eq!(std::mem::size_of::<DetailUniforms>() % 16, 0);
+    }
+
+    #[test]
+    fn quantile_height_turns_water_fraction_into_threshold() {
+        let heightmap = [-0.6, 0.1, 0.8, -0.2];
+        let threshold = quantile_height(&heightmap, 0.5);
+        let underwater = heightmap
+            .iter()
+            .filter(|height| **height < threshold)
+            .count();
+
+        assert_eq!(underwater, 2);
+        assert_eq!(threshold, 0.1);
     }
 }

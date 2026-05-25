@@ -10,6 +10,7 @@ import {
   hexCoordLabel,
   terrainLabel,
   type SurfaceMap as SurfaceMapDTO,
+  type SurfaceHex,
   type Settlement,
   type SurfaceHexCoord,
   type Terrain,
@@ -237,6 +238,7 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
   const terrainClass = hex.terrain.toLowerCase()
   const label = `${hex.terrain} · ${hex.latDeg.toFixed(1)}°`
   const coord = coordForHex(hex)
+  const cell = surfaceCellForHex(hex, coord)
   return (
     <g
       class={`surface-hex surface-${terrainClass}${selected ? ' surface-selected' : ''}`}
@@ -245,17 +247,17 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
       aria-label={label}
       onClick={() => {
         onSelectCell(cellKey)
-        selectAndFocusSurfaceHex(coord)
+        selectAndFocusSurfaceHex(coord, cell)
       }}
       onDblClick={() => {
         onSelectCell(cellKey)
-        openRegionView(coord)
+        openRegionView(coord, cell)
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onSelectCell(cellKey)
-          selectAndFocusSurfaceHex(coord)
+          selectAndFocusSurfaceHex(coord, cell)
         }
       }}
     >
@@ -410,6 +412,17 @@ function coordForHex(h: IcosaHex): SurfaceHexCoord {
   return {
     col: clampIndex(Math.floor(lonNorm * SURFACE_COORD_COLS), SURFACE_COORD_COLS),
     row: clampIndex(Math.floor(latNorm * SURFACE_COORD_ROWS), SURFACE_COORD_ROWS),
+  }
+}
+
+function surfaceCellForHex(h: IcosaHex, coord: SurfaceHexCoord): SurfaceHex {
+  return {
+    coord,
+    terrain: h.terrain,
+    latitude_deg: h.latDeg,
+    longitude_deg: h.lonDeg,
+    temperature_k: h.temperatureK,
+    elevation: (h.elevation + 1) * 0.5,
   }
 }
 

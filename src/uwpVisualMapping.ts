@@ -125,7 +125,11 @@ export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
   const atmo = atmoConfig(atmCode)
   const palette = paletteForUwp(atmCode, hydroCode)
 
-  const sea_level = 0.05 + (clamp(hydro, 0, 10) / 10) * 0.90
+  // Treat the continuous hydrographics slider as the authored target water
+  // fraction. The renderer converts this to a terrain quantile, so 25% really
+  // reads as roughly one quarter ocean instead of waiting for a hidden height
+  // threshold to cross the generated terrain distribution.
+  const sea_level = clamp(hydro, 0, 10) / 10
   const atmCrater = atmCode <= 1 ? 1.0 : atmCode <= 3 ? 0.6 : atmCode <= 5 ? 0.25 : 0.0
   const hydroCrater = hydroCode <= 1 ? 1.0 : hydroCode <= 3 ? 0.6 : 0.2
   const crater_density = Math.min(1, atmCrater * hydroCrater)

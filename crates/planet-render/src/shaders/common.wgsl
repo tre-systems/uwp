@@ -12,7 +12,7 @@ struct Uniforms {
     atmosphere_color:vec4<f32>,
     // xyz = seed offsets, w = ice latitude (0..1)
     seed_block:      vec4<f32>,
-    // x = sea_level, y = mountain_amp, z = noise_freq, w = noise_octaves
+    // x = water fraction, y = mountain_amp, z = signed sea height, w = unused
     planet_params:   vec4<f32>,
     // x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     misc:            vec4<f32>,
