@@ -229,15 +229,19 @@ fn terrain_field(dir: vec3<f32>) -> f32 {
 
     let lat = asin(clamp(dir.y, -1.0, 1.0));
     let lon = atan2(dir.z, dir.x);
-    let lat_u = clamp(lat / 3.14159265359 + 0.5, 0.0, 1.0) * f32(h - 1);
-    let lon_u = fract(lon / 6.28318530718 + 0.5) * f32(w);
+    // Atlas samples are baked at texel centres. Convert the normalized
+    // spherical coordinate to centre-aligned texel space so the globe,
+    // surface map, and Rust sampler agree at coastlines.
+    let lat_u = clamp((clamp(lat / 3.14159265359 + 0.5, 0.0, 1.0) * f32(h)) - 0.5, 0.0, f32(h - 1));
+    let lon_u = fract(lon / 6.28318530718 + 0.5) * f32(w) - 0.5;
+    let lon_floor = floor(lon_u);
 
     let i0 = i32(floor(lat_u));
     let i1 = min(i0 + 1, h - 1);
-    let j0 = i32(floor(lon_u)) % w;
+    let j0 = ((i32(lon_floor) % w) + w) % w;
     let j1 = (j0 + 1) % w;
     let fi = fract(lat_u);
-    let fj = fract(lon_u);
+    let fj = lon_u - lon_floor;
 
     let h00 = textureLoad(terrain_atlas, vec2<i32>(j0, i0), 0).x;
     let h01 = textureLoad(terrain_atlas, vec2<i32>(j1, i0), 0).x;

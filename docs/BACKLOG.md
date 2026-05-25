@@ -169,7 +169,10 @@ from the Rust surface pre-bake instead of running an independent continent
 noise stack. Hydrographics is treated as the authored target water fraction,
 and the shader receives both the raw height atlas and a quantile-derived sea
 threshold so the globe's waterline follows the same semantics as the world map
-and region views.
+and region views. The shared atlas has been raised to 1024 x 512, with
+centre-aligned sampling in Rust, WGSL, and TypeScript so the globe and surface
+map avoid blocky/jagged coastline drift. Plate baseline elevation is now
+smoothed across neighboring plates so continent edges are less geometric.
 
 - Follow the alignment target in `docs/SURFACE_ALIGNMENT.md`: one Rust-owned
   surface atlas should drive the globe, world map, inspector, region view, and
@@ -209,6 +212,11 @@ Done when:
 ### 9. Upgrade Planetary Surface Maps
 
 Make surface maps useful as play artifacts, not just inspection widgets.
+
+Status: in progress. The visible icosahedral net now uses a denser
+12-subdivision pointy-top hex lattice, and its pre-bake backdrop renders to an
+adaptive high-resolution raster (up to 2560 px desktop / 2048 px touch) before
+being fitted into the SVG.
 
 - Replace rounded 32 x 16 surface coordinates with stable surface-cell ids from
   the Rust atlas.

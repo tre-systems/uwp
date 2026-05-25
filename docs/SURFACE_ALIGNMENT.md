@@ -34,12 +34,18 @@ References:
 - The main-world globe uploads the Rust surface pre-bake as a GPU texture and
   samples it in `planet.wgsl` for elevation, coastline, and waterline decisions.
 - Rust already computes a surface pre-bake heightmap, and the SVG world-map
-  background samples that same pre-bake through the icosahedral net.
+  background samples that same pre-bake through the icosahedral net. The
+  current bake is 1024 x 512 and all three samplers use centre-aligned bilinear
+  lookup so texel centres match the cells Rust generated.
+- Plate baseline elevation is blended between the two nearest plates at
+  boundaries, so continental/oceanic transitions no longer become hard
+  Voronoi-edge coastlines.
 - Hydrographics is treated as the authored target ocean fraction. The globe
   receives the raw height atlas plus the same quantile-derived sea threshold
   used by the map's sea-level pass.
 - The visible world-map grid is now a pointy-top hex lattice clipped by the
-  20 faces of the net.
+  20 faces of the net, using 12 subdivisions per face over an adaptive
+  high-resolution raster background.
 - Starports and cities are now snapped to the centre of the visible surface
   hexes, so markers no longer float between cells.
 - The surface inspector still exposes the older 32 x 16 `SurfaceMap` DTO
@@ -52,7 +58,8 @@ References:
 1. **Globe versus map detail.** The globe and map now share the pre-bake, but
    the GPU path samples the raw height atlas at shader resolution while the map
    samples it through coarser icosahedral cells. Coastlines and major terrain
-   should agree; biome colouring and small-scale detail can still drift.
+   should agree more closely after the centre-aligned sampling pass; biome
+   colouring and small-scale detail can still drift.
 2. **Visual hexes versus logical cells.** The current pointy-top cells are
    generated in TypeScript from the net. The clicked cell now drives the
    region view directly, but the cells are not yet Rust-owned canonical ids.

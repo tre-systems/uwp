@@ -146,14 +146,15 @@ function samplePrebake(prebake: PreBake, latRad: number, lonRad: number): number
   // lon_norm wraps 0..1 around the planet starting at lon=0 (positive x).
   const latNorm = (latRad / Math.PI) + 0.5
   const lonNorm = (lonRad / (2 * Math.PI)) + 0.5  // shift so [-π, π] → [0, 1]
-  const lat = Math.max(0, Math.min(1, latNorm)) * (latCells - 1)
-  const lon = ((lonNorm % 1) + 1) % 1 * lonCells
+  const lat = clamp(Math.max(0, Math.min(1, latNorm)) * latCells - 0.5, 0, latCells - 1)
+  const lon = ((lonNorm % 1) + 1) % 1 * lonCells - 0.5
+  const lonFloor = Math.floor(lon)
   const i0 = Math.floor(lat)
   const i1 = Math.min(i0 + 1, latCells - 1)
-  const j0 = Math.floor(lon) % lonCells
+  const j0 = mod(lonFloor, lonCells)
   const j1 = (j0 + 1) % lonCells
   const fi = lat - i0
-  const fj = lon - Math.floor(lon)
+  const fj = lon - lonFloor
   const h00 = heightmap[i0 * lonCells + j0]
   const h01 = heightmap[i0 * lonCells + j1]
   const h10 = heightmap[i1 * lonCells + j0]
@@ -213,4 +214,12 @@ function hashFloat(x: number): number {
   h = ((h ^ (h >>> 13)) * 0xc2b2ae35) >>> 0
   h = (h ^ (h >>> 16)) >>> 0
   return h / 0xffffffff
+}
+
+function clamp(x: number, lo: number, hi: number): number {
+  return x < lo ? lo : x > hi ? hi : x
+}
+
+function mod(x: number, m: number): number {
+  return ((x % m) + m) % m
 }

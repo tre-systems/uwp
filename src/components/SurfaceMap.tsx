@@ -39,7 +39,10 @@ import {
 // atlas cell. Cuts remain only on the outside boundary, as expected for
 // an unfolded d20-style legacy 2d6 world map.
 
-const SUBDIVISIONS = 8
+const SUBDIVISIONS = 12
+const MIN_BACKGROUND_WIDTH = 1536
+const DESKTOP_BACKGROUND_WIDTH = 2560
+const TOUCH_BACKGROUND_WIDTH = 2048
 const SURFACE_FACE_CLIP_ID = 'surface-face-clip'
 const SURFACE_COORD_COLS = 32
 const SURFACE_COORD_ROWS = 16
@@ -91,7 +94,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       waterFraction: seaLevelParam,
       iceLatitudeDeg,
       meanTempK,
-      width: 1024,
+      width: surfaceBackgroundWidth(containerRef.current),
     })
     setBgUrl(url)
   }, [map?.seed, seaLevelParam, iceLatitudeDeg, meanTempK])
@@ -432,6 +435,16 @@ function coordKey(coord: SurfaceHexCoord): string {
 
 function clampIndex(n: number, max: number): number {
   return Math.max(0, Math.min(max - 1, n))
+}
+
+function surfaceBackgroundWidth(el: HTMLElement | null): number {
+  if (typeof window === 'undefined') return MIN_BACKGROUND_WIDTH
+
+  const cssWidth = el?.clientWidth || window.innerWidth || MIN_BACKGROUND_WIDTH
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
+  const maxWidth = coarse ? TOUCH_BACKGROUND_WIDTH : DESKTOP_BACKGROUND_WIDTH
+  return Math.round(Math.max(MIN_BACKGROUND_WIDTH, Math.min(maxWidth, cssWidth * dpr * 2)))
 }
 
 // Re-export for callers that previously imported from this file (the

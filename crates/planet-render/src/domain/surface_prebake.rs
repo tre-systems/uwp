@@ -34,8 +34,8 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const PREBAKE_LON: usize = 192;
-pub const PREBAKE_LAT: usize = 96;
+pub const PREBAKE_LON: usize = 1024;
+pub const PREBAKE_LAT: usize = 512;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreBake {
@@ -65,18 +65,22 @@ impl PreBake {
     pub fn sample(&self, lat_norm: f32, lon_norm: f32) -> f32 {
         // Bilinear sample on the equirectangular grid. lat_norm in [0, 1]
         // (0 = south pole, 1 = north), lon_norm in [0, 1] wrapping.
-        let lat = lat_norm.clamp(0.0, 1.0) * (PREBAKE_LAT as f32 - 1.0);
-        let lon = (lon_norm.rem_euclid(1.0)) * PREBAKE_LON as f32;
+        let lat_cells = self.lat_cells.max(1) as usize;
+        let lon_cells = self.lon_cells.max(1) as usize;
+        let lat = (lat_norm.clamp(0.0, 1.0) * lat_cells as f32 - 0.5)
+            .clamp(0.0, lat_cells.saturating_sub(1) as f32);
+        let lon = lon_norm.rem_euclid(1.0) * lon_cells as f32 - 0.5;
+        let lon_floor = lon.floor();
         let i0 = lat.floor() as usize;
-        let i1 = (i0 + 1).min(PREBAKE_LAT - 1);
-        let j0 = (lon.floor() as usize) % PREBAKE_LON;
-        let j1 = (j0 + 1) % PREBAKE_LON;
+        let i1 = (i0 + 1).min(lat_cells - 1);
+        let j0 = (lon_floor as isize).rem_euclid(lon_cells as isize) as usize;
+        let j1 = (j0 + 1) % lon_cells;
         let fi = lat - i0 as f32;
-        let fj = lon - lon.floor();
-        let h00 = self.heightmap[i0 * PREBAKE_LON + j0];
-        let h01 = self.heightmap[i0 * PREBAKE_LON + j1];
-        let h10 = self.heightmap[i1 * PREBAKE_LON + j0];
-        let h11 = self.heightmap[i1 * PREBAKE_LON + j1];
+        let fj = lon - lon_floor;
+        let h00 = self.heightmap[i0 * lon_cells + j0];
+        let h01 = self.heightmap[i0 * lon_cells + j1];
+        let h10 = self.heightmap[i1 * lon_cells + j0];
+        let h11 = self.heightmap[i1 * lon_cells + j1];
         let h0 = h00 * (1.0 - fj) + h01 * fj;
         let h1 = h10 * (1.0 - fj) + h11 * fj;
         h0 * (1.0 - fi) + h1 * fi
@@ -119,9 +123,9 @@ impl Rng {
     }
 }
 
-/// Generate the per-seed surface pre-bake. Cheap by design (<5 ms for
-/// the default 192×96 grid) so callers can rebuild on every seed change
-/// without ceremony.
+/// Generate the per-seed surface pre-bake. The default 1024×512 grid is
+/// deliberately high enough for the globe shader and zoomable surface map
+/// to share smooth coastlines without visible atlas blockiness.
 pub fn generate(seed: u32, water_fraction: f32) -> PreBake {
     let mut rng = Rng::new(seed);
     let plates = make_plates(&mut rng, water_fraction.clamp(0.0, 1.0));
@@ -144,13 +148,16 @@ pub fn generate(seed: u32, water_fraction: f32) -> PreBake {
             let edge = 1.0 - (best.dist / second.dist.max(1e-5)).clamp(0.0, 1.0);
             let plate = &plates[best.idx];
 
-            // Continental / oceanic baseline from the plate's mean elevation.
-            let mut h = plate.mean_elev * (0.65 + 0.35 * edge);
+            // Continental / oceanic baseline from the nearest plates. Blend
+            // toward the second-nearest plate at boundaries so coastlines and
+            // lowlands are not hard Voronoi edges.
+            let other = &plates[second.idx];
+            let boundary_mix = 0.5 * (1.0 - edge);
+            let mut h = plate.mean_elev * (1.0 - boundary_mix) + other.mean_elev * boundary_mix;
 
             // Boundary forcing: project the plate drift vectors at the
             // sample point and check if they converge (positive) or
             // diverge (negative) along the boundary.
-            let other = &plates[second.idx];
             let dir_to_other = sub_norm(other.centre, plate.centre);
             let conv_self = dot(plate.drift, dir_to_other);
             let conv_other = dot(other.drift, neg(dir_to_other));
@@ -162,7 +169,7 @@ pub fn generate(seed: u32, water_fraction: f32) -> PreBake {
 
             // Multi-octave value noise for texture on top.
             let noise = value_noise_3d(p, seed);
-            h += noise * 0.18;
+            h += noise * 0.24;
 
             // Clamp into a working range so downstream sea-level picking
             // has a consistent distribution.
@@ -327,15 +334,15 @@ fn value_noise_lattice(p: [f32; 3], seed: u32) -> f32 {
 }
 
 fn value_noise_3d(p: [f32; 3], seed: u32) -> f32 {
-    // 4-octave fractal noise on the unit-sphere point. Frequencies
+    // 5-octave fractal noise on the unit-sphere point. Frequencies
     // chosen so the lowest octave carries continent-scale features and
-    // the highest carries terrain texture without aliasing the 192×96
+    // the highest carries terrain texture without aliasing the 1024×512
     // grid.
     let mut acc = 0.0;
     let mut amp = 0.5;
     let mut freq = 1.5;
     let mut weight = 0.0;
-    for octave in 0..4 {
+    for octave in 0..5 {
         let q = [p[0] * freq, p[1] * freq, p[2] * freq];
         acc += value_noise_lattice(
             q,
@@ -402,10 +409,7 @@ mod tests {
         let lat_norm = (i as f32 + 0.5) / PREBAKE_LAT as f32;
         let lon_norm = (j as f32 + 0.5) / PREBAKE_LON as f32;
         let want = p.heightmap[i * PREBAKE_LON + j];
-        let got = p.sample(
-            lat_norm - 0.5 / PREBAKE_LAT as f32,
-            lon_norm - 0.5 / PREBAKE_LON as f32,
-        );
+        let got = p.sample(lat_norm, lon_norm);
         // Bilinear of the cell value with itself should equal the value.
         assert!(
             (got - want).abs() < 1e-4,

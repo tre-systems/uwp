@@ -1,5 +1,5 @@
 import { effect } from '@preact/signals'
-import init, { generateSubsector } from '../pkg/planet_render'
+import { generateSubsector } from '../pkg/planet_render'
 import {
   setSelectedHex,
   setSubsector,
@@ -7,6 +7,7 @@ import {
   subsectorSeed,
 } from './appState'
 import type { Subsector } from './domain/subsector'
+import { ensureWasmReady } from './wasm'
 
 // Subsector generation is independent of the GPU renderer (no shader,
 // no canvas, just deterministic data). We still need the WASM module
@@ -17,17 +18,8 @@ import type { Subsector } from './domain/subsector'
 //   - clears the selected hex when the underlying grid changes so a
 //     stale selection doesn't point at a now-empty cell
 
-let initialized = false
-let initPromise: Promise<void> | null = null
-
-function ensureInit(): Promise<void> {
-  if (initialized) return Promise.resolve()
-  if (!initPromise) initPromise = init().then(() => { initialized = true })
-  return initPromise
-}
-
 async function refresh(): Promise<void> {
-  await ensureInit()
+  await ensureWasmReady()
   const sub = generateSubsector(subsectorSeed.value, subsectorDensity.value) as Subsector
   setSubsector(sub)
   setSelectedHex(null)

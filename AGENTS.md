@@ -303,7 +303,7 @@ The roadmap started as ten high-ROI Rust compute opportunities; v1 is now shippe
 
 ### Shipped
 
-- **1. Procedural surface pre-bake** → `c3ffb12`, extended by current GPU upload work. `domain::surface_prebake` produces a 192×96 lat/lon heightmap per seed by combining plate-tectonic uplift/rift with multi-octave value noise. `surface_map::generate` samples it for the hex map; the detail renderer uploads the same raw heightmap as a `planet.wgsl` terrain atlas and packs a quantile-derived sea threshold so the globe waterline follows the same hydrographics fraction as the world map.
+- **1. Procedural surface pre-bake** → `c3ffb12`, extended by current GPU upload work. `domain::surface_prebake` produces a 1024×512 lat/lon heightmap per seed by combining plate-tectonic uplift/rift with multi-octave value noise. `surface_map::generate` samples it for the hex map; the detail renderer uploads the same raw heightmap as a `planet.wgsl` terrain atlas and packs a quantile-derived sea threshold so the globe waterline follows the same hydrographics fraction as the world map.
 - **3. Tectonics simulation** → `c3ffb12`. Shipped together with the pre-bake: 6-10 plate centres with tangential drift, convergence at boundaries drives uplift (mountains), divergence drives rifts (basins). Per-cell plate IDs preserved for future biome / colouring work.
 - **6. Hover / click ray-pick** → `26d014f`. `scenes::system::pick_planet` runs ray-vs-display-sphere against the system view; `Canvas.tsx` routes pointermove + click; `HoverTooltip` surfaces class/orbit/mass/Teq.
 - **7. N-body / Kepler propagator with binary perturbations** → `4ae34ac`. Newton-iterated Kepler propagation with seed-derived argument of periapsis + `binary_kick` Kozai-Lidov approximation.
@@ -485,7 +485,7 @@ Phases 1-6 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integ
 
 5. **App state + renderer client.** *Shipped → `6785193`.* `currentSurfaceMap`, `selectedSurfaceHex` signals; `refreshSurfaceMap` action; renderer client pushes a fresh map alongside every system snapshot refresh. ViewMode enum extends to `'surface'`.
 
-6. **SVG surface hex map UI.** *Shipped → `6785193`.* `SurfaceMap.tsx` renders the 512-hex grid with a fixed terrain palette, starport star, city dots scaled by tier, focus rings, click-to-select. `SurfaceMapEditor.tsx` surfaces grid stats and a per-hex inspector. `ViewModeToggle` becomes a 4-way segmented control with Surface disabled until a main world exists.
+6. **SVG surface hex map UI.** *Shipped → `6785193`, sharpened later.* `SurfaceMap.tsx` renders a 12-subdivision pointy-top icosahedral hex grid over an adaptive high-resolution pre-bake backdrop, with a fixed terrain palette, starport star, city dots scaled by tier, focus rings, click-to-select. `SurfaceMapEditor.tsx` surfaces grid stats and a per-hex inspector. `ViewModeToggle` becomes a 4-way segmented control with Surface disabled until a main world exists.
 
 7. **Globe ↔ surface bridge.** *Shipped → `e3eb716`.* `Camera::point_at` aims the detail-view camera at a (lat, lon); `Renderer::point_at_surface` applies the spin to `rotation_t` and pauses auto-rotate so the target stays still. Wired through `pointAtSurface` and `selectAndFocusSurfaceHex` on `appState`; clicking a hex in the SVG focuses the globe immediately, and the inspector grows a "Show on globe" button that aims + switches to Main World in one click.
 

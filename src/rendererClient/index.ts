@@ -1,5 +1,5 @@
 import { effect } from '@preact/signals'
-import init, { Planet, generateSurfacePrebake } from '../../pkg/planet_render'
+import { Planet, generateSurfacePrebake } from '../../pkg/planet_render'
 import {
   params,
   renderQualityMode,
@@ -30,13 +30,7 @@ import {
 } from '../renderProfile'
 import type { SolarSystem } from '../domain/system'
 import type { SurfaceMap } from '../domain/surfaceMap'
-
-let wasmReady: Promise<void> | null = null
-
-function ensureWasm() {
-  if (!wasmReady) wasmReady = init().then(() => undefined)
-  return wasmReady
-}
+import { ensureWasmReady } from '../wasm'
 
 declare global {
   interface Window {
@@ -92,7 +86,7 @@ export class RendererClient {
         return
       }
       setRendererStatus('loading')
-      await ensureWasm()
+      await ensureWasmReady()
       if (this.cancelled) return
       this.sizeCanvas()
       this.planet = await Planet.create(this.canvas, this.profile.meshQuality)

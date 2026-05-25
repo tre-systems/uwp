@@ -7,7 +7,7 @@ use crate::domain::surface_prebake;
 use crate::mesh::cubesphere;
 use crate::params::PlanetParams;
 
-pub const PLANET_RES: u32 = 200;
+pub const PLANET_RES: u32 = 384;
 pub const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 #[repr(C)]
@@ -145,7 +145,7 @@ pub fn mesh_resolution(quality: f32) -> u32 {
     if quality < 0.55 {
         96
     } else if quality < 0.85 {
-        144
+        192
     } else {
         PLANET_RES
     }

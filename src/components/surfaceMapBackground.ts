@@ -211,14 +211,15 @@ function sampleBilinear(
   latNorm: number,
   lonNorm: number,
 ): number {
-  const lat = clamp(latNorm, 0, 1) * (latCells - 1)
-  const lon = ((lonNorm % 1) + 1) % 1 * lonCells
+  const lat = clamp(clamp(latNorm, 0, 1) * latCells - 0.5, 0, latCells - 1)
+  const lon = ((lonNorm % 1) + 1) % 1 * lonCells - 0.5
+  const lonFloor = Math.floor(lon)
   const i0 = Math.floor(lat)
   const i1 = Math.min(i0 + 1, latCells - 1)
-  const j0 = Math.floor(lon) % lonCells
+  const j0 = mod(lonFloor, lonCells)
   const j1 = (j0 + 1) % lonCells
   const fi = lat - i0
-  const fj = lon - Math.floor(lon)
+  const fj = lon - lonFloor
   const h00 = heightmap[i0 * lonCells + j0]
   const h01 = heightmap[i0 * lonCells + j1]
   const h10 = heightmap[i1 * lonCells + j0]
@@ -254,6 +255,10 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 
 function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x
+}
+
+function mod(x: number, m: number): number {
+  return ((x % m) + m) % m
 }
 
 function clamp255(x: number): number {
