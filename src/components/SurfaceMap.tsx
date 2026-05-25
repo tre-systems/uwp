@@ -1,5 +1,4 @@
 import {
-  currentSurfaceMap,
   currentSystem,
   getSurfacePrebake,
   openRegionView,
@@ -50,8 +49,7 @@ interface SurfaceMapProps {
   map: SurfaceMapDTO | null
 }
 
-export function SurfaceMap(_: SurfaceMapProps) {
-  const map = currentSurfaceMap.value
+export function SurfaceMap({ map }: SurfaceMapProps) {
   const system = currentSystem.value
   const containerRef = useRef<HTMLDivElement>(null)
   const gestures = useMapGestures(containerRef, SVG_W, SVG_H)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   params,
+  pointAtSurface,
   renderPerformance,
   renderQualityMode,
   registerRendererControls,
@@ -65,6 +66,37 @@ describe('appState renderer command boundary', () => {
 
     registerRendererControls(null)
     setSystemSnapshot(null)
+  })
+
+  it('keeps the params snapshot aligned when focusing a surface point', () => {
+    const initial = { ...params.value }
+    const focused: Array<[number, number]> = []
+    let received: Params | null = null
+
+    setParamsSnapshot({ ...initial, auto_rotate: 0.75 })
+    registerRendererControls({
+      rerollPlanet: () => undefined,
+      getSystem: () => null,
+      setParams: (nextParams) => {
+        received = nextParams
+        setParamsSnapshot(nextParams)
+      },
+      pickSystemPlanet: () => null,
+      getSurfaceMap: () => null,
+      getSurfacePrebake: () => null,
+      pointAtSurface: (latDeg, lonDeg) => {
+        focused.push([latDeg, lonDeg])
+      },
+    })
+
+    pointAtSurface(12.5, -45.25)
+
+    expect(focused).toEqual([[12.5, -45.25]])
+    expect(received).toMatchObject({ auto_rotate: 0 })
+    expect(params.value.auto_rotate).toBe(0)
+
+    registerRendererControls(null)
+    setParamsSnapshot(initial)
   })
 
   it('stores render quality mode changes as app state', () => {

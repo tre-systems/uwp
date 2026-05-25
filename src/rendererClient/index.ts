@@ -140,15 +140,17 @@ export class RendererClient {
   pickSystemPlanet(canvasX: number, canvasY: number, _timeMs: number): number | null {
     const planet = this.planet
     if (!planet) return null
-    // Convert CSS pixels to backbuffer pixels (the renderer thinks in
-    // device pixels via the canvas attribute width/height).
-    const dpr = window.devicePixelRatio || 1
+    // Convert CSS pixels to the actual canvas backing store. Render profiles
+    // may cap DPR / total pixels, so window.devicePixelRatio is not enough.
+    const rect = this.canvas.getBoundingClientRect()
+    const scaleX = this.canvas.width / Math.max(rect.width, 1)
+    const scaleY = this.canvas.height / Math.max(rect.height, 1)
     // Ignore the wall-clock time the caller passed - the visible
     // planet positions are anchored to the simulation clock the frame
     // loop is feeding the renderer. Using wall-clock here would
     // de-sync picking from the visible position whenever the user
     // paused or sped up the system view.
-    const idx = planet.pickSystemPlanet(canvasX * dpr, canvasY * dpr, this.simTimeMs)
+    const idx = planet.pickSystemPlanet(canvasX * scaleX, canvasY * scaleY, this.simTimeMs)
     return idx < 0 ? null : idx
   }
 
@@ -269,7 +271,11 @@ export class RendererClient {
       try {
         this.planet.render(this.simTimeMs)
       } catch (err) {
-        setErrorMessage(String(err))
+        const message = err instanceof Error ? err.message : String(err)
+        setRendererStatus('error')
+        setErrorMessage(message)
+        this.cancelled = true
+        this.animationFrame = 0
         return
       }
       this.sampleFrameTime(frameTimeMs)

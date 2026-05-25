@@ -233,6 +233,9 @@ export function getSurfacePrebake(): SurfacePrebake | null {
 /** Rotate the detail-view globe to face a surface (lat, lon). */
 export function pointAtSurface(latDeg: number, lonDeg: number): void {
   rendererControls?.pointAtSurface(latDeg, lonDeg)
+  if (params.value.auto_rotate !== 0) {
+    setParams({ ...params.value, auto_rotate: 0 })
+  }
 }
 
 /**

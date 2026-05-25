@@ -110,7 +110,7 @@ export function ControlPanel() {
           <PerformanceControls disabled={controlsDisabled} />
         )}
 
-        {mode !== 'subsector' && <ExportPanel disabled={controlsDisabled} />}
+        {(mode === 'detail' || mode === 'system') && <ExportPanel disabled={controlsDisabled} />}
 
         <footer class="panel-footer">
           <span>Drag to orbit · scroll to zoom</span>

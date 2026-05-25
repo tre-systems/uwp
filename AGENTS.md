@@ -23,6 +23,10 @@ The remaining items in this file are *conditional future ideas* the
 project may pick up when a specific need surfaces. The doc's own rule
 applies: don't do them speculatively.
 
+The active, sequential backlog lives in `docs/BACKLOG.md`. Use that file for
+the next work item; use this file for product intent, architecture boundaries,
+and historical roadmap context.
+
 
 ## Product Intent
 
