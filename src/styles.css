@@ -1433,7 +1433,11 @@ label.color input[type="color"]::-webkit-color-swatch {
   width: 100%;
   height: auto;
   display: block;
+  /* The map is pan/zoomable via useMapGestures. Match the planet
+     canvas's grab/grabbing affordance so users see the same cue. */
+  cursor: grab;
 }
+.subsector-map svg:active { cursor: grabbing; }
 .subsector-empty {
   color: var(--text-dim);
   font-size: var(--type-body);
@@ -1658,7 +1662,9 @@ label.color input[type="color"]::-webkit-color-swatch {
   height: auto;
   display: block;
   filter: drop-shadow(0 24px 50px rgba(0, 0, 0, 0.55));
+  cursor: grab;
 }
+.surface-map svg:active { cursor: grabbing; }
 .surface-empty {
   color: var(--text-dim);
   font-size: var(--type-body);
