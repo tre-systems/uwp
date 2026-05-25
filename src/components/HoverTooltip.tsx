@@ -34,10 +34,28 @@ export function HoverTooltip() {
     : dayHours > 100
       ? `${(dayHours / 24).toFixed(1)} d`
       : `${dayHours.toFixed(1)} h`
+  // Flip the tooltip to the cursor's left / above when it would
+  // otherwise clip the viewport edge. 260 = max-width (240) + the 14px
+  // gap; 160 is a generous upper bound on the rendered card height.
+  // We anchor by `right` / `bottom` so the card slides cleanly past
+  // the cursor instead of jumping when its rendered width changes.
+  const MARGIN = 14
+  const TOOLTIP_MAX_W = 260
+  const TOOLTIP_APPROX_H = 160
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768
+  const flipX = target.x > vw - TOOLTIP_MAX_W
+  const flipY = target.y > vh - TOOLTIP_APPROX_H
+  const style: Record<string, string> = {
+    left: flipX ? 'auto' : `${target.x + MARGIN}px`,
+    right: flipX ? `${vw - target.x + MARGIN}px` : 'auto',
+    top: flipY ? 'auto' : `${target.y + MARGIN}px`,
+    bottom: flipY ? `${vh - target.y + MARGIN}px` : 'auto',
+  }
   return (
     <div
       class="hover-tooltip"
-      style={{ left: `${target.x + 14}px`, top: `${target.y + 14}px` }}
+      style={style}
       role="status"
     >
       <div class="hover-tooltip-head">
