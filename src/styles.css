@@ -2182,6 +2182,10 @@ label.color input[type="color"]::-webkit-color-swatch {
      around 22–23px tall by default. Bump them on phones too. */
   .sys-actions button { min-height: 44px; }
   .sys-export-row button { min-height: 44px; padding: 8px 12px; }
+  /* The Time scrubber's pause / 1× / 5× / 20× speed buttons sit at
+     28×21 by default — barely tappable on a phone. Bump the row to
+     44pt; sys-reroll stays at its deliberate inline 34×34. */
+  .time-scrubber-btn { min-height: 44px; min-width: 44px; padding: 6px 10px; }
   .glossary-backdrop { padding: var(--space-4); }
   .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
