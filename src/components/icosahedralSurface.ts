@@ -6,8 +6,9 @@
 
 import type { PreBake } from './surfaceMapBackground'
 import {
-  cartToSpherical,
-  iterFaceSubCells,
+  NET_HEIGHT,
+  NET_WIDTH,
+  netToSphere,
   TRI_SIDE,
 } from '../domain/icosahedron'
 import type { Terrain } from '../domain/surfaceMap'
@@ -34,8 +35,8 @@ export interface IcosaHex {
 export interface IcosaSurface {
   hexes: IcosaHex[]
   seaLevel: number
-  /** Sub-triangle edge length in flat-net pixels. Hex radius is side/3. */
-  cellSize: number
+  /** Pointy-top hex circumradius in flat-net pixels. */
+  hexRadius: number
   /** Subdivision level used. */
   subdivisions: number
 }
@@ -65,15 +66,30 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   // so the actual terrain classification happens in pass 2.
   type Raw = { x: number; y: number; latRad: number; lonRad: number; elev: number; faceIdx: number; upPointing: boolean }
   const raws: Raw[] = []
-  for (const cell of iterFaceSubCells(N)) {
-    // Sphere → (lat, lon).
-    const { lat: latRad, lon: lonRad } = cartToSpherical(cell.center3D)
-    const elev = samplePrebake(opts.prebake, latRad, lonRad)
-    // subUp on the yielded cell tells whether this is the up or down
-    // sub-triangle within its parent face. The visible hex is centred
-    // on the centroid so this only matters if we want orientation-
-    // sensitive styling (e.g. rotating the terrain glyph).
-    raws.push({ x: cell.flat.x, y: cell.flat.y, latRad, lonRad, elev, faceIdx: cell.faceIdx, upPointing: cell.subUp })
+
+  // A classic legacy 2d6-style icosahedral world map uses pointy-top
+  // hexes clipped by the unfolded d20 faces. `N` is the approximate
+  // number of hex columns across a face edge.
+  const hexRadius = TRI_SIDE / (N * Math.sqrt(3))
+  const xStep = Math.sqrt(3) * hexRadius
+  const yStep = 1.5 * hexRadius
+  let row = 0
+  for (let y = hexRadius; y <= NET_HEIGHT + hexRadius; y += yStep, row++) {
+    const xOffset = (row % 2) * xStep * 0.5
+    for (let x = xOffset; x <= NET_WIDTH + xStep; x += xStep) {
+      const projected = netToSphere(x, y)
+      if (!projected) continue
+      const elev = samplePrebake(opts.prebake, projected.lat, projected.lon)
+      raws.push({
+        x,
+        y,
+        latRad: projected.lat,
+        lonRad: projected.lon,
+        elev,
+        faceIdx: projected.face,
+        upPointing: row % 2 === 0,
+      })
+    }
   }
 
   // Compute sea level as the quantile across every sampled elevation
@@ -113,7 +129,7 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   return {
     hexes,
     seaLevel,
-    cellSize: TRI_SIDE / N,
+    hexRadius,
     subdivisions: N,
   }
 }

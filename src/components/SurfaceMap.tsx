@@ -18,7 +18,7 @@ import { systemName } from '../domain/names'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { useMapGestures } from './useMapGestures'
 import { renderSurfaceBackground } from './surfaceMapBackground'
-import { buildIcosahedralSurface, type IcosaHex } from './icosahedralSurface'
+import { buildIcosahedralSurface, type IcosaHex, type IcosaSurface } from './icosahedralSurface'
 import {
   FACES,
   faceFlatVertices,
@@ -111,8 +111,8 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   // Project the Rust DTO's settlements + starport through the
   // icosahedron so they land on the new net. coord (col, row) maps
   // back to (lat, lon) via the same convention surface_map.rs uses.
-  const cityPoints = map.cities.map((s) => projectCity(s, map.seed))
-  const starportPoint = map.starport ? projectStarport(map.starport) : null
+  const cityPoints = map.cities.map((s) => projectCity(s, map.seed, surface))
+  const starportPoint = map.starport ? projectStarport(map.starport, surface) : null
 
   return (
     <div
@@ -208,7 +208,7 @@ function SurfaceCells({
                   key={`${faceIdx}-${i}`}
                   hex={h}
                   cellKey={cellKey}
-                  cellSize={surface.cellSize}
+                  hexRadius={surface.hexRadius}
                   selected={
                     selectedCellKey
                       ? cellKey === selectedCellKey
@@ -227,16 +227,13 @@ function SurfaceCells({
 interface SubHexProps {
   hex: IcosaHex
   cellKey: string
-  cellSize: number
+  hexRadius: number
   selected: boolean
   onSelectCell: (key: string) => void
 }
 
-function SubHex({ hex, cellKey, cellSize, selected, onSelectCell }: SubHexProps) {
-  // The centroids of an equilateral triangular subdivision form a
-  // triangular lattice. Its Voronoi cells are regular hexagons with
-  // circumradius side/3; any larger and neighbouring cells overlap.
-  const r = Math.max(1, cellSize / 3)
+function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps) {
+  const r = Math.max(1, hexRadius)
   const terrainClass = hex.terrain.toLowerCase()
   const label = `${hex.terrain} · ${hex.latDeg.toFixed(1)}°`
   const coord = coordForHex(hex)
@@ -311,13 +308,17 @@ function CityMarker({ x, y, tier, name }: { x: number; y: number; tier: number; 
   )
 }
 
-function projectCity(s: Settlement, worldSeed: number): { x: number; y: number; tier: number; name: string } {
-  const { x, y } = projectColRow(s.coord)
+function projectCity(s: Settlement, worldSeed: number, surface: IcosaSurface | null): { x: number; y: number; tier: number; name: string } {
+  const { x, y } = projectSurfaceCoord(s.coord, surface)
   return { x, y, tier: s.tier, name: cityName(worldSeed, s.coord) }
 }
 
-function projectStarport(coord: SurfaceHexCoord): { x: number; y: number } {
-  return projectColRow(coord)
+function projectStarport(coord: SurfaceHexCoord, surface: IcosaSurface | null): { x: number; y: number } {
+  return projectSurfaceCoord(coord, surface)
+}
+
+function projectSurfaceCoord(coord: SurfaceHexCoord, surface: IcosaSurface | null): { x: number; y: number } {
+  return snapToSurfaceHex(projectColRow(coord), surface)
 }
 
 function projectColRow(coord: SurfaceHexCoord): { x: number; y: number } {
@@ -330,16 +331,31 @@ function projectColRow(coord: SurfaceHexCoord): { x: number; y: number } {
   return { x: p.x, y: p.y }
 }
 
+function snapToSurfaceHex(point: { x: number; y: number }, surface: IcosaSurface | null): { x: number; y: number } {
+  if (!surface || surface.hexes.length === 0) return point
+  let best = surface.hexes[0]
+  let bestD2 = Number.POSITIVE_INFINITY
+  for (const hex of surface.hexes) {
+    const dx = hex.x - point.x
+    const dy = hex.y - point.y
+    const d2 = dx * dx + dy * dy
+    if (d2 < bestD2) {
+      best = hex
+      bestD2 = d2
+    }
+  }
+  return { x: best.x, y: best.y }
+}
+
 function facePoints(v: readonly { x: number; y: number }[]): string {
   return v.map((p) => `${p.x},${p.y}`).join(' ')
 }
 
 function hexPath(cx: number, cy: number, r: number): string {
-  // Flat-top hex. The edge orientations line up with the equilateral
-  // icosahedral face grid, so clipped neighbours meet cleanly at folds.
+  // Pointy-top hex, matching the classic icosahedral world-map examples.
   const pts: string[] = []
   for (let i = 0; i < 6; i++) {
-    const a = Math.PI / 180 * 60 * i
+    const a = Math.PI / 180 * (-90 + 60 * i)
     pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`)
   }
   return `M${pts.join(' L')}Z`

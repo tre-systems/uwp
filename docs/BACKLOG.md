@@ -156,6 +156,9 @@ Done when:
 Make the photorealistic globe and the surface map sample the same Rust-generated
 surface data.
 
+- Follow the alignment target in `docs/SURFACE_ALIGNMENT.md`: one Rust-owned
+  surface atlas should drive the globe, world map, inspector, region view, and
+  exports.
 - Upload the Rust surface pre-bake as a GPU texture or cube-map.
 - Replace the planet shader's independent continent/noise stack with texture
   sampling from the authoritative pre-bake.
@@ -189,6 +192,8 @@ Done when:
 
 Make surface maps useful as play artifacts, not just inspection widgets.
 
+- Replace rounded 32 x 16 surface coordinates with stable surface-cell ids from
+  the Rust atlas.
 - Add climate/biome overlays: temperature bands, precipitation when available,
   terrain, habitability, settlement density, and travel hazards.
 - Add surface-map export that captures the visible SVG/map, not the hidden
