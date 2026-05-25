@@ -47,6 +47,8 @@ for (const viewport of [
     await expect(page.locator('.subsector-seam')).toHaveCount(1)
     await expect(page.locator('.polity-borders')).toHaveCount(1)
     await expect.poll(() => page.locator('.polity-border-line').count()).toBeGreaterThan(0)
+    await expect.poll(() => page.locator('.polity-capital').count()).toBeGreaterThan(0)
+    await expect.poll(() => page.locator('.hex-empty[data-allegiance]').count()).toBeGreaterThan(0)
 
     const rightHandCoord = await page.locator('.hex-occupied').evaluateAll((nodes) => {
       const coords = nodes

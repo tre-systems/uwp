@@ -392,7 +392,7 @@ src/appState/
 
 Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
-1. **Rust subsector data model + generator.** *Shipped → `8d48f26`, expanded → current.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `Subsector`; `generate(seed, density)` walks a 16×10 two-subsector strip hashing per-hex sub-seeds and runs `system::generate` per occupied hex.
+1. **Rust subsector data model + generator.** *Shipped → `8d48f26`, expanded → current.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `PolityCell`, and `Subsector`; `generate(seed, density)` walks a 16×10 two-subsector strip hashing per-hex sub-seeds and runs `system::generate` per occupied hex. A full `polity_cells` territory layer covers empty hexes too, so borders are campaign-map facts rather than artifacts of occupied-world adjacency.
 
 2. **Bases / gas-giant / belt / trade codes per hex.** *Shipped → `8d48f26`.* `build_hex` projects main-world physics into UWP digits, rolls Cepheus base presence keyed on starport class, and derives a travel zone from law/government. Trade codes are derived TS-side from the UWP wire format.
 
@@ -400,7 +400,7 @@ Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
 4. **App state + renderer client.** *Shipped → `88b0928`.* `subsectorSeed`, `subsectorDensity`, `currentSubsector`, `selectedHex`, `showJumpRoutes`, `subsectorOverrides`, and `subsectorRouteOverrides` signals; `selectHex` action stores the choice, feeds the system pipeline, and snaps view mode. `subsectorClient.ts` regenerates on seed/density changes.
 
-5. **SVG subsector map UI.** *Shipped → `88b0928`.* `SubsectorMap.tsx` renders pointy-top hexes with system dots, UWP digits, base markers (N/S/R/T), travel-zone tinting, and keyboard focus. `SubsectorEditor.tsx` surfaces allegiance, occupancy, density, the reroll button, and a hex inspector for the selected cell.
+5. **SVG subsector map UI.** *Shipped → `88b0928`, expanded → current.* `SubsectorMap.tsx` renders pointy-top hexes with system dots, UWP digits, base markers (N/S/R/T), travel-zone tinting, full-grid polity tinting, continuous borders, capital markers, and keyboard focus. `SubsectorEditor.tsx` surfaces allegiance, occupied/territory counts, capitals, occupancy, density, the reroll button, and a hex inspector for the selected cell.
 
 6. **Jump routes overlay.** *Shipped → `1912943`, expanded → current.* `compute_jump_routes` walks every pair of class-C+ starports and emits jump-1 or jump-2 edges based on hex-grid distance. Rust annotates each route with communication/trade metadata and tests red-zone blocking, jump-2 courier penalties, trade-promoted communications, and score clamping. The SVG renders route classes through `visibleRoutes`; selected-hex route overrides can hide links or adjust communication/trade metadata without mutating generated Rust data.
 

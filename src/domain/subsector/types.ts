@@ -81,6 +81,21 @@ export interface PolityBorder {
   to: string
 }
 
+export interface PolityCell {
+  coord: HexCoord
+  allegiance: string
+  frontier: boolean
+  capital: boolean
+}
+
+export interface PolitySummary {
+  allegiance: Allegiance
+  count: number
+  territory: number
+  capitalHex: SubsectorHex | null
+  capitalDistance: number | null
+}
+
 export interface JumpRoute {
   from: HexCoord
   to: HexCoord
@@ -99,6 +114,7 @@ export interface Subsector {
   rows: number
   allegiance: string
   allegiances: Allegiance[]
+  polity_cells?: PolityCell[]
   hexes: SubsectorHex[]
   jump_routes: JumpRoute[]
 }
@@ -162,6 +178,19 @@ export function applySubsectorOverrides(
       bases: override.bases ? { ...override.bases } : hex.bases,
     }
   })
+  const polity_cells = subsector.polity_cells?.map((cell) => {
+    const override = overrides[subsectorOverrideKey(subsector.seed, cell.coord)]
+    if (!override?.allegiance) return cell
+    const generatedHex = subsector.hexes.find((hex) => sameHex(hex.coord, cell.coord))
+    if (!generatedHex) return cell
+    if (override.system_seed != null && override.system_seed !== generatedHex.system_seed) return cell
+    changed = true
+    return {
+      ...cell,
+      allegiance: override.allegiance,
+      frontier: true,
+    }
+  })
   const hexByCoord = new Map<string, SubsectorHex>()
   for (const hex of hexes) {
     hexByCoord.set(`${hex.coord.col},${hex.coord.row}`, hex)
@@ -191,6 +220,7 @@ export function applySubsectorOverrides(
   return {
     ...subsector,
     allegiance: dominantAllegiance(hexes, subsector.allegiance),
+    polity_cells,
     hexes,
     jump_routes,
   }
@@ -210,7 +240,32 @@ export function allegianceCounts(subsector: Subsector): Array<{ allegiance: Alle
     .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
 }
 
+export function politySummaries(subsector: Subsector): PolitySummary[] {
+  return subsector.allegiances
+    .map((allegiance) => {
+      const controlled = subsector.hexes.filter((hex) => hex.allegiance === allegiance.code)
+      const territory = polityCells(subsector).filter((cell) => cell.allegiance === allegiance.code).length
+      const capitalHex = controlled.slice().sort((a, b) => {
+        const distance = hexDistance(a.coord, allegiance.capital) - hexDistance(b.coord, allegiance.capital)
+        if (distance !== 0) return distance
+        if (a.coord.col !== b.coord.col) return a.coord.col - b.coord.col
+        return a.coord.row - b.coord.row
+      })[0] ?? null
+      return {
+        allegiance,
+        count: controlled.length,
+        territory,
+        capitalHex,
+        capitalDistance: capitalHex ? hexDistance(capitalHex.coord, allegiance.capital) : null,
+      }
+    })
+    .sort((a, b) => b.count - a.count || b.territory - a.territory || a.allegiance.code.localeCompare(b.allegiance.code))
+}
+
 export function polityBorders(subsector: Subsector): PolityBorder[] {
+  const cells = polityCells(subsector)
+  if (cells.length > 0) return polityCellBorders(cells)
+
   const hexByCoord = new Map<string, SubsectorHex>()
   for (const hex of subsector.hexes) {
     hexByCoord.set(`${hex.coord.col},${hex.coord.row}`, hex)
@@ -224,6 +279,37 @@ export function polityBorders(subsector: Subsector): PolityBorder[] {
         coord: hex.coord,
         edge: candidate.edge,
         from: hex.allegiance,
+        to: neighbor.allegiance,
+      })
+    }
+  }
+  return borders
+}
+
+export function polityCells(subsector: Subsector): PolityCell[] {
+  if (subsector.polity_cells && subsector.polity_cells.length > 0) return subsector.polity_cells
+  return subsector.hexes.map((hex) => ({
+    coord: hex.coord,
+    allegiance: hex.allegiance,
+    frontier: false,
+    capital: subsector.allegiances.some((allegiance) => sameHex(allegiance.capital, hex.coord)),
+  }))
+}
+
+function polityCellBorders(cells: PolityCell[]): PolityBorder[] {
+  const cellByCoord = new Map<string, PolityCell>()
+  for (const cell of cells) {
+    cellByCoord.set(`${cell.coord.col},${cell.coord.row}`, cell)
+  }
+  const borders: PolityBorder[] = []
+  for (const cell of cells) {
+    for (const candidate of forwardNeighborEdges(cell.coord)) {
+      const neighbor = cellByCoord.get(`${candidate.coord.col},${candidate.coord.row}`)
+      if (!neighbor || neighbor.allegiance === cell.allegiance) continue
+      borders.push({
+        coord: cell.coord,
+        edge: candidate.edge,
+        from: cell.allegiance,
         to: neighbor.allegiance,
       })
     }
@@ -259,6 +345,21 @@ function dominantAllegiance(hexes: SubsectorHex[], fallback: string): string {
 
 function sameHex(a: HexCoord, b: HexCoord): boolean {
   return a.col === b.col && a.row === b.row
+}
+
+function hexDistance(a: HexCoord, b: HexCoord): number {
+  const [ax, ay] = axialFromOffset(a)
+  const [bx, by] = axialFromOffset(b)
+  const dx = ax - bx
+  const dy = ay - by
+  const dz = -dx - dy
+  return (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) / 2
+}
+
+function axialFromOffset(coord: HexCoord): [number, number] {
+  const col = coord.col
+  const row = coord.row
+  return [col, row - Math.floor(col / 2)]
 }
 
 function canonicalRouteEndpoints(from: HexCoord, to: HexCoord): [HexCoord, HexCoord] {

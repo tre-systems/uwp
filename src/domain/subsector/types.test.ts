@@ -3,6 +3,7 @@ import {
   allegianceCounts,
   applySubsectorOverrides,
   polityBorders,
+  politySummaries,
   routeOverrideKey,
   subsectorOverrideKey,
   visibleRoutes,
@@ -68,6 +69,41 @@ describe('polityBorders', () => {
 
   it('does not outline empty neighbours in v1', () => {
     expect(polityBorders(subsector([hex(1, 1, 'ImDi')]))).toEqual([])
+  })
+
+  it('draws continuous borders from full polity cells across empty hexes', () => {
+    const sub: Subsector = {
+      ...subsector([]),
+      polity_cells: [
+        { coord: { col: 1, row: 1 }, allegiance: 'ImDi', frontier: true, capital: true },
+        { coord: { col: 1, row: 2 }, allegiance: 'NaVa', frontier: true, capital: true },
+      ],
+    }
+
+    expect(polityBorders(sub)).toEqual([
+      { coord: { col: 1, row: 1 }, edge: 1, from: 'ImDi', to: 'NaVa' },
+    ])
+  })
+
+  it('summarizes occupied worlds, territory, and capital worlds per polity', () => {
+    const sub: Subsector = {
+      ...subsector([hex(1, 1, 'ImDi'), hex(1, 2, 'NaVa')]),
+      polity_cells: [
+        { coord: { col: 1, row: 1 }, allegiance: 'ImDi', frontier: true, capital: true },
+        { coord: { col: 1, row: 2 }, allegiance: 'NaVa', frontier: true, capital: true },
+        { coord: { col: 1, row: 3 }, allegiance: 'NaVa', frontier: false, capital: false },
+      ],
+    }
+
+    expect(politySummaries(sub).map(({ allegiance, count, territory, capitalHex }) => [
+      allegiance.code,
+      count,
+      territory,
+      capitalHex?.coord,
+    ])).toEqual([
+      ['NaVa', 1, 2, { col: 1, row: 2 }],
+      ['ImDi', 1, 1, { col: 1, row: 1 }],
+    ])
   })
 })
 

@@ -7,6 +7,7 @@ import {
 import {
   allegianceForCode,
   hexLabel,
+  polityCells,
   polityBorders,
   routeDisplayKind,
   uwpToCode,
@@ -116,6 +117,9 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   for (const h of subsector.hexes) {
     hexByCoord.set(`${h.coord.col},${h.coord.row}`, h)
   }
+  const cells = polityCells(subsector)
+  const polityByCoord = new Map(cells.map((cell) => [`${cell.coord.col},${cell.coord.row}`, cell]))
+  const capitalCells = cells.filter((cell) => cell.capital)
   const borders = polityBorders(subsector)
   // Pre-compute names that are guaranteed unique across the subsector so
   // the visible map doesn't repeat the same world name on multiple hexes
@@ -193,7 +197,12 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
           Array.from({ length: rows }, (_, j) => j + 1).map((row) => {
             const key = `${col},${row}`
             const hex = hexByCoord.get(key) ?? null
-            const allegiance = hex ? allegianceForCode(subsector, hex.allegiance) : null
+            const polityCell = polityByCoord.get(key) ?? null
+            const allegiance = hex
+              ? allegianceForCode(subsector, hex.allegiance)
+              : polityCell
+                ? allegianceForCode(subsector, polityCell.allegiance)
+                : null
             const { x, y } = hexCenter(col, row)
             const isSelected = !!sel && sel.col === col && sel.row === row
             return (
@@ -208,10 +217,28 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
                 subsectorSeed={seed}
                 displayName={nameMap.get(key)}
                 allegianceColorIndex={allegiance?.color_index ?? 2}
+                polityAllegiance={polityCell?.allegiance ?? null}
               />
             )
           }),
         )}
+        <g class="polity-capitals" aria-hidden="true">
+          {capitalCells.map((cell) => {
+            const allegiance = allegianceForCode(subsector, cell.allegiance)
+            const { x, y } = hexCenter(cell.coord.col, cell.coord.row)
+            const mx = x + HEX_R * 0.42
+            const my = y - HEX_R * 0.38
+            return (
+              <g
+                key={`${cell.coord.col},${cell.coord.row},${cell.allegiance}`}
+                class={`polity-capital polity-capital-${Math.max(0, Math.min(5, Math.trunc(allegiance?.color_index ?? 2)))}`}
+              >
+                <path d={`M${mx},${my - 6} L${mx + 6},${my} L${mx},${my + 6} L${mx - 6},${my}Z`} />
+                <text x={mx} y={my - 8} text-anchor="middle">{cell.allegiance}</text>
+              </g>
+            )
+          })}
+        </g>
       </svg>
     </div>
   )
@@ -227,13 +254,20 @@ interface HexCellProps {
   subsectorSeed: number
   displayName?: string
   allegianceColorIndex: number
+  polityAllegiance: string | null
 }
 
-function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, allegianceColorIndex }: HexCellProps) {
+function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, allegianceColorIndex, polityAllegiance }: HexCellProps) {
   const label = `${col.toString().padStart(2, '0')}${row.toString().padStart(2, '0')}`
   if (!hex) {
     return (
-      <g class="hex-cell hex-empty" data-coord={label}>
+      <g class="hex-cell hex-empty" data-coord={label} data-allegiance={polityAllegiance ?? undefined}>
+        {polityAllegiance && (
+          <path
+            d={hexPath(cx, cy, HEX_R - 1)}
+            class={`hex-polity-fill polity-fill-${Math.max(0, Math.min(5, Math.trunc(allegianceColorIndex)))}`}
+          />
+        )}
         <path d={hexPath(cx, cy, HEX_R)} class="hex-shape" />
         <text x={cx} y={cy - HEX_R * 0.55} class="hex-label" text-anchor="middle">
           {label}

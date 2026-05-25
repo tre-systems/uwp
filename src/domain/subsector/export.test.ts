@@ -62,7 +62,7 @@ describe('subsectorToText', () => {
     expect(lines).toHaveLength(10)
     expect(lines[1]).toBe('# Dimensions: 16 x 10')
     expect(lines[2]).toBe('# Dominant allegiance: ImDi')
-    expect(lines[3]).toBe('# Polities: ImDi=Imperial Diocese, NaVa=Navis Verge, Na=Neutral Border')
+    expect(lines[3]).toMatch(/^# Polities: ImDi=Imperial Diocese@0306\(1\/1\), Na=Neutral Border@0805\(0\/0\), NaVa=Navis Verge@1305\(0\/0\)$/)
     expect(lines[4]).toBe('# Hexes occupied: 1 / 160')
     expect(lines[5]).toBe('# Routes: 0 communications, 0 trade')
     expect(lines[7]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)

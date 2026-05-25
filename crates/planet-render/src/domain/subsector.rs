@@ -154,6 +154,10 @@ pub struct Subsector {
     /// Polities present in this local region, including the neutral
     /// border zone when it appears.
     pub allegiances: Vec<Allegiance>,
+    /// Political territory for every map hex, including empty space. Occupied
+    /// worlds copy their allegiance from this layer so borders stay continuous
+    /// across the campaign map instead of appearing only between systems.
+    pub polity_cells: Vec<PolityCell>,
     pub hexes: Vec<SubsectorHex>,
     pub jump_routes: Vec<JumpRoute>,
 }
@@ -164,6 +168,17 @@ pub struct Allegiance {
     pub name: String,
     pub capital: HexCoord,
     pub color_index: u8,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PolityCell {
+    pub coord: HexCoord,
+    pub allegiance: String,
+    /// True when at least one neighboring map cell belongs to a different
+    /// allegiance. This is map-territory frontier, not necessarily a route.
+    pub frontier: bool,
+    /// True for the allegiance's current capital map cell.
+    pub capital: bool,
 }
 
 /// A jump-1 or jump-2 connection between two occupied hexes. Edges are
@@ -253,8 +268,12 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         }
     }
 
-    let allegiances = generate_allegiances(seed);
-    assign_hex_allegiances(&mut hexes, &allegiances);
+    let mut allegiances = generate_allegiances(seed);
+    let mut polity_cells = compute_polity_cells(&allegiances);
+    assign_hex_allegiances(&mut hexes, &polity_cells);
+    snap_allegiance_capitals(&hexes, &mut allegiances);
+    polity_cells = compute_polity_cells(&allegiances);
+    assign_hex_allegiances(&mut hexes, &polity_cells);
     let allegiance = dominant_allegiance(&hexes, &allegiances);
     let jump_routes = compute_jump_routes(&hexes);
 
@@ -265,6 +284,7 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         rows: SUBSECTOR_ROWS,
         allegiance,
         allegiances,
+        polity_cells,
         hexes,
         jump_routes,
     }
@@ -306,20 +326,91 @@ fn generate_allegiances(seed: u32) -> Vec<Allegiance> {
     ]
 }
 
-fn assign_hex_allegiances(hexes: &mut [SubsectorHex], allegiances: &[Allegiance]) {
+fn compute_polity_cells(allegiances: &[Allegiance]) -> Vec<PolityCell> {
     let [left, right, neutral, ..] = allegiances else {
-        return;
+        return vec![];
     };
+    let mut cells = Vec::new();
+    for col in 1..=SUBSECTOR_COLS {
+        for row in 1..=SUBSECTOR_ROWS {
+            let coord = HexCoord::new(col, row);
+            let left_distance = hex_distance(coord, left.capital);
+            let right_distance = hex_distance(coord, right.capital);
+            let allegiance = if (left_distance - right_distance).abs() <= 1 {
+                neutral.code.clone()
+            } else if left_distance < right_distance {
+                left.code.clone()
+            } else {
+                right.code.clone()
+            };
+            let capital = allegiances.iter().any(|a| a.capital == coord);
+            cells.push(PolityCell {
+                coord,
+                allegiance,
+                frontier: false,
+                capital,
+            });
+        }
+    }
+
+    let mut allegiance_by_coord = std::collections::HashMap::new();
+    for cell in &cells {
+        allegiance_by_coord.insert((cell.coord.col, cell.coord.row), cell.allegiance.clone());
+    }
+    for cell in &mut cells {
+        cell.frontier = neighbor_coords(cell.coord).iter().any(|coord| {
+            allegiance_by_coord
+                .get(&(coord.col, coord.row))
+                .is_some_and(|allegiance| allegiance != &cell.allegiance)
+        });
+    }
+    cells
+}
+
+fn assign_hex_allegiances(hexes: &mut [SubsectorHex], polity_cells: &[PolityCell]) {
     for hex in hexes {
-        let left_distance = hex_distance(hex.coord, left.capital);
-        let right_distance = hex_distance(hex.coord, right.capital);
-        hex.allegiance = if (left_distance - right_distance).abs() <= 1 {
-            neutral.code.clone()
-        } else if left_distance < right_distance {
-            left.code.clone()
-        } else {
-            right.code.clone()
-        };
+        hex.allegiance = polity_cells
+            .iter()
+            .find(|cell| cell.coord == hex.coord)
+            .map(|cell| cell.allegiance.clone())
+            .unwrap_or_else(|| "Na".to_string());
+    }
+}
+
+fn neighbor_coords(coord: HexCoord) -> Vec<HexCoord> {
+    let (q, r) = axial_from_offset(coord);
+    const DIRECTIONS: [(i32, i32); 6] = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)];
+    DIRECTIONS
+        .iter()
+        .filter_map(|(dq, dr)| offset_from_axial(q + dq, r + dr))
+        .collect()
+}
+
+fn offset_from_axial(q: i32, r: i32) -> Option<HexCoord> {
+    let col = q;
+    let row = r + (q - (q & 1)) / 2;
+    if (1..=SUBSECTOR_COLS as i32).contains(&col) && (1..=SUBSECTOR_ROWS as i32).contains(&row) {
+        Some(HexCoord::new(col as u8, row as u8))
+    } else {
+        None
+    }
+}
+
+fn snap_allegiance_capitals(hexes: &[SubsectorHex], allegiances: &mut [Allegiance]) {
+    for allegiance in allegiances {
+        if let Some(best) = hexes
+            .iter()
+            .filter(|hex| hex.allegiance == allegiance.code)
+            .min_by_key(|hex| {
+                (
+                    hex_distance(hex.coord, allegiance.capital),
+                    hex.coord.col,
+                    hex.coord.row,
+                )
+            })
+        {
+            allegiance.capital = best.coord;
+        }
     }
 }
 
@@ -821,6 +912,7 @@ mod tests {
         assert_eq!(a.rows, b.rows);
         assert_eq!(a.allegiance, b.allegiance);
         assert_eq!(a.allegiances, b.allegiances);
+        assert_eq!(a.polity_cells, b.polity_cells);
         assert_eq!(a.hexes.len(), b.hexes.len());
         for (ha, hb) in a.hexes.iter().zip(b.hexes.iter()) {
             assert_eq!(ha.coord, hb.coord);
@@ -869,14 +961,54 @@ mod tests {
         let sub = generate(1, 1.0);
 
         assert_eq!(sub.allegiances.len(), 3);
+        assert_eq!(
+            sub.polity_cells.len(),
+            (SUBSECTOR_COLS as usize) * (SUBSECTOR_ROWS as usize)
+        );
         let codes: Vec<&str> = sub.allegiances.iter().map(|a| a.code.as_str()).collect();
         assert!(codes.contains(&sub.allegiance.as_str()));
         for hex in &sub.hexes {
             assert!(codes.contains(&hex.allegiance.as_str()));
+            let cell = sub
+                .polity_cells
+                .iter()
+                .find(|cell| cell.coord == hex.coord)
+                .expect("occupied hex has polity cell");
+            assert_eq!(hex.allegiance, cell.allegiance);
         }
         let left = sub.hex_at(HexCoord::new(1, 1)).expect("left hex");
         let right = sub.hex_at(HexCoord::new(16, 10)).expect("right hex");
         assert_ne!(left.allegiance, right.allegiance);
+    }
+
+    #[test]
+    fn allegiance_capitals_snap_to_occupied_controlled_hexes() {
+        let sub = generate(11, 1.0);
+
+        for allegiance in &sub.allegiances {
+            let capital = sub
+                .hex_at(allegiance.capital)
+                .expect("capital has occupied hex");
+            assert_eq!(capital.allegiance, allegiance.code);
+            let cell = sub
+                .polity_cells
+                .iter()
+                .find(|cell| cell.coord == allegiance.capital)
+                .expect("capital has polity cell");
+            assert!(cell.capital);
+        }
+    }
+
+    #[test]
+    fn polity_frontiers_are_continuous_across_empty_cells() {
+        let sub = generate(19, 0.0);
+
+        assert!(sub.hexes.is_empty());
+        assert_eq!(
+            sub.polity_cells.len(),
+            (SUBSECTOR_COLS as usize) * (SUBSECTOR_ROWS as usize)
+        );
+        assert!(sub.polity_cells.iter().any(|cell| cell.frontier));
     }
 
     #[test]

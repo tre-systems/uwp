@@ -1480,6 +1480,27 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke: rgba(238, 244, 255, 0.62);
   stroke-width: 1.35;
 }
+.polity-capitals {
+  pointer-events: none;
+}
+.polity-capital path {
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 2.4;
+  vector-effect: non-scaling-stroke;
+}
+.polity-capital text {
+  fill: var(--color-text-strong);
+  font: 700 7px/1 var(--font-mono);
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.82);
+  stroke-width: 2.2;
+}
+.polity-capital-0 path { fill: rgba(96, 165, 250, 0.92); }
+.polity-capital-1 path { fill: rgba(45, 212, 191, 0.9); }
+.polity-capital-2 path { fill: rgba(226, 232, 240, 0.76); }
+.polity-capital-3 path { fill: rgba(244, 114, 182, 0.86); }
+.polity-capital-4 path { fill: rgba(167, 139, 250, 0.86); }
+.polity-capital-5 path { fill: rgba(251, 146, 60, 0.86); }
 .subsector-seam {
   stroke: rgba(155, 202, 255, 0.32);
   stroke-width: 1;

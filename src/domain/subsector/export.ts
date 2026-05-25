@@ -1,6 +1,14 @@
 import { deriveTradeCodes } from '../cepheus'
 import { systemName } from '../names'
-import { hexLabel, subsectorHexCount, uwpToCode, visibleRoutes, type Subsector, type SubsectorHex } from './types'
+import {
+  hexLabel,
+  politySummaries,
+  subsectorHexCount,
+  uwpToCode,
+  visibleRoutes,
+  type Subsector,
+  type SubsectorHex,
+} from './types'
 
 // Tab-aligned plain text export, modelled on legacy 2d6-Map's "Second
 // Survey" sec/tab format. Columns are space-padded so the file reads
@@ -119,10 +127,15 @@ export function subsectorToText(sub: Subsector): string {
   const exportedRoutes = visibleRoutes(sub)
   const communicationRoutes = exportedRoutes.filter((route) => route.communication)
   const tradeRoutes = exportedRoutes.filter((route) => route.trade)
+  const politySummary = politySummaries(sub)
+    .map(({ allegiance, count, territory, capitalHex }) =>
+      `${allegiance.code}=${allegiance.name}@${hexLabel(capitalHex?.coord ?? allegiance.capital)}(${count}/${territory})`,
+    )
+    .join(', ')
   lines.push(`# Subsector region ${systemName(sub.seed)}  (seed ${sub.seed})`)
   lines.push(`# Dimensions: ${sub.columns} x ${sub.rows}`)
   lines.push(`# Dominant allegiance: ${sub.allegiance}`)
-  lines.push(`# Polities: ${sub.allegiances.map((a) => `${a.code}=${a.name}`).join(', ') || '-'}`)
+  lines.push(`# Polities: ${politySummary || '-'}`)
   lines.push(`# Hexes occupied: ${sub.hexes.length} / ${subsectorHexCount(sub)}`)
   lines.push(`# Routes: ${communicationRoutes.length} communications, ${tradeRoutes.length} trade`)
   lines.push('')

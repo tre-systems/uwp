@@ -19,10 +19,10 @@ import {
 import { SeedField } from './SeedField'
 import { useState } from 'preact/hooks'
 import {
-  allegianceCounts,
   allegianceForCode,
   hexLabel,
   isRouteVisible,
+  politySummaries,
   routeNeighbor,
   routesForHex,
   routeDisplayKind,
@@ -53,7 +53,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const routesCount = sub?.jump_routes.length ?? 0
   const commRoutesCount = routes.filter((route) => route.communication).length
   const tradeRoutesCount = routes.filter((route) => route.trade).length
-  const polityCounts = sub ? allegianceCounts(sub) : []
+  const polities = sub ? politySummaries(sub) : []
   const total = sub ? subsectorHexCount(sub) : 16 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
@@ -69,14 +69,14 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
           <div class="sys-meta-row">
             <dt>Polities</dt>
             <dd>
-              {polityCounts.length > 0
-                ? polityCounts.map(({ code, count, allegiance }) => (
+              {polities.length > 0
+                ? polities.map(({ allegiance, count, territory, capitalHex }) => (
                   <span
-                    key={code}
-                    class={`polity-chip polity-chip-${Math.max(0, Math.min(5, Math.trunc(allegiance?.color_index ?? 2)))}`}
-                    title={allegiance?.name ?? code}
+                    key={allegiance.code}
+                    class={`polity-chip polity-chip-${Math.max(0, Math.min(5, Math.trunc(allegiance.color_index)))}`}
+                    title={`${allegiance.name}; capital ${hexLabel(capitalHex?.coord ?? allegiance.capital)}`}
                   >
-                    {code} {count}
+                    {allegiance.code} {count}/{territory}
                   </span>
                 ))
                 : '—'}
@@ -198,6 +198,8 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
   const allegiance = allegianceForCode(subsector, hex.allegiance)
   const generatedHex = generatedSubsectorHex(hex.coord)
   const override = getSubsectorHexOverride(subsector.seed, hex.coord)
+  const polity = politySummaries(subsector).find((summary) => summary.allegiance.code === hex.allegiance)
+  const isCapital = !!polity?.capitalHex && polity.capitalHex.coord.col === hex.coord.col && polity.capitalHex.coord.row === hex.coord.row
   const routes = routesForHex(subsector, hex.coord)
   const shownRoutes = routes.filter(isRouteVisible)
   const commRoutes = shownRoutes.filter((route) => route.communication)
@@ -228,9 +230,21 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
             >
               {hex.allegiance}
             </span>
-            <span class="sys-unit">{allegiance?.name ?? 'Uncatalogued'}</span>
+            <span class="sys-unit">
+              {allegiance?.name ?? 'Uncatalogued'}
+              {isCapital ? ' capital' : ''}
+            </span>
           </dd>
         </div>
+        {polity && (
+          <div class="sys-meta-row">
+            <dt>Polity</dt>
+            <dd>
+              {polity.count} worlds · {polity.territory} hexes
+              {polity.capitalHex ? ` · capital ${hexLabel(polity.capitalHex.coord)}` : ''}
+            </dd>
+          </div>
+        )}
         <div class="sys-meta-row">
           <dt>Bases</dt>
           <dd>{baseList.length > 0 ? baseList.join(', ') : '—'}</dd>
