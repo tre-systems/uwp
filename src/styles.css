@@ -1876,6 +1876,12 @@ label.color input[type="color"]::-webkit-color-swatch {
   .subsector-overlay {
     padding: calc(var(--safe-top) + 112px) calc(var(--safe-right) + var(--space-6)) calc(var(--safe-bottom) + var(--space-6)) calc(var(--safe-left) + var(--space-6));
   }
+  /* Mobile panel is a top-anchored full-width drop-down, not a right
+     sidebar, so the 340px desktop gutter would squash the hex grid
+     into a sliver. Drop it back to the default padding. */
+  .subsector-overlay.panel-open {
+    padding-right: calc(var(--safe-right) + var(--space-6));
+  }
   .surface-map { width: 100%; }
   .surface-map svg { max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 120px); }
 }
