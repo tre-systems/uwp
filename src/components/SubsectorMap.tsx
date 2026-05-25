@@ -6,6 +6,7 @@ import {
 } from '../appState'
 import {
   hexLabel,
+  uwpToCode,
   type Bases,
   type HexCoord,
   type Subsector,
@@ -335,5 +336,5 @@ function describe(hex: SubsectorHex): string {
   if (hex.bases.research) flags.push('research base')
   if (hex.bases.Aid) flags.push('Aid')
   const tail = flags.length > 0 ? ' (' + flags.join(', ') + ')' : ''
-  return `Hex ${hexLabel(hex.coord)}: UWP ${hex.uwp.starport}${hex.uwp.size}${hex.uwp.atm}${hex.uwp.hydro}${hex.uwp.pop}${hex.uwp.gov}${hex.uwp.law}-${hex.uwp.tech}${tail}`
+  return `Hex ${hexLabel(hex.coord)}: UWP ${uwpToCode(hex.uwp)}${tail}`
 }

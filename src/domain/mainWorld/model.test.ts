@@ -22,6 +22,60 @@ describe('main world model', () => {
     })
   })
 
+  it('clamps invalid and extreme continuous values at the UWP boundary', () => {
+    expect(
+      mainWorldModelToUwp({
+        radiusEarth: -1,
+        gravityEarth: -1,
+        atmosphereCode: 99,
+        hydrographicsPercent: 140,
+        population: -20,
+        governmentCode: -5,
+        lawLevel: 22,
+        techLevel: 30,
+        starportQuality: -1,
+      }),
+    ).toEqual({
+      starport: 'X',
+      size: 0,
+      atm: 15,
+      hydro: 10,
+      pop: 0,
+      gov: 0,
+      law: 15,
+      tech: 15,
+    })
+  })
+
+  it('rounds population from actual population rather than integer-only UI state', () => {
+    const sparse = mainWorldModelToUwp(uwpToMainWorldModel({
+      starport: 'C',
+      size: 4,
+      atm: 5,
+      hydro: 3,
+      pop: 0,
+      gov: 0,
+      law: 0,
+      tech: 7,
+    }))
+    const millionScale = mainWorldModelToUwp({
+      ...uwpToMainWorldModel({
+        starport: 'B',
+        size: 8,
+        atm: 6,
+        hydro: 7,
+        pop: 6,
+        gov: 7,
+        law: 4,
+        tech: 10,
+      }),
+      population: 3.2e6,
+    })
+
+    expect(sparse.pop).toBe(0)
+    expect(millionScale.pop).toBe(7)
+  })
+
   it('summarizes the generated physical main world without needing UI state', () => {
     expect(
       mainWorldSummary({

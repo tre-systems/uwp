@@ -83,6 +83,11 @@ Done when:
 Make the continuous-to-UWP layer the canonical bridge between science and
 Cepheus rules.
 
+Status: in progress. The PBG subtask is now Rust-owned: subsector hexes carry
+an actual population estimate plus a serialized PBG triple derived from that
+population, asteroid-belt count, and gas/ice-giant count. Text export consumes
+that triple instead of inventing `5xx` placeholders.
+
 - Audit every UWP field to confirm the app stores richer values where useful and
   only rounds at the UWP boundary.
 - Add edge-case tests for rounding thresholds, impossible combinations, and
@@ -264,8 +269,8 @@ Done when:
 After the Chapter 12 matrix, the best next implementation chunk is:
 
 1. Harden UWP projection from continuous models.
-2. Replace binary PBG placeholders with real population multiplier, belt count,
-   and gas-giant count.
+2. Add focused Rust tests for remaining UWP projection table shapes: atmosphere,
+   starport, government, law, and tech.
 3. Start the two-subsector strip data model and rendering spike behind existing
    map boundaries once the projection/PBG contract is firmer.
 

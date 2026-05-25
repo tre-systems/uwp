@@ -27,6 +27,12 @@ export interface SubsectorUwp {
   tech: number
 }
 
+export interface Pbg {
+  population_multiplier: number
+  belts: number
+  gas_giants: number
+}
+
 export interface SubsectorHex {
   coord: HexCoord
   system_seed: number
@@ -35,6 +41,8 @@ export interface SubsectorHex {
   travel_zone: TravelZone
   gas_giant: boolean
   belts: boolean
+  population: number
+  pbg: Pbg
   name: string | null
 }
 

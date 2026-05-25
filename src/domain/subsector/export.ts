@@ -12,9 +12,9 @@ import { hexLabel, uwpToCode, type Subsector, type SubsectorHex } from './types'
 //   Name             Hex   UWP        Bases Codes              Zone PBG  Allegiance
 //   Aramis           0306  A788899-C  N-S-  Ri Ag              -    503  ImDe
 //
-// PBG packs Population multiplier / Belt count / Gas-giant count - we
-// don't currently model the population multiplier so it defaults to 5
-// (the legacy 2d6 convention when the value is unknown).
+// PBG packs Population multiplier / Belt count / Gas-giant count. Rust
+// derives this from the generated population estimate and physical
+// system counts, then serializes it with the subsector hex.
 
 const COLS = [
   { label: 'Name', width: 18 },
@@ -49,12 +49,7 @@ function zoneField(h: SubsectorHex): string {
 }
 
 function pbgField(h: SubsectorHex): string {
-  // Population multiplier defaults to 5 since we don't model it;
-  // belts and gas-giant flags compress to 0/1 in their slots.
-  const pop = 5
-  const belts = h.belts ? 1 : 0
-  const giants = h.gas_giant ? 1 : 0
-  return `${pop}${belts}${giants}`
+  return `${pbgDigit(h.pbg.population_multiplier)}${pbgDigit(h.pbg.belts)}${pbgDigit(h.pbg.gas_giants)}`
 }
 
 function nameOrFallback(h: SubsectorHex): string {
@@ -65,6 +60,10 @@ function nameOrFallback(h: SubsectorHex): string {
 function padRight(s: string, w: number): string {
   if (s.length >= w) return s.slice(0, Math.max(1, w - 1)) + ' '
   return s + ' '.repeat(w - s.length)
+}
+
+function pbgDigit(value: number): string {
+  return String(Math.max(0, Math.min(9, Math.trunc(value))))
 }
 
 function headerLine(): string {

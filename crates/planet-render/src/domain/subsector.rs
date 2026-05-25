@@ -78,6 +78,16 @@ pub struct Uwp {
     pub tech: u8,
 }
 
+/// Cepheus PBG extension: population multiplier, planetoid-belt count,
+/// and gas-giant count. Counts are capped at one decimal digit because
+/// the classic survey format gives each slot one character.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Pbg {
+    pub population_multiplier: u8,
+    pub belts: u8,
+    pub gas_giants: u8,
+}
+
 impl Uwp {
     /// Render as the canonical "A867974-D" string. Digits 10-15 use the
     /// classic pseudo-hex letters A-F.
@@ -114,6 +124,10 @@ pub struct SubsectorHex {
     pub travel_zone: TravelZone,
     pub gas_giant: bool,
     pub belts: bool,
+    /// Actual population estimate used to derive the UWP population
+    /// exponent and the PBG population multiplier.
+    pub population: u64,
+    pub pbg: Pbg,
     /// Optional textual name for v1 we leave None; future phases can wire a
     /// name generator.
     pub name: Option<String>,
@@ -272,14 +286,19 @@ fn build_hex(
     system: &SolarSystem,
     rng: &mut Rng,
 ) -> SubsectorHex {
-    let gas_giant = system
+    let gas_giant_count = system
         .planets
         .iter()
-        .any(|p| matches!(p.body_type, BodyType::GasGiant | BodyType::IceGiant));
-    let belts = !system.belts.is_empty();
+        .filter(|p| matches!(p.body_type, BodyType::GasGiant | BodyType::IceGiant))
+        .count();
+    let belt_count = system.belts.len();
+    let gas_giant = gas_giant_count > 0;
+    let belts = belt_count > 0;
     let uwp = project_uwp(system, rng);
     let bases = roll_bases(&uwp, rng);
     let travel_zone = roll_travel_zone(&uwp, rng);
+    let population = roll_actual_population(uwp.pop, rng);
+    let pbg = pbg_from_parts(population, uwp.pop, belt_count, gas_giant_count);
 
     SubsectorHex {
         coord,
@@ -289,6 +308,8 @@ fn build_hex(
         travel_zone,
         gas_giant,
         belts,
+        population,
+        pbg,
         name: None,
     }
 }
@@ -451,6 +472,35 @@ fn roll_travel_zone(uwp: &Uwp, rng: &mut Rng) -> TravelZone {
     TravelZone::Green
 }
 
+fn roll_actual_population(pop_exponent: u8, rng: &mut Rng) -> u64 {
+    if pop_exponent == 0 {
+        return 0;
+    }
+    let multiplier = 1 + (rng.f01() * 9.0).floor() as u64;
+    multiplier.min(9) * 10_u64.pow(pop_exponent as u32)
+}
+
+fn pbg_from_parts(
+    population: u64,
+    pop_exponent: u8,
+    belt_count: usize,
+    gas_giant_count: usize,
+) -> Pbg {
+    Pbg {
+        population_multiplier: population_multiplier(population, pop_exponent),
+        belts: belt_count.min(9) as u8,
+        gas_giants: gas_giant_count.min(9) as u8,
+    }
+}
+
+fn population_multiplier(population: u64, pop_exponent: u8) -> u8 {
+    if population == 0 || pop_exponent == 0 {
+        return 0;
+    }
+    let order = 10_u64.pow(pop_exponent as u32);
+    ((population / order).clamp(1, 9)) as u8
+}
+
 fn clamp_digit(value: i32, lo: i32, hi: i32) -> i32 {
     value.max(lo).min(hi)
 }
@@ -472,6 +522,8 @@ mod tests {
             assert_eq!(ha.travel_zone, hb.travel_zone);
             assert_eq!(ha.gas_giant, hb.gas_giant);
             assert_eq!(ha.belts, hb.belts);
+            assert_eq!(ha.population, hb.population);
+            assert_eq!(ha.pbg, hb.pbg);
         }
     }
 
@@ -531,6 +583,37 @@ mod tests {
             tech: 13,
         };
         assert_eq!(u.to_code(), "A867974-D");
+    }
+
+    #[test]
+    fn pbg_is_derived_from_population_and_system_counts() {
+        let pbg = pbg_from_parts(7_000_000, 6, 12, 4);
+
+        assert_eq!(
+            pbg,
+            Pbg {
+                population_multiplier: 7,
+                belts: 9,
+                gas_giants: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn generated_pbg_matches_population_and_presence_flags() {
+        let sub = generate(20260525, 1.0);
+        for hex in &sub.hexes {
+            assert_eq!(hex.belts, hex.pbg.belts > 0);
+            assert_eq!(hex.gas_giant, hex.pbg.gas_giants > 0);
+            if hex.uwp.pop == 0 {
+                assert_eq!(hex.population, 0);
+                assert_eq!(hex.pbg.population_multiplier, 0);
+            } else {
+                let order = 10_u64.pow(hex.uwp.pop as u32);
+                assert_eq!(hex.population / order, hex.pbg.population_multiplier as u64);
+                assert!((1..=9).contains(&hex.pbg.population_multiplier));
+            }
+        }
     }
 
     #[test]

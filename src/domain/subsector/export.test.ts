@@ -11,6 +11,8 @@ function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): S
     travel_zone: 'Green',
     gas_giant: true,
     belts: false,
+    population: 8_000_000,
+    pbg: { population_multiplier: 8, belts: 0, gas_giants: 2 },
     name: null,
     ...overrides,
   }
@@ -70,10 +72,17 @@ describe('subsectorToText', () => {
     expect(lines[1]).toMatch(/\sA\s/) // amber zone column
   })
 
-  it('packs PBG with belt + gas-giant flags', () => {
+  it('packs PBG from the generated multiplier and physical counts', () => {
     const text = subsectorToText(
-      subsector([hex(1, 1, { belts: true, gas_giant: true })]),
+      subsector([
+        hex(1, 1, {
+          gas_giant: true,
+          belts: true,
+          population: 7_000_000,
+          pbg: { population_multiplier: 7, belts: 3, gas_giants: 4 },
+        }),
+      ]),
     )
-    expect(text).toMatch(/\s511\s/)
+    expect(text).toMatch(/\s734\s/)
   })
 })
