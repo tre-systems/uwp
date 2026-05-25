@@ -129,10 +129,13 @@
 
 /* Visible keyboard focus ring on every interactive element. Mouse clicks
    don't trigger :focus-visible, so this stays out of the way for pointer
-   users while keeping keyboard / switch users oriented. */
+   users while keeping keyboard / switch users oriented. Use `outline`
+   (not box-shadow) so the ring layers cleanly on top of buttons that
+   already have an elevated box-shadow — otherwise the focus state would
+   strip their drop shadow. */
 :focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+  outline: 2px solid rgba(110, 164, 255, 0.65);
+  outline-offset: 1px;
 }
 
 * { box-sizing: border-box; }
