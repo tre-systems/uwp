@@ -39,6 +39,9 @@ import {
 // an unfolded d20-style legacy 2d6 world map.
 
 const SUBDIVISIONS = 8
+const SURFACE_FACE_CLIP_ID = 'surface-face-clip'
+const SURFACE_COORD_COLS = 32
+const SURFACE_COORD_ROWS = 16
 
 // SVG viewBox matches the net's intrinsic geometry; gestures and the
 // background `<image>` ride the same coordinate system.
@@ -53,6 +56,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   const system = currentSystem.value
   const containerRef = useRef<HTMLDivElement>(null)
   const gestures = useMapGestures(containerRef, SVG_W, SVG_H)
+  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null)
 
   const seaLevelParam = params.value.sea_level
   const iceLatitudeDeg = params.value.ice_latitude * 90
@@ -91,6 +95,10 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
     setBgUrl(url)
   }, [map?.seed, seaLevelParam, iceLatitudeDeg, meanTempK])
 
+  useEffect(() => {
+    setSelectedCellKey(null)
+  }, [map?.seed])
+
   if (!map) {
     return (
       <div class="surface-map surface-empty">
@@ -119,6 +127,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       onPointerCancel={gestures.handlers.onPointerCancel as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
     >
       <svg viewBox={gestures.viewBox} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Surface hex grid (icosahedral net)">
+        <FaceClipPaths />
         {/* Background: icosahedral projection of the prebake. Sits
             behind everything and rides the SVG viewBox. */}
         {bgUrl && (
@@ -137,16 +146,12 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
             pre-bake. Keep them visually quiet; the background carries the
             photoreal terrain, the cells provide legacy 2d6-style picking. */}
         {surface && (
-          <g class="surface-grid-layer">
-            {surface.hexes.map((h, i) => (
-              <SubHex
-                key={i}
-                hex={h}
-                cellSize={surface.cellSize}
-                selected={!!sel && coordOfHex(h) === coordOfSel(sel)}
-              />
-            ))}
-          </g>
+          <SurfaceCells
+            surface={surface}
+            selectedHex={sel}
+            selectedCellKey={selectedCellKey}
+            onSelectCell={setSelectedCellKey}
+          />
         )}
         {/* Fold lines should explain the icosahedral net, not dominate it. */}
         <FoldLines />
@@ -161,35 +166,98 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   )
 }
 
-// ---------- sub-hex cell ----------
+// ---------- surface hex cells ----------
+
+function FaceClipPaths() {
+  return (
+    <defs>
+      {FACES.map((face, i) => {
+        const v = faceFlatVertices(face)
+        return (
+          <clipPath key={i} id={`${SURFACE_FACE_CLIP_ID}-${i}`}>
+            <polygon points={facePoints(v)} />
+          </clipPath>
+        )
+      })}
+    </defs>
+  )
+}
+
+function SurfaceCells({
+  surface,
+  selectedHex,
+  selectedCellKey,
+  onSelectCell,
+}: {
+  surface: ReturnType<typeof buildIcosahedralSurface>
+  selectedHex: SurfaceHexCoord | null
+  selectedCellKey: string | null
+  onSelectCell: (key: string) => void
+}) {
+  const selectedCoordKey = selectedHex ? coordOfSel(selectedHex) : null
+  return (
+    <g class="surface-grid-layer">
+      {FACES.map((_, faceIdx) => (
+        <g key={faceIdx} clip-path={`url(#${SURFACE_FACE_CLIP_ID}-${faceIdx})`}>
+          {surface.hexes
+            .filter((h) => h.faceIdx === faceIdx)
+            .map((h, i) => {
+              const cellKey = keyOfHex(h)
+              return (
+                <SubHex
+                  key={`${faceIdx}-${i}`}
+                  hex={h}
+                  cellKey={cellKey}
+                  cellSize={surface.cellSize}
+                  selected={
+                    selectedCellKey
+                      ? cellKey === selectedCellKey
+                      : !!selectedCoordKey && coordOfHex(h) === selectedCoordKey
+                  }
+                  onSelectCell={onSelectCell}
+                />
+              )
+            })}
+        </g>
+      ))}
+    </g>
+  )
+}
 
 interface SubHexProps {
   hex: IcosaHex
+  cellKey: string
   cellSize: number
   selected: boolean
+  onSelectCell: (key: string) => void
 }
 
-function SubHex({ hex, cellSize, selected }: SubHexProps) {
-  // Keep the atlas cells inside their source triangles. The older, larger
-  // radius made the face edges look ragged and covered the rendered terrain.
-  const r = cellSize * 0.48
+function SubHex({ hex, cellKey, cellSize, selected, onSelectCell }: SubHexProps) {
+  // The centroids of an equilateral triangular subdivision form a
+  // triangular lattice. Its Voronoi cells are regular hexagons with
+  // circumradius side/3; any larger and neighbouring cells overlap.
+  const r = Math.max(1, cellSize / 3)
   const terrainClass = hex.terrain.toLowerCase()
   const label = `${hex.terrain} · ${hex.latDeg.toFixed(1)}°`
-  const coord: SurfaceHexCoord = {
-    col: Math.round(hex.lonDeg * 32 / 360 + 16),
-    row: Math.round(hex.latDeg * 16 / 180 + 8),
-  }
+  const coord = coordForHex(hex)
   return (
     <g
       class={`surface-hex surface-${terrainClass}${selected ? ' surface-selected' : ''}`}
       role="button"
       tabIndex={0}
       aria-label={label}
-      onClick={() => selectAndFocusSurfaceHex(coord)}
-      onDblClick={() => openRegionView(coord)}
+      onClick={() => {
+        onSelectCell(cellKey)
+        selectAndFocusSurfaceHex(coord)
+      }}
+      onDblClick={() => {
+        onSelectCell(cellKey)
+        openRegionView(coord)
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
+          onSelectCell(cellKey)
           selectAndFocusSurfaceHex(coord)
         }
       }}
@@ -202,10 +270,8 @@ function SubHex({ hex, cellSize, selected }: SubHexProps) {
 // ---------- fold lines ----------
 
 function FoldLines() {
-  // Render every face's outline. Adjacent faces share edges, so each
-  // edge will be drawn twice - that doubles the stroke weight and gives
-  // the fold lines a slightly heavier, woodcut feel which suits the
-  // legacy 2d6 look.
+  // Render every face's outline so the net remains visibly foldable
+  // without overpowering the finer atlas grid.
   return (
     <g class="surface-fold-lines" aria-hidden="true">
       {FACES.map((face, i) => {
@@ -213,7 +279,7 @@ function FoldLines() {
         return (
           <polygon
             key={i}
-            points={`${v[0].x},${v[0].y} ${v[1].x},${v[1].y} ${v[2].x},${v[2].y}`}
+            points={facePoints(v)}
             fill="none"
           />
         )
@@ -264,8 +330,13 @@ function projectColRow(coord: SurfaceHexCoord): { x: number; y: number } {
   return { x: p.x, y: p.y }
 }
 
+function facePoints(v: readonly { x: number; y: number }[]): string {
+  return v.map((p) => `${p.x},${p.y}`).join(' ')
+}
+
 function hexPath(cx: number, cy: number, r: number): string {
-  // Flat-top hex.
+  // Flat-top hex. The edge orientations line up with the equilateral
+  // icosahedral face grid, so clipped neighbours meet cleanly at folds.
   const pts: string[] = []
   for (let i = 0; i < 6; i++) {
     const a = Math.PI / 180 * 60 * i
@@ -306,13 +377,32 @@ function cityName(worldSeed: number, coord: SurfaceHexCoord): string {
 }
 
 function coordOfHex(h: IcosaHex): string {
-  return `${Math.round(h.lonDeg)},${Math.round(h.latDeg)}`
+  return coordKey(coordForHex(h))
+}
+
+function keyOfHex(h: IcosaHex): string {
+  return `${h.faceIdx}:${h.upPointing ? 1 : 0}:${h.x.toFixed(3)}:${h.y.toFixed(3)}`
 }
 
 function coordOfSel(sel: SurfaceHexCoord): string {
-  const latDeg = -90 + (sel.row + 0.5) * 180 / 16
-  const lonDeg = -180 + (sel.col + 0.5) * 360 / 32
-  return `${Math.round(lonDeg)},${Math.round(latDeg)}`
+  return coordKey(sel)
+}
+
+function coordForHex(h: IcosaHex): SurfaceHexCoord {
+  const lonNorm = ((h.lonDeg + 180) / 360)
+  const latNorm = ((h.latDeg + 90) / 180)
+  return {
+    col: clampIndex(Math.floor(lonNorm * SURFACE_COORD_COLS), SURFACE_COORD_COLS),
+    row: clampIndex(Math.floor(latNorm * SURFACE_COORD_ROWS), SURFACE_COORD_ROWS),
+  }
+}
+
+function coordKey(coord: SurfaceHexCoord): string {
+  return `${coord.col},${coord.row}`
+}
+
+function clampIndex(n: number, max: number): number {
+  return Math.max(0, Math.min(max - 1, n))
 }
 
 // Re-export for callers that previously imported from this file (the

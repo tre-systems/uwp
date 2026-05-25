@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   FACES,
   faceFlatVertices,
+  iterFaceSubCells,
   netToSphere,
   TRI_HEIGHT,
   TRI_SIDE,
@@ -35,6 +36,21 @@ describe('icosahedral surface net', () => {
     // between four isolated face tiles. In the connected legacy 2d6-style
     // strip it is inside the equatorial belt.
     expect(netToSphere(2.75 * TRI_SIDE, 1.5 * TRI_HEIGHT)).not.toBeNull()
+  })
+
+  it('spaces sub-cell centroids for a non-overlapping hex lattice', () => {
+    const subdivisions = 8
+    const cells = [...iterFaceSubCells(subdivisions)]
+    expect(cells).toHaveLength(20 * subdivisions * subdivisions)
+
+    const up = cells.find((c) => c.faceIdx === 0 && c.i === 0 && c.j === 0 && c.subUp)
+    const down = cells.find((c) => c.faceIdx === 0 && c.i === 0 && c.j === 0 && !c.subUp)
+    expect(up).toBeDefined()
+    expect(down).toBeDefined()
+
+    const centreDistance = Math.hypot(up!.flat.x - down!.flat.x, up!.flat.y - down!.flat.y)
+    const hexRadius = (TRI_SIDE / subdivisions) / 3
+    expect(centreDistance).toBeCloseTo(Math.sqrt(3) * hexRadius, 6)
   })
 })
 

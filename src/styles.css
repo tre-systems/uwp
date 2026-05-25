@@ -1538,7 +1538,7 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 /* Rendered planet-surface background painted from the Rust pre-bake
    and projected through the icosahedral net. Sits behind the hex
-   grid and rides the same SVG viewBox, so pan / zoom keeps both
+   lattice and rides the same SVG viewBox, so pan / zoom keeps both
    layers aligned. */
 .surface-bg-image {
   opacity: 1;
@@ -1546,16 +1546,19 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
-  fill-opacity: 0.08;
-  stroke: rgba(255, 255, 255, 0.14);
-  stroke-width: 0.42;
+  fill-opacity: 0.055;
+  shape-rendering: geometricPrecision;
+  stroke: rgba(235, 248, 255, 0.11);
+  stroke-linejoin: round;
+  stroke-width: 0.36;
   transition: stroke var(--motion-fast), filter var(--motion-fast), fill-opacity var(--motion-fast);
+  vector-effect: non-scaling-stroke;
 }
-.surface-ocean .surface-hex-shape { fill-opacity: 0.025; }
-.surface-shoreline .surface-hex-shape { fill-opacity: 0.18; stroke: rgba(240, 235, 190, 0.28); }
+.surface-ocean .surface-hex-shape { fill-opacity: 0.018; }
+.surface-shoreline .surface-hex-shape { fill-opacity: 0.12; stroke: rgba(240, 235, 190, 0.2); }
 .surface-ice .surface-hex-shape,
 .surface-mountain .surface-hex-shape,
-.surface-volcanic .surface-hex-shape { fill-opacity: 0.12; }
+.surface-volcanic .surface-hex-shape { fill-opacity: 0.09; }
 .surface-hex:hover .surface-hex-shape { fill-opacity: 0.26; stroke: rgba(255, 255, 255, 0.68); }
 .surface-selected .surface-hex-shape { fill-opacity: 0.32; stroke: var(--color-accent); stroke-width: 1.25; }
 
@@ -1567,6 +1570,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-width: 0.9;
   stroke-linejoin: round;
   pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .surface-starport-group { pointer-events: none; }

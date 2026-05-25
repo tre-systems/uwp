@@ -1,8 +1,8 @@
-// Build a hex set for the icosahedral Surface map: subdivide each of
-// the 20 icosahedron faces N times, sample the Rust pre-bake at each
-// subcell centre, classify terrain using the same elevation /
-// latitude / temperature rules the Rust path uses, and pack the
-// results with their flat-net positions ready to render.
+// Build the pickable hex lattice for the icosahedral Surface map:
+// subdivide each of the 20 icosahedron faces N times, sample the Rust
+// pre-bake at each triangular subcell centre, classify terrain using
+// the same elevation / latitude / temperature rules the Rust path
+// uses, and pack those centre points for the SVG hex renderer.
 
 import type { PreBake } from './surfaceMapBackground'
 import {
@@ -13,7 +13,7 @@ import {
 import type { Terrain } from '../domain/surfaceMap'
 
 export interface IcosaHex {
-  /** Flat-net pixel position of this hex's centre. */
+  /** Flat-net pixel position of this hex cell's centre. */
   x: number
   y: number
   /** Sphere position in degrees, for tooltips / region drill-down. */
@@ -27,16 +27,14 @@ export interface IcosaHex {
   elevation: number
   /** Which of the 20 faces this hex belongs to. */
   faceIdx: number
-  /** True for the up-pointing sub-triangle, false for down. Drives the
-   *  rendered hex orientation so the sub-grid looks tessellated rather
-   *  than rotated against its neighbour. */
+  /** True for the up-pointing source sub-triangle, false for down. */
   upPointing: boolean
 }
 
 export interface IcosaSurface {
   hexes: IcosaHex[]
   seaLevel: number
-  /** Sub-triangle edge length in flat-net pixels (for hex sizing). */
+  /** Sub-triangle edge length in flat-net pixels. Hex radius is side/3. */
   cellSize: number
   /** Subdivision level used. */
   subdivisions: number
@@ -53,9 +51,9 @@ export interface BuildOptions {
   /** Mean surface temperature in Kelvin. Local temperature drops with
    *  latitude using the same 60 K equator-to-pole spread as Rust. */
   meanTempK: number
-  /** Subdivision per face. N=7 gives ~640 hexes (vs 512 in the
-   *  rectangular grid); N=9 gives ~990 - dense enough for the smaller
-   *  triangles still to read as hexes. */
+  /** Subdivision per face. N=8 gives 1280 world-level hex cells and
+   *  matches the classic "triangle side size" idea used by legacy 2d6-
+   *  style icosahedral maps. */
   subdivisions: number
 }
 
