@@ -33,6 +33,9 @@ use super::system::{self, BodyType, SolarSystem};
 pub const SUBSECTOR_COLS: u8 = 16;
 pub const SUBSECTOR_ROWS: u8 = 10;
 pub const CLASSIC_SUBSECTOR_COLS: u8 = 8;
+const COMMUNICATION_ROUTE_THRESHOLD: i32 = 6;
+const TRADE_PROMOTES_COMMUNICATION_THRESHOLD: u8 = 7;
+const JUMP_2_COMMUNICATION_DM: i32 = -2;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HexCoord {
@@ -377,8 +380,12 @@ fn is_communication_route(
     }
     let score = communication_endpoint_score(a)
         + communication_endpoint_score(b)
-        + if distance == 1 { 0 } else { -2 };
-    score >= 6 || trade_score >= 7
+        + if distance == 1 {
+            0
+        } else {
+            JUMP_2_COMMUNICATION_DM
+        };
+    score >= COMMUNICATION_ROUTE_THRESHOLD || trade_score >= TRADE_PROMOTES_COMMUNICATION_THRESHOLD
 }
 
 fn communication_endpoint_score(hex: &SubsectorHex) -> i32 {
@@ -1142,6 +1149,47 @@ mod tests {
     }
 
     #[test]
+    fn communication_routes_apply_jump_two_penalty() {
+        let a = route_test_hex_with_uwp(
+            1,
+            1,
+            Uwp {
+                pop: 7,
+                ..default_route_uwp()
+            },
+        );
+        let b = route_test_hex_with_uwp(
+            1,
+            2,
+            Uwp {
+                pop: 7,
+                ..default_route_uwp()
+            },
+        );
+        let c = route_test_hex_with_uwp(
+            1,
+            3,
+            Uwp {
+                pop: 7,
+                ..default_route_uwp()
+            },
+        );
+        let routes = compute_jump_routes(&[a, b, c]);
+
+        let jump_one = routes
+            .iter()
+            .find(|r| r.from == HexCoord::new(1, 1) && r.to == HexCoord::new(1, 2))
+            .expect("jump one route");
+        assert!(jump_one.communication);
+
+        let jump_two = routes
+            .iter()
+            .find(|r| r.from == HexCoord::new(1, 1) && r.to == HexCoord::new(1, 3))
+            .expect("jump two route");
+        assert!(!jump_two.communication);
+    }
+
+    #[test]
     fn trade_routes_follow_chapter_12_pairings() {
         let industrial = route_test_hex_with_uwp(
             1,
@@ -1191,6 +1239,92 @@ mod tests {
             .expect("ordinary jump route");
         assert!(!ordinary.trade);
         assert_eq!(ordinary.trade_score, 0);
+    }
+
+    #[test]
+    fn red_zone_blocks_communication_and_trade_metadata() {
+        let mut industrial = route_test_hex_with_uwp(
+            1,
+            1,
+            Uwp {
+                starport: 'A',
+                atm: 4,
+                pop: 9,
+                tech: 12,
+                ..default_route_uwp()
+            },
+        );
+        industrial.travel_zone = TravelZone::Red;
+        let non_industrial = route_test_hex_with_uwp(
+            1,
+            2,
+            Uwp {
+                starport: 'C',
+                pop: 5,
+                tech: 7,
+                ..default_route_uwp()
+            },
+        );
+        let routes = compute_jump_routes(&[industrial, non_industrial]);
+
+        assert_eq!(routes.len(), 1);
+        assert!(!routes[0].communication);
+        assert!(!routes[0].trade);
+        assert_eq!(routes[0].trade_score, 0);
+    }
+
+    #[test]
+    fn strong_trade_routes_promote_communication_and_clamp_score() {
+        let high_tech = route_test_hex_with_uwp(
+            1,
+            1,
+            Uwp {
+                starport: 'B',
+                tech: 12,
+                ..default_route_uwp()
+            },
+        );
+        let backwater = route_test_hex_with_uwp(
+            1,
+            2,
+            Uwp {
+                starport: 'C',
+                pop: 5,
+                tech: 7,
+                ..default_route_uwp()
+            },
+        );
+        let routes = compute_jump_routes(&[high_tech, backwater]);
+
+        assert_eq!(
+            routes[0].trade_score,
+            TRADE_PROMOTES_COMMUNICATION_THRESHOLD
+        );
+        assert!(routes[0].communication);
+
+        let industrial_hub = route_test_hex_with_uwp(
+            2,
+            1,
+            Uwp {
+                starport: 'A',
+                atm: 4,
+                pop: 9,
+                tech: 12,
+                ..default_route_uwp()
+            },
+        );
+        let rich_backwater = route_test_hex_with_uwp(
+            2,
+            2,
+            Uwp {
+                starport: 'A',
+                pop: 5,
+                ..default_route_uwp()
+            },
+        );
+        let routes = compute_jump_routes(&[industrial_hub, rich_backwater]);
+
+        assert_eq!(routes[0].trade_score, 9);
     }
 
     #[test]

@@ -157,4 +157,20 @@ describe('subsectorToText', () => {
     expect(text).toMatch(/0101\s+0102\s+J-1\s+Y\s+Y\s+8/)
     expect(text).toMatch(/0101\s+0202\s+J-2\s+-\s+-\s+-/)
   })
+
+  it('omits referee-hidden routes from counts and route table', () => {
+    const text = subsectorToText(
+      subsector(
+        [hex(1, 1), hex(1, 2), hex(2, 2)],
+        [
+          route(1, 1, 1, 2, { communication: true, trade: true, trade_score: 8, visible: false }),
+          route(1, 1, 2, 2, { jump: 2, communication: true, trade: false }),
+        ],
+      ),
+    )
+
+    expect(text).toContain('# Routes: 1 communications, 0 trade')
+    expect(text).not.toMatch(/0101\s+0102/)
+    expect(text).toMatch(/0101\s+0202\s+J-2\s+Y\s+-\s+-/)
+  })
 })

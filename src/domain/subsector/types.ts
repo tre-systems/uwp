@@ -56,6 +56,17 @@ export interface SubsectorHexOverride {
 
 export type SubsectorOverrides = Record<string, SubsectorHexOverride>
 
+export interface SubsectorRouteOverride {
+  from_system_seed?: number
+  to_system_seed?: number
+  visible?: boolean
+  communication?: boolean
+  trade?: boolean
+  trade_score?: number
+}
+
+export type SubsectorRouteOverrides = Record<string, SubsectorRouteOverride>
+
 export interface Allegiance {
   code: string
   name: string
@@ -77,6 +88,8 @@ export interface JumpRoute {
   communication: boolean
   trade: boolean
   trade_score: number
+  /** Effective UI/export visibility. Rust omits this field; missing means visible. */
+  visible?: boolean
 }
 
 export interface Subsector {
@@ -112,7 +125,30 @@ export function subsectorOverrideKey(seed: number, coord: HexCoord): string {
   return `${seed >>> 0}:${hexLabel(coord)}`
 }
 
-export function applySubsectorOverrides(subsector: Subsector, overrides: SubsectorOverrides): Subsector {
+export function routeOverrideKey(seed: number, from: HexCoord, to: HexCoord): string {
+  const [a, b] = canonicalRouteEndpoints(from, to)
+  return `${seed >>> 0}:${hexLabel(a)}-${hexLabel(b)}`
+}
+
+export function isRouteVisible(route: Pick<JumpRoute, 'visible'>): boolean {
+  return route.visible !== false
+}
+
+export function visibleRoutes(subsector: Pick<Subsector, 'jump_routes'>): JumpRoute[] {
+  return subsector.jump_routes.filter(isRouteVisible)
+}
+
+export function routeDisplayKind(route: Pick<JumpRoute, 'communication' | 'trade'>): 'trade' | 'communication' | 'local' {
+  if (route.trade) return 'trade'
+  if (route.communication) return 'communication'
+  return 'local'
+}
+
+export function applySubsectorOverrides(
+  subsector: Subsector,
+  overrides: SubsectorOverrides,
+  routeOverrides: SubsectorRouteOverrides = {},
+): Subsector {
   let changed = false
   const hexes = subsector.hexes.map((hex) => {
     const override = overrides[subsectorOverrideKey(subsector.seed, hex.coord)]
@@ -126,11 +162,37 @@ export function applySubsectorOverrides(subsector: Subsector, overrides: Subsect
       bases: override.bases ? { ...override.bases } : hex.bases,
     }
   })
+  const hexByCoord = new Map<string, SubsectorHex>()
+  for (const hex of hexes) {
+    hexByCoord.set(`${hex.coord.col},${hex.coord.row}`, hex)
+  }
+  const jump_routes = subsector.jump_routes.map((route) => {
+    const override = routeOverrides[routeOverrideKey(subsector.seed, route.from, route.to)]
+    if (!override) return route
+    const fromHex = hexByCoord.get(`${route.from.col},${route.from.row}`)
+    const toHex = hexByCoord.get(`${route.to.col},${route.to.row}`)
+    if (
+      (override.from_system_seed != null && fromHex?.system_seed !== override.from_system_seed) ||
+      (override.to_system_seed != null && toHex?.system_seed !== override.to_system_seed)
+    ) {
+      return route
+    }
+    const trade = override.trade ?? route.trade
+    changed = true
+    return {
+      ...route,
+      visible: override.visible ?? route.visible ?? true,
+      communication: override.communication ?? route.communication,
+      trade,
+      trade_score: trade ? clampRouteScore(override.trade_score ?? route.trade_score) : 0,
+    }
+  })
   if (!changed) return subsector
   return {
     ...subsector,
     allegiance: dominantAllegiance(hexes, subsector.allegiance),
     hexes,
+    jump_routes,
   }
 }
 
@@ -197,6 +259,17 @@ function dominantAllegiance(hexes: SubsectorHex[], fallback: string): string {
 
 function sameHex(a: HexCoord, b: HexCoord): boolean {
   return a.col === b.col && a.row === b.row
+}
+
+function canonicalRouteEndpoints(from: HexCoord, to: HexCoord): [HexCoord, HexCoord] {
+  const a = hexLabel(from)
+  const b = hexLabel(to)
+  return a <= b ? [from, to] : [to, from]
+}
+
+function clampRouteScore(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(9, Math.round(value)))
 }
 
 // Cepheus pseudo-hex digit rendering: 0-9 then A-F for 10-15.

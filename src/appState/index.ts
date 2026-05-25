@@ -12,10 +12,14 @@ import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMappin
 import type { SolarSystem } from '../domain/system'
 import {
   applySubsectorOverrides,
+  routeOverrideKey,
   subsectorOverrideKey,
   type HexCoord,
+  type JumpRoute,
   type Subsector,
   type SubsectorHexOverride,
+  type SubsectorRouteOverride,
+  type SubsectorRouteOverrides,
   type SubsectorOverrides,
   type SubsectorUwp,
 } from '../domain/subsector'
@@ -98,6 +102,7 @@ export const currentSubsector = signal<Subsector | null>(null)
 export const selectedHex = signal<HexCoord | null>(null)
 export const showJumpRoutes = signal<boolean>(true)
 export const subsectorOverrides = signal<SubsectorOverrides>({})
+export const subsectorRouteOverrides = signal<SubsectorRouteOverrides>({})
 export const hoverTarget = signal<HoverTarget | null>(null)
 export const currentSurfaceMap = signal<SurfaceMap | null>(null)
 export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
@@ -189,7 +194,9 @@ export function rerollPlanet(index: number) {
 
 export function setSubsector(sub: Subsector | null) {
   generatedSubsector.value = sub
-  currentSubsector.value = sub ? applySubsectorOverrides(sub, subsectorOverrides.value) : null
+  currentSubsector.value = sub
+    ? applySubsectorOverrides(sub, subsectorOverrides.value, subsectorRouteOverrides.value)
+    : null
 }
 
 export function setSubsectorSeed(seed: number) {
@@ -215,7 +222,17 @@ export function setShowJumpRoutes(visible: boolean) {
 export function setSubsectorOverrides(overrides: SubsectorOverrides) {
   subsectorOverrides.value = overrides
   const sub = generatedSubsector.value
-  currentSubsector.value = sub ? applySubsectorOverrides(sub, overrides) : null
+  currentSubsector.value = sub
+    ? applySubsectorOverrides(sub, overrides, subsectorRouteOverrides.value)
+    : null
+}
+
+export function setSubsectorRouteOverrides(overrides: SubsectorRouteOverrides) {
+  subsectorRouteOverrides.value = overrides
+  const sub = generatedSubsector.value
+  currentSubsector.value = sub
+    ? applySubsectorOverrides(sub, subsectorOverrides.value, overrides)
+    : null
 }
 
 export function setSubsectorHexOverride(coord: HexCoord, patch: SubsectorHexOverride) {
@@ -249,6 +266,39 @@ export function clearSubsectorHexOverride(coord: HexCoord) {
 
 export function getSubsectorHexOverride(seed: number, coord: HexCoord): SubsectorHexOverride | null {
   return subsectorOverrides.value[subsectorOverrideKey(seed, coord)] ?? null
+}
+
+export function setSubsectorRouteOverride(route: JumpRoute, patch: SubsectorRouteOverride) {
+  const sub = generatedSubsector.value ?? currentSubsector.value
+  if (!sub) return
+  const key = routeOverrideKey(sub.seed, route.from, route.to)
+  const previous = subsectorRouteOverrides.value[key] ?? {}
+  const fromHex = sub.hexes.find((h) => h.coord.col === route.from.col && h.coord.row === route.from.row)
+  const toHex = sub.hexes.find((h) => h.coord.col === route.to.col && h.coord.row === route.to.row)
+  const next: SubsectorRouteOverride = {
+    ...previous,
+    from_system_seed: fromHex?.system_seed,
+    to_system_seed: toHex?.system_seed,
+    ...patch,
+  }
+  setSubsectorRouteOverrides({
+    ...subsectorRouteOverrides.value,
+    [key]: next,
+  })
+}
+
+export function clearSubsectorRouteOverride(route: JumpRoute) {
+  const sub = generatedSubsector.value ?? currentSubsector.value
+  if (!sub) return
+  const key = routeOverrideKey(sub.seed, route.from, route.to)
+  if (!subsectorRouteOverrides.value[key]) return
+  const next = { ...subsectorRouteOverrides.value }
+  delete next[key]
+  setSubsectorRouteOverrides(next)
+}
+
+export function getSubsectorRouteOverride(seed: number, route: JumpRoute): SubsectorRouteOverride | null {
+  return subsectorRouteOverrides.value[routeOverrideKey(seed, route.from, route.to)] ?? null
 }
 
 export function generatedSubsectorHex(coord: HexCoord) {

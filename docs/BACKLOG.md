@@ -144,21 +144,24 @@ semantics v1 is also implemented: Rust generates two regional polities plus a
 neutral border band, each occupied hex carries an allegiance code, and the map,
 selected-hex inspector, and text export surface route and allegiance context
 without cluttering the current SVG route layer. Referee override hooks v1 are
-implemented for selected-hex travel zone, allegiance, and bases; overrides are
-stored as local deltas keyed by subsector seed + hex + generated system seed,
-then applied as a TypeScript overlay so generated Rust data remains resettable.
+implemented for selected-hex travel zone, allegiance, bases, route visibility,
+and route communication/trade metadata; overrides are stored as local deltas
+keyed by subsector seed plus generated hex/route endpoint seeds, then applied as
+a TypeScript overlay so generated Rust data remains resettable. Route-policy
+thresholds now have focused Rust tests for red-zone blocking, jump-2
+communication penalties, trade-promoted courier links, and trade-score clamping.
 
-- Tune communication routes separately from trade routes.
 - Refine allegiance and polity borders beyond the generated v1 polities.
-- Add referee override hooks for route metadata and route visibility.
-- Surface Chapter 12 data in exports and inspector panels without cluttering the
-  main map.
+- Tune communication routes separately from trade routes after more map-density
+  examples are reviewed.
+- Surface any remaining Chapter 12 data in exports and inspector panels without
+  cluttering the main map.
 
 Done when:
 
 - a referee can inspect every occupied hex and understand its UWP, bases, trade
   codes, zone, PBG, allegiance, and route context,
-- travel zone, base, and allegiance overrides survive regeneration where
+- travel zone, base, allegiance, and route overrides survive regeneration where
   appropriate,
 - text export includes the same map facts the UI shows.
 
@@ -316,10 +319,10 @@ Done when:
 
 ## Current Best Next Chunk
 
-After the UWP projection hardening pass, the best next implementation chunk is:
+After the route-override pass, the best next implementation chunk is:
 
-1. Complete Chapter 12 map semantics by tuning route-density thresholds and
-   adding route metadata/visibility overrides.
+1. Complete Chapter 12 map semantics by reviewing route-density examples and
+   refining generated polity/border presentation.
 2. Or, if staying in projection work, move authored-world population toward an
    actual-population source of truth rather than only UWP-shaped digits.
 

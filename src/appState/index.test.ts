@@ -7,10 +7,12 @@ import {
   registerRendererControls,
   rerollPlanet,
   clearSubsectorHexOverride,
+  clearSubsectorRouteOverride,
   currentSubsector,
   currentSystem,
   generatedSubsectorHex,
   getSubsectorHexOverride,
+  getSubsectorRouteOverride,
   closeRegionView,
   openRegionView,
   regionHex,
@@ -23,6 +25,8 @@ import {
   setSubsector,
   setSubsectorHexOverride,
   setSubsectorOverrides,
+  setSubsectorRouteOverride,
+  setSubsectorRouteOverrides,
   setRenderPerformanceSnapshot,
   setRenderQualityMode,
   setParamsSnapshot,
@@ -362,6 +366,65 @@ describe('appState renderer command boundary', () => {
 
     setSubsector(null)
     setSubsectorOverrides({})
+  })
+
+  it('applies and clears route metadata overrides on the effective subsector', () => {
+    const sub: Subsector = {
+      ...fakeSubsector(),
+      hexes: [
+        fakeSubsector().hexes[0],
+        {
+          ...fakeSubsector().hexes[0],
+          coord: { col: 16, row: 9 },
+          system_seed: 0x11111111,
+        },
+      ],
+      jump_routes: [{
+        from: { col: 16, row: 9 },
+        to: { col: 16, row: 10 },
+        jump: 1,
+        communication: true,
+        trade: true,
+        trade_score: 7,
+      }],
+    }
+    const route = sub.jump_routes[0]
+    setSubsectorOverrides({})
+    setSubsectorRouteOverrides({})
+    setSubsector(sub)
+
+    setSubsectorRouteOverride(route, {
+      visible: false,
+      communication: false,
+      trade: true,
+      trade_score: 12,
+    })
+
+    expect(getSubsectorRouteOverride(99, route)).toMatchObject({
+      from_system_seed: 0x11111111,
+      to_system_seed: 0x12345678,
+      visible: false,
+      communication: false,
+      trade_score: 12,
+    })
+    expect(currentSubsector.value?.jump_routes[0]).toMatchObject({
+      visible: false,
+      communication: false,
+      trade: true,
+      trade_score: 9,
+    })
+
+    clearSubsectorRouteOverride(route)
+
+    expect(getSubsectorRouteOverride(99, route)).toBeNull()
+    expect(currentSubsector.value?.jump_routes[0]).toMatchObject({
+      communication: true,
+      trade: true,
+      trade_score: 7,
+    })
+
+    setSubsector(null)
+    setSubsectorRouteOverrides({})
   })
 
   it('stores render quality mode changes as app state', () => {

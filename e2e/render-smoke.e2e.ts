@@ -65,7 +65,7 @@ for (const viewport of [
 
     const panel = await openPanel(page)
     await expect(panel.locator('dt').filter({ hasText: /^Polities$/ })).toBeVisible()
-    await expect(panel.getByText(/links · \d+ comms · \d+ trade/)).toBeVisible()
+    await expect(panel.getByText(/shown · \d+ comms · \d+ trade/)).toBeVisible()
     await expect(panel.locator('dt').filter({ hasText: /^Allegiance$/ })).toBeVisible()
     await expect(panel.locator('dt').filter({ hasText: /^Routes$/ })).toBeVisible()
 
@@ -85,6 +85,22 @@ for (const viewport of [
     })
     await allegianceSelect.selectOption(nextAllegiance)
     await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveAttribute('aria-label', new RegExp(`allegiance ${nextAllegiance}`))
+
+    const routeId = await page.locator('.jump-route').first().getAttribute('data-route')
+    expect(routeId).toMatch(/^\d{4}-\d{4}$/)
+    const routeFrom = routeId?.slice(0, 4) ?? ''
+    await page
+      .locator(`.hex-occupied[data-coord="${routeFrom}"]`)
+      .evaluate((el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await expect(page.getByRole('tab', { name: /overview of the current solar system/i })).toHaveAttribute('aria-selected', 'true')
+    await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
+
+    const routeControls = panel.locator('fieldset.route-override-row').first()
+    await expect(routeControls).toBeVisible()
+    await routeControls.getByLabel('Show').uncheck()
+    await expect(page.locator(`.jump-route[data-route="${routeId}"]`)).toHaveCount(0)
+    await routeControls.getByRole('button', { name: /reset route/i }).click()
+    await expect(page.locator(`.jump-route[data-route="${routeId}"]`)).toHaveCount(1)
   })
 }
 

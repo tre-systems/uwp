@@ -3,9 +3,12 @@ import {
   clearSubsectorHexOverride,
   generatedSubsectorHex,
   getSubsectorHexOverride,
+  getSubsectorRouteOverride,
   rerollSubsectorSeed,
   selectedHex,
+  clearSubsectorRouteOverride,
   setSubsectorHexOverride,
+  setSubsectorRouteOverride,
   setShowJumpRoutes,
   setSubsectorDensity,
   setSubsectorSeed,
@@ -19,11 +22,15 @@ import {
   allegianceCounts,
   allegianceForCode,
   hexLabel,
+  isRouteVisible,
   routeNeighbor,
   routesForHex,
+  routeDisplayKind,
   subsectorHexCount,
   subsectorToText,
   uwpToCode,
+  visibleRoutes,
+  type JumpRoute,
   type Subsector,
   type SubsectorHex,
   type TravelZone,
@@ -42,14 +49,17 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const sel = selectedHex.value
   const routesVisible = showJumpRoutes.value
   const occupied = sub?.hexes.length ?? 0
+  const routes = sub ? visibleRoutes(sub) : []
   const routesCount = sub?.jump_routes.length ?? 0
-  const commRoutesCount = sub?.jump_routes.filter((route) => route.communication).length ?? 0
-  const tradeRoutesCount = sub?.jump_routes.filter((route) => route.trade).length ?? 0
+  const commRoutesCount = routes.filter((route) => route.communication).length
+  const tradeRoutesCount = routes.filter((route) => route.trade).length
   const polityCounts = sub ? allegianceCounts(sub) : []
   const total = sub ? subsectorHexCount(sub) : 16 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
     : null
+  const visibleRouteCount = routes.length
+  const hiddenRouteCount = Math.max(0, routesCount - visibleRouteCount)
 
   return (
     <>
@@ -102,7 +112,10 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
                   disabled={disabled}
                   onChange={(e) => setShowJumpRoutes((e.currentTarget as HTMLInputElement).checked)}
                 />
-                <span>{routesCount} links · {commRoutesCount} comms · {tradeRoutesCount} trade</span>
+                <span>
+                  {visibleRouteCount} shown · {commRoutesCount} comms · {tradeRoutesCount} trade
+                  {hiddenRouteCount > 0 ? ` · ${hiddenRouteCount} hidden` : ''}
+                </span>
               </label>
             </dd>
           </div>
@@ -186,10 +199,11 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
   const generatedHex = generatedSubsectorHex(hex.coord)
   const override = getSubsectorHexOverride(subsector.seed, hex.coord)
   const routes = routesForHex(subsector, hex.coord)
-  const commRoutes = routes.filter((route) => route.communication)
-  const tradeRoutes = routes.filter((route) => route.trade)
+  const shownRoutes = routes.filter(isRouteVisible)
+  const commRoutes = shownRoutes.filter((route) => route.communication)
+  const tradeRoutes = shownRoutes.filter((route) => route.trade)
   const routeChips = routes
-    .filter((route) => route.communication || route.trade)
+    .filter((route) => isRouteVisible(route) && (route.communication || route.trade))
     .slice()
     .sort((a, b) => Number(b.trade) - Number(a.trade) || b.trade_score - a.trade_score || a.jump - b.jump)
     .slice(0, 4)
@@ -236,7 +250,10 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
         </div>
         <div class="sys-meta-row">
           <dt>Routes</dt>
-          <dd>{commRoutes.length} comms · {tradeRoutes.length} trade</dd>
+          <dd>
+            {commRoutes.length} comms · {tradeRoutes.length} trade
+            {routes.length > shownRoutes.length ? ` · ${routes.length - shownRoutes.length} hidden` : ''}
+          </dd>
         </div>
       </dl>
       {routeChips.length > 0 && (
@@ -256,8 +273,8 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
                 </span>
               )
             })}
-            {routes.length > routeChips.length && (
-              <span class="route-chip route-chip-more">+{routes.length - routeChips.length}</span>
+            {shownRoutes.length > routeChips.length && (
+              <span class="route-chip route-chip-more">+{shownRoutes.length - routeChips.length}</span>
             )}
           </span>
         </div>
@@ -285,8 +302,114 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
         generatedHex={generatedHex}
         hasOverride={!!override}
       />
+      {routes.length > 0 && <RouteOverrideControls subsector={subsector} hex={hex} routes={routes} />}
     </section>
   )
+}
+
+function RouteOverrideControls({
+  subsector,
+  hex,
+  routes,
+}: {
+  subsector: Subsector
+  hex: SubsectorHex
+  routes: JumpRoute[]
+}) {
+  const sortedRoutes = routes.slice().sort((a, b) => {
+    const visibleDelta = Number(isRouteVisible(b)) - Number(isRouteVisible(a))
+    if (visibleDelta !== 0) return visibleDelta
+    const kindDelta = routeKindRank(b) - routeKindRank(a)
+    if (kindDelta !== 0) return kindDelta
+    return hexLabel(routeNeighbor(a, hex.coord)).localeCompare(hexLabel(routeNeighbor(b, hex.coord)))
+  })
+  return (
+    <div class="trade-codes" aria-label="Referee route overrides for the selected hex">
+      <span class="trade-codes-label">Route overrides</span>
+      <div class="trade-codes-list">
+        {sortedRoutes.map((route) => {
+          const neighbor = routeNeighbor(route, hex.coord)
+          const override = getSubsectorRouteOverride(subsector.seed, route)
+          const routeName = `${hexLabel(hex.coord)} to ${hexLabel(neighbor)}`
+          const visible = isRouteVisible(route)
+          const kind = routeDisplayKind(route)
+          return (
+            <fieldset
+              class="route-override-row"
+              key={`${route.from.col},${route.from.row}-${route.to.col},${route.to.row}`}
+              aria-label={`Override route ${routeName}`}
+            >
+              <legend class="trade-codes-label">
+                {hexLabel(neighbor)} · J-{route.jump} · {kind === 'communication' ? 'comms' : kind}
+              </legend>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={visible}
+                  onChange={(e) => setSubsectorRouteOverride(route, {
+                    visible: (e.currentTarget as HTMLInputElement).checked,
+                  })}
+                />
+                <span>Show</span>
+              </label>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={route.communication}
+                  onChange={(e) => setSubsectorRouteOverride(route, {
+                    communication: (e.currentTarget as HTMLInputElement).checked,
+                  })}
+                />
+                <span>Comms</span>
+              </label>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={route.trade}
+                  onChange={(e) => setSubsectorRouteOverride(route, {
+                    trade: (e.currentTarget as HTMLInputElement).checked,
+                  })}
+                />
+                <span>Trade</span>
+              </label>
+              <label class="toggle-label">
+                <span>Score</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={9}
+                  step={1}
+                  value={Math.max(1, route.trade_score)}
+                  disabled={!route.trade}
+                  aria-label={`Override trade score for route ${routeName}`}
+                  onInput={(e) => setSubsectorRouteOverride(route, {
+                    trade_score: Number((e.currentTarget as HTMLInputElement).value),
+                  })}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => clearSubsectorRouteOverride(route)}
+                disabled={!override}
+                title={`Reset route ${routeName} to generated metadata`}
+                aria-label={`Reset route ${routeName} to generated metadata`}
+              >
+                Reset route
+              </button>
+            </fieldset>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function routeKindRank(route: JumpRoute): number {
+  switch (routeDisplayKind(route)) {
+    case 'trade': return 2
+    case 'communication': return 1
+    default: return 0
+  }
 }
 
 function RefereeOverrideControls({

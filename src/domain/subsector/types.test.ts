@@ -3,7 +3,10 @@ import {
   allegianceCounts,
   applySubsectorOverrides,
   polityBorders,
+  routeOverrideKey,
   subsectorOverrideKey,
+  visibleRoutes,
+  type JumpRoute,
   type Subsector,
   type SubsectorHex,
 } from './types'
@@ -37,6 +40,18 @@ function subsector(hexes: SubsectorHex[]): Subsector {
     ],
     hexes,
     jump_routes: [],
+  }
+}
+
+function route(overrides: Partial<JumpRoute> = {}): JumpRoute {
+  return {
+    from: { col: 1, row: 1 },
+    to: { col: 1, row: 2 },
+    jump: 1,
+    communication: true,
+    trade: false,
+    trade_score: 0,
+    ...overrides,
   }
 }
 
@@ -134,5 +149,52 @@ describe('applySubsectorOverrides', () => {
     expect(polityBorders(out)).toEqual([
       { coord: { col: 1, row: 1 }, edge: 1, from: 'ImDi', to: 'NaVa' },
     ])
+  })
+
+  it('applies route metadata and visibility overrides without mutating generated routes', () => {
+    const original = route({ trade: true, trade_score: 7 })
+    const sub = {
+      ...subsector([hex(1, 1, 'ImDi'), hex(1, 2, 'ImDi')]),
+      jump_routes: [original],
+    }
+    const out = applySubsectorOverrides(sub, {}, {
+      [routeOverrideKey(sub.seed, original.to, original.from)]: {
+        from_system_seed: sub.hexes[0].system_seed,
+        to_system_seed: sub.hexes[1].system_seed,
+        visible: false,
+        communication: false,
+        trade: true,
+        trade_score: 12,
+      },
+    })
+
+    expect(out).not.toBe(sub)
+    expect(out.jump_routes[0]).toMatchObject({
+      visible: false,
+      communication: false,
+      trade: true,
+      trade_score: 9,
+    })
+    expect(original).toMatchObject({
+      communication: true,
+      trade: true,
+      trade_score: 7,
+    })
+    expect(visibleRoutes(out)).toEqual([])
+  })
+
+  it('ignores stale route overrides when endpoint system seeds change', () => {
+    const original = route()
+    const sub = {
+      ...subsector([hex(1, 1, 'ImDi'), hex(1, 2, 'ImDi')]),
+      jump_routes: [original],
+    }
+
+    expect(applySubsectorOverrides(sub, {}, {
+      [routeOverrideKey(sub.seed, original.from, original.to)]: {
+        from_system_seed: 999,
+        visible: false,
+      },
+    })).toBe(sub)
   })
 })

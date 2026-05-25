@@ -398,11 +398,11 @@ Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
 3. **WASM API + TS DTOs.** *Shipped → `88b0928`.* `wasm_api::generate_subsector` is a free function exposed as `generateSubsector`; TS DTOs live in `src/domain/subsector/`.
 
-4. **App state + renderer client.** *Shipped → `88b0928`.* `subsectorSeed`, `subsectorDensity`, `currentSubsector`, `selectedHex`, `showJumpRoutes` signals; `selectHex` action stores the choice, feeds the system pipeline, and snaps view mode. `subsectorClient.ts` regenerates on seed/density changes.
+4. **App state + renderer client.** *Shipped → `88b0928`.* `subsectorSeed`, `subsectorDensity`, `currentSubsector`, `selectedHex`, `showJumpRoutes`, `subsectorOverrides`, and `subsectorRouteOverrides` signals; `selectHex` action stores the choice, feeds the system pipeline, and snaps view mode. `subsectorClient.ts` regenerates on seed/density changes.
 
 5. **SVG subsector map UI.** *Shipped → `88b0928`.* `SubsectorMap.tsx` renders pointy-top hexes with system dots, UWP digits, base markers (N/S/R/T), travel-zone tinting, and keyboard focus. `SubsectorEditor.tsx` surfaces allegiance, occupancy, density, the reroll button, and a hex inspector for the selected cell.
 
-6. **Jump routes overlay.** *Shipped → `1912943`.* `compute_jump_routes` walks every pair of class-C+ starports and emits jump-1 or jump-2 edges based on hex-grid distance. The SVG renders solid green for jump-1 / dashed amber for jump-2; the editor's "Jump routes" checkbox toggles visibility.
+6. **Jump routes overlay.** *Shipped → `1912943`, expanded → current.* `compute_jump_routes` walks every pair of class-C+ starports and emits jump-1 or jump-2 edges based on hex-grid distance. Rust annotates each route with communication/trade metadata and tests red-zone blocking, jump-2 courier penalties, trade-promoted communications, and score clamping. The SVG renders route classes through `visibleRoutes`; selected-hex route overrides can hide links or adjust communication/trade metadata without mutating generated Rust data.
 
 7. **Navigation polish.** *Shipped → `ab4d689`.* `Breadcrumb.tsx` renders a centre-top pill walking Subsector / Hex / System / Main World with clickable crumbs; `Esc` pops one level.
 

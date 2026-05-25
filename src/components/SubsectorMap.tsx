@@ -8,7 +8,9 @@ import {
   allegianceForCode,
   hexLabel,
   polityBorders,
+  routeDisplayKind,
   uwpToCode,
+  visibleRoutes,
   type Bases,
   type HexCoord,
   type Subsector,
@@ -144,14 +146,11 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
             the connector boundary, matching the legacy 2d6 Map look. */}
         {routesVisible && (
           <g class="jump-routes" aria-hidden="true">
-            {subsector.jump_routes.map((route) => {
+            {visibleRoutes(subsector).map((route) => {
               const a = hexCenter(route.from.col, route.from.row)
               const b = hexCenter(route.to.col, route.to.row)
-              const kindClass = route.trade
-                ? 'jump-route-trade'
-                : route.communication
-                  ? 'jump-route-comm'
-                  : 'jump-route-local'
+              const kind = routeDisplayKind(route)
+              const kindClass = `jump-route-${kind === 'communication' ? 'comm' : kind}`
               return (
                 <line
                   key={`${route.from.col},${route.from.row}-${route.to.col},${route.to.row}-${route.jump}`}
@@ -160,6 +159,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
                   x2={b.x}
                   y2={b.y}
                   class={`jump-route ${route.jump === 1 ? 'jump-route-1' : 'jump-route-2'} ${kindClass}`}
+                  data-route={`${hexLabel(route.from)}-${hexLabel(route.to)}`}
                 />
               )
             })}

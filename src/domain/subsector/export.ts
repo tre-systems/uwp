@@ -1,6 +1,6 @@
 import { deriveTradeCodes } from '../cepheus'
 import { systemName } from '../names'
-import { hexLabel, subsectorHexCount, uwpToCode, type Subsector, type SubsectorHex } from './types'
+import { hexLabel, subsectorHexCount, uwpToCode, visibleRoutes, type Subsector, type SubsectorHex } from './types'
 
 // Tab-aligned plain text export, modelled on legacy 2d6-Map's "Second
 // Survey" sec/tab format. Columns are space-padded so the file reads
@@ -116,8 +116,9 @@ function routeDividerLine(): string {
 
 export function subsectorToText(sub: Subsector): string {
   const lines: string[] = []
-  const communicationRoutes = sub.jump_routes.filter((route) => route.communication)
-  const tradeRoutes = sub.jump_routes.filter((route) => route.trade)
+  const exportedRoutes = visibleRoutes(sub)
+  const communicationRoutes = exportedRoutes.filter((route) => route.communication)
+  const tradeRoutes = exportedRoutes.filter((route) => route.trade)
   lines.push(`# Subsector region ${systemName(sub.seed)}  (seed ${sub.seed})`)
   lines.push(`# Dimensions: ${sub.columns} x ${sub.rows}`)
   lines.push(`# Dominant allegiance: ${sub.allegiance}`)
@@ -136,12 +137,12 @@ export function subsectorToText(sub: Subsector): string {
   for (const hex of sorted) {
     lines.push(hexLine(hex, hex.allegiance || sub.allegiance))
   }
-  if (sub.jump_routes.length > 0) {
+  if (exportedRoutes.length > 0) {
     lines.push('')
     lines.push('# Route table')
     lines.push('From  To    Jump  Comm  Trade Score')
     lines.push(routeDividerLine())
-    const sortedRoutes = [...sub.jump_routes].sort((a, b) => {
+    const sortedRoutes = [...exportedRoutes].sort((a, b) => {
       const from = hexLabel(a.from).localeCompare(hexLabel(b.from))
       if (from !== 0) return from
       const to = hexLabel(a.to).localeCompare(hexLabel(b.to))
