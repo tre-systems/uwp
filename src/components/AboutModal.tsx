@@ -87,6 +87,16 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
               </dd>
             </div>
             <div class="glossary-entry">
+              <dt>Keyboard</dt>
+              <dd>
+                <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> / <kbd>4</kbd> jump
+                to Subsector / System / Main World / Surface.{' '}
+                <kbd>Esc</kbd> pops back up one view.{' '}
+                <kbd>Enter</kbd> or <kbd>Space</kbd> opens the focused hex
+                in the subsector or surface grid.
+              </dd>
+            </div>
+            <div class="glossary-entry">
               <dt>Build</dt>
               <dd><code>{BUILD_ID}</code></dd>
             </div>
