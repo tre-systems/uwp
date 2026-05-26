@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import {
   closeRegionView,
   currentSurfaceMap,
+  params,
   regionHex,
   regionSurfaceCell,
 } from '../appState'
@@ -97,6 +98,13 @@ export function RegionView() {
           height: FRAME_HEIGHT,
           starport,
           settlements,
+          paletteBase: {
+            ocean: params.value.ocean_color,
+            land: params.value.land_color,
+            mountain: params.value.mountain_color,
+            sand: params.value.sand_color,
+            snow: params.value.snow_color,
+          },
         },
         quality,
       )

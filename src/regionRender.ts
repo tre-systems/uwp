@@ -21,6 +21,12 @@
 // per-pixel work, then upscale via drawImage.
 
 import type { SurfaceHex, Terrain } from './domain/surfaceMap'
+import {
+  biomeColorLinear,
+  linearToSrgb8,
+  TERRAIN_TO_BIOME,
+  type PaletteBaseColors,
+} from './domain/surfaceMap/biomePalette'
 
 export interface RegionRenderInput {
   hex: SurfaceHex
@@ -36,6 +42,11 @@ export interface RegionRenderInput {
   /** Pixel size of the output canvas. */
   width: number
   height: number
+  /** Shared biome palette base colours. When present, the region paints
+   *  with the canonical biome palette so colours match the globe and
+   *  surface map. When absent, the legacy temperate / hot / cold
+   *  hard-coded ramps are used. */
+  paletteBase?: PaletteBaseColors
 }
 
 export interface RegionLabel {
@@ -108,7 +119,9 @@ export function renderRegion(
   const img = offCtx.createImageData(off.width, off.height)
   const data = img.data
 
-  const palette = paletteForTerrain(hex.terrain, hex.temperature_k)
+  const palette = input.paletteBase
+    ? paletteForBiome(hex.terrain, input.paletteBase)
+    : paletteForTerrain(hex.terrain, hex.temperature_k)
   // Pre-sample elevation + slope on the offscreen grid so the per-pixel
   // loop is just an array lookup + colour math. Five-fold faster than
   // calling sampleHeight from inside the pixel loop.
@@ -364,6 +377,51 @@ function paletteForTerrain(t: Terrain, tempK: number): Palette {
     case 'Ice': return { low: [220, 230, 240], mid: [200, 215, 230], high: [180, 200, 220], peak: [240, 248, 255] }
     case 'Volcanic': return { low: [110, 60, 50], mid: [90, 45, 40], high: [120, 75, 55], peak: [230, 90, 50] }
   }
+}
+
+// Build a 4-stop elevation ramp anchored on the shared biome palette:
+// low altitude reads as a slightly darker biome colour, mid is the
+// biome itself, high blends toward mountain rock, peak picks up snow.
+// Used when the caller hands in PaletteBaseColors — keeps the region
+// view's elevation richness while making the COLOUR FAMILY identical
+// to the globe and surface map.
+function paletteForBiome(terrain: Terrain, base: PaletteBaseColors): Palette {
+  const biomeId = TERRAIN_TO_BIOME[terrain] ?? 3
+  const main = toSrgb(biomeColorLinear(biomeId, base))
+  const mountain = toSrgb(biomeColorLinear(9, base))
+  const snow = toSrgb(biomeColorLinear(11, base))
+  const ocean = toSrgb(biomeColorLinear(0, base))
+  if (terrain === 'Ocean') {
+    const deep = ocean
+    const mid = toSrgb(biomeColorLinear(1, base))
+    return { low: deep, mid, high: mid, peak: scaleColor(mid, 1.15) }
+  }
+  if (terrain === 'Ice' || terrain === 'Tundra') {
+    return {
+      low: scaleColor(main, 0.85),
+      mid: main,
+      high: main,
+      peak: snow,
+    }
+  }
+  return {
+    low: scaleColor(main, 0.82),
+    mid: main,
+    high: mixColor(main, mountain, 0.55),
+    peak: terrain === 'Mountain' ? snow : mixColor(mountain, snow, 0.5),
+  }
+}
+
+function toSrgb(linear: readonly [number, number, number]): [number, number, number] {
+  return [linearToSrgb8(linear[0]), linearToSrgb8(linear[1]), linearToSrgb8(linear[2])]
+}
+
+function scaleColor(c: [number, number, number], k: number): [number, number, number] {
+  return [
+    Math.max(0, Math.min(255, Math.round(c[0] * k))),
+    Math.max(0, Math.min(255, Math.round(c[1] * k))),
+    Math.max(0, Math.min(255, Math.round(c[2] * k))),
+  ]
 }
 
 function terrainColor(p: Palette, t01: number): [number, number, number] {
