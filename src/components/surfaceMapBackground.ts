@@ -46,7 +46,18 @@ interface RenderOptions {
   paletteBase: PaletteBaseColors
 }
 
-export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): string {
+/**
+ * Render the icosahedral biome background to a PNG data URL.
+ *
+ * Async + chunked: yields to the event loop every CHUNK_ROWS so the page
+ * stays responsive while shading the ~500k-pixel canvas. Pass an
+ * AbortSignal to cancel mid-render when the user navigates away.
+ */
+export async function renderSurfaceBackground(
+  prebake: PreBake,
+  opts: RenderOptions,
+  signal?: AbortSignal,
+): Promise<string> {
   const width = opts.width
   const height = Math.round((width * NET_HEIGHT) / NET_WIDTH)
   const scaleNetToPx = width / NET_WIDTH
@@ -89,46 +100,59 @@ export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): 
 
   // First pass: project every pixel and sample the heightmap + biome.
   // The heightmap is bilinear (smooth coastlines); the biome is nearest-
-  // neighbour (categorical).
+  // neighbour (categorical). Chunked + yielded so the page stays
+  // responsive on slower devices.
   const elev = new Float32Array(width * height)
   const biomeBuf = new Uint8Array(width * height)
   const inside = new Uint8Array(width * height)
   const latArr = new Float32Array(width * height)
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const netX = x / scaleNetToPx
-      const netY = y / scaleNetToPx
-      const proj = netToSphere(netX, netY)
-      const idx = y * width + x
-      if (!proj) continue
-      inside[idx] = 1
-      latArr[idx] = proj.lat
-      const sample = normalisedSurfaceSample(proj.lat, proj.lon)
-      elev[idx] = sampleBilinear(
-        heightmap,
-        prebake.lon_cells,
-        prebake.lat_cells,
-        sample.lat,
-        sample.lon,
-      )
-      if (biome) {
-        biomeBuf[idx] = sampleNearestByte(
-          biome,
+  // Yield to the event loop every CHUNK_ROWS scanlines. 64 keeps a
+  // single chunk under ~10ms on mid-range hardware so input handlers
+  // and frame paints can interleave between chunks.
+  const CHUNK_ROWS = 64
+  for (let yStart = 0; yStart < height; yStart += CHUNK_ROWS) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const yEnd = Math.min(yStart + CHUNK_ROWS, height)
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = 0; x < width; x++) {
+        const netX = x / scaleNetToPx
+        const netY = y / scaleNetToPx
+        const proj = netToSphere(netX, netY)
+        const idx = y * width + x
+        if (!proj) continue
+        inside[idx] = 1
+        latArr[idx] = proj.lat
+        const sample = normalisedSurfaceSample(proj.lat, proj.lon)
+        elev[idx] = sampleBilinear(
+          heightmap,
           prebake.lon_cells,
           prebake.lat_cells,
           sample.lat,
           sample.lon,
         )
+        if (biome) {
+          biomeBuf[idx] = sampleNearestByte(
+            biome,
+            prebake.lon_cells,
+            prebake.lat_cells,
+            sample.lat,
+            sample.lon,
+          )
+        }
       }
     }
+    await new Promise((r) => setTimeout(r, 0))
   }
 
   // Second pass: shade each pixel. Hillshade modulation lifts/darkens
   // the biome colour by local slope so terrain reads as 3D rather than
   // a flat-fill polygon. Biome stays the colour family; hillshade is
   // the texture.
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+  for (let yStart = 0; yStart < height; yStart += CHUNK_ROWS) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const yEnd = Math.min(yStart + CHUNK_ROWS, height)
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = 0; x < width; x++) {
       const idx = y * width + x
       if (!inside[idx]) {
         data[idx * 4 + 3] = 0
@@ -193,7 +217,9 @@ export function renderSurfaceBackground(prebake: PreBake, opts: RenderOptions): 
       data[di + 1] = clamp255(g)
       data[di + 2] = clamp255(b)
       data[di + 3] = 255
+      }
     }
+    await new Promise((r) => setTimeout(r, 0))
   }
   ctx.putImageData(img, 0, 0)
   return canvas.toDataURL('image/png')

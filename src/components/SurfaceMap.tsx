@@ -86,14 +86,17 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
     })
   }, [prebake, seaLevelParam, iceFraction, meanTempK])
 
-  // Rendered background, recomputed alongside the surface.
+  // Rendered background, recomputed alongside the surface. The render
+  // is async + chunked so the UI thread stays responsive on slower
+  // devices; the AbortController cancels mid-paint when the user
+  // navigates away or the inputs change.
   const [bgUrl, setBgUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!map || !prebake) { setBgUrl(null); return }
-    let cancelled = false
-    const render = () => {
-      if (cancelled) return
-      const url = renderSurfaceBackground(prebake, {
+    const controller = new AbortController()
+    renderSurfaceBackground(
+      prebake,
+      {
         waterFraction: seaLevelParam,
         iceLatitudeDeg,
         meanTempK,
@@ -105,25 +108,19 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
           sand: params.value.sand_color,
           snow: params.value.snow_color,
         },
+      },
+      controller.signal,
+    )
+      .then((url) => {
+        if (!controller.signal.aborted) setBgUrl(url)
       })
-      if (cancelled) return
-      setBgUrl(url)
-    }
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
-      cancelIdleCallback?: (id: number) => void
-    }
-    if (idleWindow.requestIdleCallback) {
-      const id = idleWindow.requestIdleCallback(render, { timeout: 350 })
-      return () => {
-        cancelled = true
-        idleWindow.cancelIdleCallback?.(id)
-      }
-    }
-    const timeout = window.setTimeout(render, 16)
+      .catch((err) => {
+        if ((err as DOMException)?.name !== 'AbortError') {
+          console.warn('renderSurfaceBackground failed', err)
+        }
+      })
     return () => {
-      cancelled = true
-      window.clearTimeout(timeout)
+      controller.abort()
     }
   }, [map?.seed, prebake, seaLevelParam, iceLatitudeDeg, meanTempK])
 
