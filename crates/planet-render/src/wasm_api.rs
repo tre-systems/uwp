@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::domain::{subsector, surface_map, surface_prebake};
+use crate::scenes::system as system_scene;
 use crate::{params, renderer};
 
 #[wasm_bindgen]
@@ -84,6 +85,38 @@ impl Planet {
             Some(i) => i as i32,
             None => -1,
         }
+    }
+
+    /// Ray-pick the full system overview and return a small typed target:
+    /// `{kind:"planet"|"star"|"belt", index:n}`. Returns null on miss.
+    #[wasm_bindgen(js_name = pickSystemBody)]
+    pub fn pick_system_body(
+        &self,
+        canvas_x: f32,
+        canvas_y: f32,
+        time_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let Some(hit) = self
+            .inner
+            .pick_system_body(canvas_x, canvas_y, (time_ms * 0.001) as f32)
+        else {
+            return Ok(JsValue::NULL);
+        };
+        #[derive(serde::Serialize)]
+        struct PickTarget {
+            kind: &'static str,
+            index: usize,
+        }
+        let kind = match hit.kind {
+            system_scene::PickKind::Planet => "planet",
+            system_scene::PickKind::PrimaryStar | system_scene::PickKind::CompanionStar => "star",
+            system_scene::PickKind::AsteroidBelt => "belt",
+        };
+        serde_wasm_bindgen::to_value(&PickTarget {
+            kind,
+            index: hit.index,
+        })
+        .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     /// Orient the detail view's globe so the requested surface coordinates

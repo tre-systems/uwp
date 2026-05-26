@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks'
 import {
   currentSubsector,
   currentSystem,
+  detailTarget,
   selectedHex,
   setViewMode,
   subsectorSeed,
@@ -9,6 +10,8 @@ import {
 } from '../appState'
 import { hexLabel } from '../domain/subsector'
 import { hexName, systemName } from '../domain/names'
+import type { SolarSystem, SystemBodyTarget } from '../domain/system'
+import { bodyTypeLabel } from './Icon'
 
 // Persistent top-of-canvas indicator showing where the user is in the
 // Subsector / System / Main World hierarchy. Each crumb is clickable
@@ -20,6 +23,7 @@ export function Breadcrumb() {
   const sel = selectedHex.value
   const seed = subsectorSeed.value
   const sys = currentSystem.value
+  const target = detailTarget.value
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,7 +45,7 @@ export function Breadcrumb() {
   const hexLabelText = sel ? hexLabel(sel) : null
   const hexNameText = sel ? hexName(seed, sel.col, sel.row) : null
   const systemLabel = sys ? systemName(sys.seed) : 'System'
-  const mainLabel = 'Main World'
+  const mainLabel = target && sys ? detailLabel(sys, target) : 'Main World'
 
   // Build the trail. Crumbs after the current mode are dimmed, but
   // only navigable when the underlying data exists.
@@ -72,11 +76,13 @@ export function Breadcrumb() {
         active: mode === 'detail',
         onClick: () => setViewMode('detail'),
       })
-      crumbs.push({
-        label: 'Surface',
-        active: mode === 'surface',
-        onClick: () => setViewMode('surface'),
-      })
+      if (!target) {
+        crumbs.push({
+          label: 'Surface',
+          active: mode === 'surface',
+          onClick: () => setViewMode('surface'),
+        })
+      }
     }
   }
 
@@ -102,6 +108,15 @@ export function Breadcrumb() {
       </ol>
     </nav>
   )
+}
+
+function detailLabel(sys: SolarSystem, target: SystemBodyTarget): string {
+  if (target.kind === 'planet') {
+    const planet = sys.planets[target.index]
+    return planet ? `${bodyTypeLabel(planet.body_type)} ${target.index + 1}` : 'Body Detail'
+  }
+  if (target.kind === 'star') return target.index === 0 ? 'Primary Star' : 'Companion Star'
+  return `Asteroid Belt ${target.index + 1}`
 }
 
 interface Crumb {

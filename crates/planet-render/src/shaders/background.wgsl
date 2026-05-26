@@ -331,6 +331,7 @@ fn fs_main(in: VsOut) -> BgOut {
     let planet_radius = u.resolution.w;
     let time = u.misc.y;
     let quality = u.misc.w;
+    let body_kind = u.planet_params.w;
 
     // ---------- Background gradient + stars (anchored to celestial sphere) ----------
     let sky = sky_uv(ray_dir);
@@ -366,6 +367,7 @@ fn fs_main(in: VsOut) -> BgOut {
     if (moon_h > 0.40) { n_moons = 1; }
     if (moon_h > 0.75) { n_moons = 2; }
     if (moon_h > 0.95) { n_moons = 3; }
+    if (body_kind > 1.5) { n_moons = 0; }
     n_moons = min(n_moons, select(select(1, 2, quality > 0.50), 3, quality > 0.85));
     for (var i: i32 = 0; i < 3; i = i + 1) {
         if (i >= n_moons) { break; }
@@ -417,7 +419,7 @@ fn fs_main(in: VsOut) -> BgOut {
     // ~28% of planets get a ring system, lying in the planet's equatorial plane
     // (rotates with axial tilt via u.model).
     let ring_h = hash31(u.seed_block.xyz * 0.27 + vec3<f32>(31.0, -17.0, 53.0));
-    if (ring_h > 0.72) {
+    if (ring_h > 0.72 && body_kind > 0.5 && body_kind < 1.5) {
         let ring_normal = normalize((u.model * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz);
         let denom = dot(ray_dir, ring_normal);
         if (abs(denom) > 1e-4) {

@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks'
 import {
   currentSystem,
+  detailTarget,
   panelOpen,
   params,
   randomizeUwp,
@@ -15,6 +16,7 @@ import {
   viewMode,
 } from '../appState'
 import { AboutModal } from './AboutModal'
+import { DetailTargetPanel } from './DetailTargetPanel'
 import { ExportPanel } from './ExportPanel'
 import { GlossaryModal } from './GlossaryModal'
 import { ShareButton } from './ShareButton'
@@ -35,6 +37,7 @@ export function ControlPanel() {
   const open = panelOpen.value
   const mode = viewMode.value
   const sys = currentSystem.value
+  const target = detailTarget.value
   const _ = systemSeed.value  // subscribe so the panel re-renders on seed change
   void _
   const codeText = uwpToCode(u)
@@ -58,9 +61,9 @@ export function ControlPanel() {
 
       <aside id={panelId} class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open} inert={!open}>
         <header class="panel-header">
-          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : mode === 'surface' ? 'Surface' : 'Main World'}</h1>
+          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : mode === 'surface' ? 'Surface' : target ? 'Body Detail' : 'Main World'}</h1>
           <div class="panel-actions">
-            {mode === 'detail' && (
+            {mode === 'detail' && !target && (
               <>
                 <button onClick={randomizeUwp} disabled={controlsDisabled}>Randomize</button>
                 <button class="ghost" onClick={resetUwp} disabled={controlsDisabled}>Reset</button>
@@ -91,7 +94,15 @@ export function ControlPanel() {
           <SystemEditor system={sys} disabled={controlsDisabled} />
         )}
 
-        {mode === 'detail' && (
+        {mode === 'detail' && target && sys && (
+          <>
+            <DetailTargetPanel system={sys} target={target} disabled={controlsDisabled} />
+            <ViewControls params={p} disabled={controlsDisabled} onParamsChange={updateParams} />
+            <PerformanceControls disabled={controlsDisabled} />
+          </>
+        )}
+
+        {mode === 'detail' && (!target || !sys) && (
           <>
             <UwpCodeEditor codeText={codeText} disabled={controlsDisabled} onCodeChange={setUwpFromCode} />
             <StarportEditor
@@ -110,7 +121,9 @@ export function ControlPanel() {
           <PerformanceControls disabled={controlsDisabled} />
         )}
 
-        {(mode === 'detail' || mode === 'system') && <ExportPanel disabled={controlsDisabled} />}
+        {(mode === 'detail' || mode === 'system') && (
+          <ExportPanel disabled={controlsDisabled} allowCard={mode === 'detail' && !target} />
+        )}
 
         <footer class="panel-footer">
           {/* The 3D detail / system views orbit a camera; the 2D

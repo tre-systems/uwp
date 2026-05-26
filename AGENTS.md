@@ -174,6 +174,10 @@ The requested refactor baseline is now in place:
 - Direct UWP entry and slider edits are reconciled through `reconcileUwpDigits`: size 0 forces atmosphere/hydrographics 0, size 1 forces hydrographics 0, uninhabited worlds force government/law/tech 0, non-finite values clamp, and population caps at Cepheus `A`.
 - Runtime frame-time monitoring can downshift from high → balanced → low render profiles on slow devices.
 - The Performance panel exposes the effective render profile, FPS, frame time, target FPS, render-target size, shader quality, and manual Auto/High/Balanced/Low overrides.
+- System-view picking and table actions can focus non-main bodies in Detail:
+  stars, gas/ice/mini-Neptune worlds, rocky worlds, cold super-Earths, and
+  asteroid belts all route through typed app-state targets and dedicated
+  renderer visual modes rather than `window.uwp`.
 - Rust system-view uniform packing and camera fitting live in `crates/planet-render/src/scenes/system.rs`.
 - Rust detail-scene uniform packing, mesh quality, HDR/depth target helpers, and detail render-pass encoding live in `crates/planet-render/src/scenes/detail.rs`.
 - Rust GPU/surface/pipeline setup lives in `crates/planet-render/src/gpu.rs`.

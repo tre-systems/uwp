@@ -167,6 +167,8 @@ export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
     vegetation_richness,
     population_intensity,
     atm_banding,
+    body_visual_mode: 0,
+    surface_temp_k: 0,
     planet_radius,
     ...palette,
   }

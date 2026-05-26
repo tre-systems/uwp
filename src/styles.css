@@ -430,7 +430,7 @@ html, body, #app {
 .sys-table td.sys-col-action { padding-right: 0; text-align: right; }
 .sys-row { transition: background var(--motion-fast); cursor: pointer; }
 .sys-row:hover { background: rgba(255, 255, 255, 0.04); }
-.sys-row:hover .sys-reroll { opacity: 1; }
+.sys-row:hover .sys-row-action { opacity: 1; }
 .sys-row:focus-visible { outline: 1px solid var(--accent, #6ea8ff); outline-offset: -1px; }
 .sys-row-open { background: rgba(255, 255, 255, 0.05); }
 
@@ -517,7 +517,7 @@ html, body, #app {
   color: var(--text-dim);
   font-size: 0.85em;
 }
-.sys-reroll {
+.sys-row-action {
   width: 24px;
   height: 24px;
   display: inline-flex;
@@ -530,15 +530,40 @@ html, body, #app {
   border-radius: var(--radius-md);
   cursor: pointer;
   opacity: 0.55;
+  margin-left: 2px;
   transition: background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast), opacity var(--motion-fast);
 }
-.sys-reroll:hover {
+.sys-row-action:hover,
+.sys-row-action[aria-pressed="true"] {
   background: var(--color-accent-soft);
   border-color: var(--color-accent-border);
   color: var(--color-text-strong);
   opacity: 1;
 }
-.sys-reroll:disabled { opacity: 0.25; cursor: default; }
+.sys-row-action:disabled { opacity: 0.25; cursor: default; }
+
+.sys-inline-action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 0;
+  vertical-align: middle;
+  border: 1px solid var(--border-control);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
+}
+.sys-inline-action:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+  color: var(--color-text-strong);
+}
+.sys-inline-action:disabled { opacity: 0.4; cursor: default; }
 
 .sys-belt {
   font-size: var(--type-body);
@@ -551,6 +576,64 @@ html, body, #app {
 .sys-belt-dots {
   color: var(--text-dim);
   letter-spacing: 2px;
+}
+
+.detail-target-card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.035);
+}
+.detail-target-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.detail-target-head .icon,
+.detail-target-star {
+  color: var(--color-accent);
+  flex: 0 0 auto;
+}
+.detail-target-star {
+  width: 18px;
+  text-align: center;
+  font-size: 17px;
+  line-height: 1;
+}
+.detail-target-head strong {
+  display: block;
+  color: var(--color-text-strong);
+  font-size: var(--type-body);
+}
+.detail-target-head span {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--type-sm);
+  margin-top: 2px;
+}
+.detail-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+.detail-target-grid div {
+  min-width: 0;
+}
+.detail-target-grid dt {
+  color: var(--text-dim);
+  font-size: var(--type-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.detail-target-grid dd {
+  margin: 2px 0 0;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.detail-target-return {
+  margin-top: var(--space-3);
 }
 
 /* Habitability bar ---------------------------------------------------*/
@@ -2245,13 +2328,13 @@ label.color input[type="color"]::-webkit-color-swatch {
   .sys-export-row button { min-height: 44px; padding: 8px 12px; }
   /* The Time scrubber's pause / 1× / 5× / 20× speed buttons sit at
      28×21 by default — barely tappable on a phone. Bump the row to
-     44pt; sys-reroll stays at its deliberate inline 34×34. */
+     44pt; system row icon buttons stay at their deliberate inline 34×34. */
   .time-scrubber-btn { min-height: 44px; min-width: 44px; padding: 6px 10px; }
   .glossary-backdrop { padding: var(--space-4); }
   .starport-row { grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .starport-btn { padding-top: 8px; padding-bottom: 6px; min-height: 44px; }
   .sys-table th, .sys-table td { padding-top: var(--space-4); padding-bottom: var(--space-4); }
-  .sys-reroll { width: 34px; height: 34px; opacity: 0.8; }
+  .sys-row-action { width: 34px; height: 34px; opacity: 0.8; }
 }
 
 /* Coarse-pointer devices (touch) get larger hit areas regardless of
@@ -2270,7 +2353,7 @@ label.color input[type="color"]::-webkit-color-swatch {
     height: 22px;
   }
   .starport-btn { min-height: 44px; }
-  .sys-reroll { width: 36px; height: 36px; opacity: 0.85; }
+  .sys-row-action { width: 36px; height: 36px; opacity: 0.85; }
   /* Touch UA can't hover, so keep reroll visible. */
   .panel-actions button,
   .quality-btn,

@@ -22,6 +22,8 @@ pub struct PlanetParams {
     pub population_intensity: f32,
     pub vegetation_richness: f32,
     pub atm_banding: f32,
+    pub body_visual_mode: f32,
+    pub surface_temp_k: f32,
     pub planet_radius: f32,
     pub render_quality: f32,
 }
@@ -49,6 +51,8 @@ impl Default for PlanetParams {
             population_intensity: 0.0,
             vegetation_richness: 0.65,
             atm_banding: 0.0,
+            body_visual_mode: 0.0,
+            surface_temp_k: 0.0,
             planet_radius: 1.0,
             render_quality: 1.0,
         }

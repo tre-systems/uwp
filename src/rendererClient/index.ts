@@ -29,7 +29,7 @@ import {
   type FrameTimeDownshiftState,
   type RenderProfile,
 } from '../renderProfile'
-import type { SolarSystem } from '../domain/system'
+import type { SolarSystem, SystemBodyTarget } from '../domain/system'
 import type { SurfaceMap } from '../domain/surfaceMap'
 import { ensureWasmReady } from '../wasm'
 
@@ -165,6 +165,23 @@ export class RendererClient {
     // paused or sped up the system view.
     const idx = planet.pickSystemPlanet(canvasX * scaleX, canvasY * scaleY, this.simTimeMs)
     return idx < 0 ? null : idx
+  }
+
+  pickSystemBody(canvasX: number, canvasY: number, _timeMs: number): SystemBodyTarget | null {
+    const planet = this.planet
+    if (!planet) return null
+    const rect = this.canvas.getBoundingClientRect()
+    const scaleX = this.canvas.width / Math.max(rect.width, 1)
+    const scaleY = this.canvas.height / Math.max(rect.height, 1)
+    const picker = (planet as Planet & {
+      pickSystemBody?: (canvasX: number, canvasY: number, timeMs: number) => SystemBodyTarget | null
+    }).pickSystemBody
+    if (!picker) {
+      const idx = this.pickSystemPlanet(canvasX, canvasY, this.simTimeMs)
+      return idx == null ? null : { kind: 'planet', index: idx }
+    }
+    const hit = picker.call(planet, canvasX * scaleX, canvasY * scaleY, this.simTimeMs)
+    return isSystemBodyTarget(hit) ? hit : null
   }
 
   getSurfaceMap(): SurfaceMap | null {
@@ -333,6 +350,7 @@ export class RendererClient {
       getSystem: () => this.getSystem(),
       setParams: (nextParams) => this.setParams(nextParams),
       pickSystemPlanet: (x, y, t) => this.pickSystemPlanet(x, y, t),
+      pickSystemBody: (x, y, t) => this.pickSystemBody(x, y, t),
       getSurfaceMap: () => this.getSurfaceMap(),
       getSurfacePrebake: () => this.getSurfacePrebake(),
       pointAtSurface: (lat, lon) => this.pointAtSurface(lat, lon),
@@ -572,4 +590,15 @@ function effectiveSurfaceMeanTempK(baseMeanTempK: number, atmosphereDensity: num
   return Number.isFinite(baseMeanTempK) && baseMeanTempK > 0
     ? baseMeanTempK + warmthFromAtm * 0.3
     : 270 + warmthFromAtm
+}
+
+function isSystemBodyTarget(value: unknown): value is SystemBodyTarget {
+  if (!value || typeof value !== 'object') return false
+  const target = value as { kind?: unknown; index?: unknown }
+  return (
+    (target.kind === 'planet' || target.kind === 'star' || target.kind === 'belt') &&
+    typeof target.index === 'number' &&
+    Number.isInteger(target.index) &&
+    target.index >= 0
+  )
 }

@@ -34,6 +34,9 @@ import {
   setSystemSnapshot,
   setUwpField,
   setUwpFromCode,
+  detailTarget,
+  focusMainWorldDetail,
+  focusSystemTarget,
   systemSeed,
   updateParams,
   uwp,
@@ -41,7 +44,7 @@ import {
   type RenderPerformanceSnapshot,
   type Params,
 } from './index'
-import type { SolarSystem } from '../domain/system'
+import type { BodyType, Planet, SolarSystem } from '../domain/system'
 import type { Subsector } from '../domain/subsector'
 
 describe('appState renderer command boundary', () => {
@@ -57,6 +60,7 @@ describe('appState renderer command boundary', () => {
         setParamsSnapshot(nextParams)
       },
       pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
       getSurfaceMap: () => null,
       getSurfacePrebake: () => null,
       pointAtSurface: () => undefined,
@@ -81,6 +85,7 @@ describe('appState renderer command boundary', () => {
       getSystem: () => system,
       setParams: () => undefined,
       pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
       getSurfaceMap: () => null,
       getSurfacePrebake: () => null,
       pointAtSurface: () => undefined,
@@ -93,6 +98,55 @@ describe('appState renderer command boundary', () => {
 
     registerRendererControls(null)
     setSystemSnapshot(null)
+  })
+
+  it('derives non-main planet detail params from the selected system body', () => {
+    const initialParams = { ...params.value }
+    const initialView = viewMode.value
+    const system = {
+      ...fakeSystem(),
+      main_world: 0,
+      planets: [
+        fakePlanet({ seed: 100, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 288 }),
+        fakePlanet({ seed: 200, body_type: 'GasGiant', radius_earth: 11, mass_earth: 318, mean_surface_temp_k: 145 }),
+      ],
+    }
+    let received: Params | null = null
+    setSystemSnapshot(system)
+    registerRendererControls({
+      rerollPlanet: () => undefined,
+      getSystem: () => system,
+      setParams: (nextParams) => {
+        received = nextParams
+        setParamsSnapshot(nextParams)
+      },
+      pickSystemPlanet: () => null,
+      pickSystemBody: () => ({ kind: 'planet', index: 1 }),
+      getSurfaceMap: () => null,
+      getSurfacePrebake: () => null,
+      pointAtSurface: () => undefined,
+    })
+
+    focusSystemTarget({ kind: 'planet', index: 1 })
+
+    expect(detailTarget.value).toEqual({ kind: 'planet', index: 1 })
+    expect(viewMode.value).toBe('detail')
+    expect(received).toMatchObject({
+      seed: 200,
+      body_visual_mode: 1,
+      mountain_height: 0,
+      planet_radius: 1.65,
+      cloud_coverage: 0.98,
+    })
+
+    focusMainWorldDetail()
+    expect(detailTarget.value).toBeNull()
+    expect(params.value.body_visual_mode).toBe(0)
+
+    registerRendererControls(null)
+    setSystemSnapshot(null)
+    setParamsSnapshot(initialParams)
+    viewMode.value = initialView
   })
 
   it('keeps the params snapshot aligned when focusing a surface point', () => {
@@ -109,6 +163,7 @@ describe('appState renderer command boundary', () => {
         setParamsSnapshot(nextParams)
       },
       pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
       getSurfaceMap: () => null,
       getSurfacePrebake: () => null,
       pointAtSurface: (latDeg, lonDeg) => {
@@ -155,6 +210,7 @@ describe('appState renderer command boundary', () => {
       getSystem: () => null,
       setParams: (nextParams) => setParamsSnapshot(nextParams),
       pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
       getSurfaceMap: () => null,
       getSurfacePrebake: () => null,
       pointAtSurface: (latDeg, lonDeg) => {
@@ -194,6 +250,7 @@ describe('appState renderer command boundary', () => {
         setParamsSnapshot(nextParams)
       },
       pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
       getSurfaceMap: () => null,
       getSurfacePrebake: () => null,
       pointAtSurface: () => undefined,
@@ -477,6 +534,42 @@ function fakeSystem(): SolarSystem {
     snow_line_au: 2.7,
     age_gyr: 4.5,
     main_world: 0,
+  }
+}
+
+function fakePlanet(overrides: {
+  seed: number
+  body_type: BodyType
+  radius_earth: number
+  mass_earth?: number
+  mean_surface_temp_k: number
+}): Planet {
+  const mass = overrides.mass_earth ?? overrides.radius_earth
+  return {
+    orbit_au: 1,
+    eccentricity: 0.01,
+    inclination_deg: 0,
+    radius_earth: overrides.radius_earth,
+    mass_earth: mass,
+    temperature_k: overrides.mean_surface_temp_k,
+    body_type: overrides.body_type,
+    phase_rad: 0,
+    day_seconds: 86_400,
+    in_habitable_zone: overrides.body_type === 'Terrestrial',
+    moons: [],
+    seed: overrides.seed,
+    climate: {
+      mean_surface_temp_k: overrides.mean_surface_temp_k,
+      min_surface_temp_k: overrides.mean_surface_temp_k - 20,
+      max_surface_temp_k: overrides.mean_surface_temp_k + 20,
+      greenhouse_k: 12,
+      liquid_water_fraction: overrides.body_type === 'Terrestrial' ? 0.5 : 0,
+      ice_fraction: overrides.body_type === 'Frozen' ? 0.7 : 0.1,
+      aridity: 0.3,
+      habitability: overrides.body_type === 'Terrestrial' ? 0.7 : 0,
+      thermal_inertia: 0.5,
+      mean_rainfall_mm: 700,
+    },
   }
 }
 

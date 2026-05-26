@@ -1,6 +1,16 @@
 import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
-import { params, rerollPlanet, rerollSystemSeed, setSystemSeed, setSystemTimeSpeed, systemTimeSpeed, uwp } from '../appState'
+import {
+  detailTarget,
+  focusSystemTarget,
+  params,
+  rerollPlanet,
+  rerollSystemSeed,
+  setSystemSeed,
+  setSystemTimeSpeed,
+  systemTimeSpeed,
+  uwp,
+} from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
 import { systemName } from '../domain/names'
@@ -30,6 +40,7 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
   // happened to pick. Surface those values directly so the System and
   // Surface views agree on what the player's world looks like.
   const authoredParams = params.value
+  const selectedTarget = detailTarget.value
   const authoredWaterPct = (authoredParams.sea_level * 100).toFixed(0)
   const authoredHabitability = uwpHabitabilityEstimate(uwp.value)
   return (
@@ -42,11 +53,31 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
             {' '}{star.luminosity_solar < 0.01
               ? star.luminosity_solar.toExponential(2)
               : star.luminosity_solar.toFixed(2)} L⊙ · {star.temperature_k.toFixed(0)} K
+            <button
+              type="button"
+              class="sys-inline-action"
+              disabled={disabled}
+              title="View primary star"
+              aria-label="View primary star"
+              onClick={() => focusSystemTarget({ kind: 'star', index: 0 })}
+            >
+              <ViewGlyph />
+            </button>
           </MetaRow>
           {comp && (
             <MetaRow label="Companion">
               {comp.star.spectral}-class · {comp.star.mass_solar.toFixed(2)} M⊙ ·
               {' '}separation {comp.separation_au.toFixed(1)} AU
+              <button
+                type="button"
+                class="sys-inline-action"
+                disabled={disabled}
+                title="View companion star"
+                aria-label="View companion star"
+                onClick={() => focusSystemTarget({ kind: 'star', index: 1 })}
+              >
+                <ViewGlyph />
+              </button>
             </MetaRow>
           )}
           <MetaRow label="Habitable zone">
@@ -156,7 +187,20 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
                     <td class="sys-col-num">{p.moons.length || '—'}</td>
                     <td class="sys-col-action">
                       <button
-                        class="sys-reroll"
+                        class="sys-row-action"
+                        disabled={disabled}
+                        title={`View planet ${i + 1}`}
+                        aria-label={`View planet ${i + 1}`}
+                        aria-pressed={selectedTarget?.kind === 'planet' && selectedTarget.index === i}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          focusSystemTarget({ kind: 'planet', index: i })
+                        }}
+                      >
+                        <ViewGlyph />
+                      </button>
+                      <button
+                        class="sys-row-action sys-reroll"
                         disabled={disabled}
                         title={`Reroll planet ${i + 1}`}
                         aria-label={`Reroll planet ${i + 1}`}
@@ -185,6 +229,16 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
             <div class="sys-belt" key={i}>
               <span class="sys-belt-dots" aria-hidden="true">·····</span>
               {b.inner_au.toFixed(2)} – {b.outer_au.toFixed(2)} AU
+              <button
+                type="button"
+                class="sys-inline-action"
+                disabled={disabled}
+                title={`View asteroid belt ${i + 1}`}
+                aria-label={`View asteroid belt ${i + 1}`}
+                onClick={() => focusSystemTarget({ kind: 'belt', index: i })}
+              >
+                <ViewGlyph />
+              </button>
             </div>
           ))}
         </section>
@@ -231,6 +285,15 @@ function RerollGlyph() {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
       <path d="M13.5 8a5.5 5.5 0 1 1-1.8-4.1" />
       <path d="M13 2v3h-3" />
+    </svg>
+  )
+}
+
+function ViewGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4Z" />
+      <circle cx="8" cy="8" r="1.7" />
     </svg>
   )
 }

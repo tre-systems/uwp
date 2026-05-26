@@ -26,7 +26,8 @@ pub struct DetailUniforms {
     pub atmosphere_color: [f32; 4],
     /// xyz = noise seed offset, w = ice_latitude
     pub seed_block: [f32; 4],
-    /// x = water fraction, y = mountain_amp, z = signed sea height, w = unused
+    /// x = water fraction, y = mountain_amp, z = signed sea height,
+    /// w = body visual mode (0 terrain, 1 gas/ice giant, 2 star, 3 asteroid)
     pub planet_params: [f32; 4],
     /// x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     pub misc: [f32; 4],
@@ -335,7 +336,7 @@ pub fn uniforms_for(
             params.sea_level,
             params.mountain_height,
             sea_level_threshold,
-            0.0,
+            params.body_visual_mode,
         ],
         misc: [
             params.atmosphere_density,

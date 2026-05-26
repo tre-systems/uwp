@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks'
 import {
   currentSurfaceMap,
   currentSystem,
+  detailTarget,
   setViewMode,
   viewMode,
   type ViewMode,
@@ -20,13 +21,14 @@ interface ModeOption {
 const OPTIONS: readonly ModeOption[] = [
   { mode: 'subsector', label: 'Subsector', hint: 'Browse the subsector hex grid' },
   { mode: 'system', label: 'System', hint: 'Overview of the current solar system' },
-  { mode: 'detail', label: 'Main World', hint: 'Render the selected main world' },
+  { mode: 'detail', label: 'Detail', hint: 'Render the selected world or system body' },
   { mode: 'surface', label: 'Surface', hint: 'Cepheus hex world map for the main world' },
 ]
 
 export function ViewModeToggle() {
   const mode = viewMode.value
   const sys = currentSystem.value
+  const target = detailTarget.value
   const surface = currentSurfaceMap.value
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export function ViewModeToggle() {
             disabled={disabled}
             onClick={() => setViewMode(opt.mode)}
           >
-            {opt.label}
+            {opt.mode === 'detail' && !target ? 'Main World' : opt.label}
           </button>
         )
       })}

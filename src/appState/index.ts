@@ -9,7 +9,7 @@ import {
   uwpToCode,
 } from '../uwp'
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
-import type { SolarSystem } from '../domain/system'
+import type { SolarSystem, SystemBodyTarget } from '../domain/system'
 import {
   applySubsectorOverrides,
   routeOverrideKey,
@@ -25,6 +25,11 @@ import {
 } from '../domain/subsector'
 import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
+import {
+  isMainWorldTarget,
+  paramsPatchForSystemTarget,
+  targetExists,
+} from '../systemVisualMapping'
 
 export * from '../params'
 export * from '../domain/cepheus'
@@ -63,6 +68,7 @@ export interface RendererControls {
    * canvas origin. Returns the 0-based planet index or `null` on miss.
    */
   pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null
+  pickSystemBody(canvasX: number, canvasY: number, timeMs: number): SystemBodyTarget | null
   /** Generate a Cepheus hex world map for the current main world. */
   getSurfaceMap(): SurfaceMap | null
   /** Generate the Rust-side surface pre-bake (plate-tectonics +
@@ -77,6 +83,7 @@ export interface RendererControls {
 /** Hovered-body snapshot consumed by tooltips. Stays null when nothing
  *  is under the pointer or when we're not in system view. */
 export interface HoverTarget {
+  kind: SystemBodyTarget['kind']
   index: number
   /** Canvas-relative pixel position so the tooltip can anchor near the
    *  cursor without re-running the pick. */
@@ -107,6 +114,7 @@ export const showJumpRoutes = signal<boolean>(true)
 export const subsectorOverrides = signal<SubsectorOverrides>({})
 export const subsectorRouteOverrides = signal<SubsectorRouteOverrides>({})
 export const hoverTarget = signal<HoverTarget | null>(null)
+export const detailTarget = signal<SystemBodyTarget | null>(null)
 export const currentSurfaceMap = signal<SurfaceMap | null>(null)
 export const selectedSurfaceHex = signal<SurfaceHexCoord | null>(null)
 export const selectedSurfaceCell = signal<SurfaceHex | null>(null)
@@ -156,6 +164,17 @@ export function togglePanel() {
 }
 
 export function setViewMode(mode: ViewMode) {
+  if (mode === 'surface' && detailTarget.value) {
+    const sys = currentSystem.value
+    const main = sys && sys.main_world >= 0 ? sys.planets[sys.main_world] ?? null : null
+    detailTarget.value = null
+    setParams({
+      ...params.value,
+      ...paramsPatchFromUwpDigits(uwp.value),
+      seed: main?.seed ?? params.value.seed,
+      surface_temp_k: main?.climate.mean_surface_temp_k ?? 0,
+    })
+  }
   viewMode.value = mode
 }
 
@@ -175,6 +194,7 @@ export function setRenderPerformanceSnapshot(snapshot: RenderPerformanceSnapshot
 }
 
 export function setSystemSeed(seed: number) {
+  detailTarget.value = null
   systemSeed.value = seed
 }
 
@@ -184,6 +204,9 @@ export function rerollSystemSeed() {
 
 export function setSystemSnapshot(system: SolarSystem | null) {
   currentSystem.value = system
+  if (!targetExists(system, detailTarget.value)) {
+    detailTarget.value = null
+  }
 }
 
 export function setParamsSnapshot(nextParams: Params) {
@@ -313,12 +336,50 @@ export function setHoverTarget(target: HoverTarget | null) {
   hoverTarget.value = target
 }
 
+export function setDetailTarget(target: SystemBodyTarget | null) {
+  detailTarget.value = target
+}
+
 export function pickSystemPlanet(
   canvasX: number,
   canvasY: number,
   timeMs: number,
 ): number | null {
   return rendererControls?.pickSystemPlanet(canvasX, canvasY, timeMs) ?? null
+}
+
+export function pickSystemBody(
+  canvasX: number,
+  canvasY: number,
+  timeMs: number,
+): SystemBodyTarget | null {
+  return rendererControls?.pickSystemBody(canvasX, canvasY, timeMs) ?? null
+}
+
+export function focusMainWorldDetail(): void {
+  const sys = currentSystem.value
+  const main = sys && sys.main_world >= 0 ? sys.planets[sys.main_world] ?? null : null
+  detailTarget.value = null
+  updateParams({
+    ...paramsPatchFromUwpDigits(uwp.value),
+    seed: main?.seed ?? params.value.seed,
+    surface_temp_k: main?.climate.mean_surface_temp_k ?? 0,
+  })
+  setViewMode('detail')
+}
+
+export function focusSystemTarget(target: SystemBodyTarget): void {
+  const sys = currentSystem.value
+  if (!sys) return
+  if (isMainWorldTarget(sys, target)) {
+    focusMainWorldDetail()
+    return
+  }
+  const patch = paramsPatchForSystemTarget(sys, target)
+  if (!patch) return
+  detailTarget.value = target
+  updateParams(patch)
+  setViewMode('detail')
 }
 
 export function setSurfaceMap(map: SurfaceMap | null) {
@@ -389,6 +450,7 @@ export function selectHex(coord: HexCoord): void {
   const hex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
   if (!hex) return
   setSelectedHex(coord)
+  detailTarget.value = null
   applySubsectorUwp(hex.uwp, hex.system_seed)
   setSystemSeed(hex.system_seed)
   setViewMode('system')

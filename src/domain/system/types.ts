@@ -92,3 +92,8 @@ export interface MainWorldSummary {
   bodyType: BodyType
   moonCount: number
 }
+
+export type SystemBodyTarget =
+  | { kind: 'planet'; index: number }
+  | { kind: 'star'; index: 0 | 1 }
+  | { kind: 'belt'; index: number }

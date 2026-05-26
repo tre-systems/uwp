@@ -192,11 +192,17 @@ impl Renderer {
     }
 
     pub fn set_params(&mut self, params: PlanetParams) {
-        let terrain_changed = self.params.seed != params.seed
-            || (self.params.sea_level - params.sea_level).abs() > f32::EPSILON
-            || (self.params.ice_latitude - params.ice_latitude).abs() > f32::EPSILON
-            || (self.params.vegetation_richness - params.vegetation_richness).abs() > f32::EPSILON
-            || (self.params.render_quality - params.render_quality).abs() > f32::EPSILON;
+        let previous_uses_terrain = self.params.body_visual_mode < 0.5;
+        let next_uses_terrain = params.body_visual_mode < 0.5;
+        let terrain_changed = next_uses_terrain
+            && (!previous_uses_terrain
+                || self.params.seed != params.seed
+                || (self.params.sea_level - params.sea_level).abs() > f32::EPSILON
+                || (self.params.ice_latitude - params.ice_latitude).abs() > f32::EPSILON
+                || (self.params.vegetation_richness - params.vegetation_richness).abs()
+                    > f32::EPSILON
+                || (self.params.surface_temp_k - params.surface_temp_k).abs() > f32::EPSILON
+                || (self.params.render_quality - params.render_quality).abs() > f32::EPSILON);
         self.params = params;
         if terrain_changed {
             self.rebuild_terrain_atlas();
@@ -209,6 +215,12 @@ impl Renderer {
     /// resolvable. Used to drive biome classification on the globe so
     /// frozen / hot worlds get the right colour palette.
     fn current_mean_temp_k(&self) -> f32 {
+        if self.params.surface_temp_k.is_finite() && self.params.surface_temp_k > 0.0 {
+            return crate::domain::surface_map::effective_surface_mean_temp_k(
+                self.params.surface_temp_k,
+                self.params.atmosphere_density,
+            );
+        }
         let idx = self.system.main_world;
         if idx < 0 {
             return 288.0;
@@ -309,6 +321,24 @@ impl Renderer {
         let cam = self.camera.position();
         system_scene::pick_planet(&self.system, time, view_proj, cam, ndc_x, ndc_y)
             .map(|hit| hit.index as u32)
+    }
+
+    pub fn pick_system_body(
+        &self,
+        canvas_x: f32,
+        canvas_y: f32,
+        time: f32,
+    ) -> Option<system_scene::PickHit> {
+        let w = self.config.width as f32;
+        let h = self.config.height as f32;
+        if w <= 0.0 || h <= 0.0 {
+            return None;
+        }
+        let ndc_x = (canvas_x / w) * 2.0 - 1.0;
+        let ndc_y = 1.0 - (canvas_y / h) * 2.0;
+        let view_proj = self.camera.view_proj();
+        let cam = self.camera.position();
+        system_scene::pick_body(&self.system, time, view_proj, cam, ndc_x, ndc_y)
     }
 
     /// Reroll a single planet's surface seed in place. Orbit, body class,

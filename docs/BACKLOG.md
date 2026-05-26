@@ -235,11 +235,39 @@ Done when:
 
 Improve the main-world render once the pre-bake is authoritative.
 
+Status: in progress. Body-detail v1 is now in place: system-view picking and
+system-table actions can focus any generated body in the detail renderer.
+Planets map from their physical body type and climate into renderer params;
+gas giants / ice giants / mini-Neptunes use a dedicated banded-fluid shader,
+stars use an emissive photosphere shader, and asteroid belts open a
+representative cratered planetoid shader. Terrain-atlas worlds still use the
+Rust surface pre-bake, while non-terrain bodies skip the expensive terrain
+atlas rebuild. Very cold rocky / super-Earth bodies are intentionally rendered
+as low-atmosphere icy or cratered worlds rather than blue ocean worlds.
+
+Research anchors for the next visual pass:
+
+- Bruneton/Neyret-style precomputed atmospheric scattering remains the right
+  reference for physically grounded air and haze:
+  https://ebruneton.github.io/precomputed_atmospheric_scattering/
+- Hillaire's production atmosphere work is the practical target for scalable
+  multi-scatter sky / aerial perspective:
+  https://diglib.eg.org/items/8a3e5350-18b3-46bd-9274-3add5af88c75
+- NASA / JPL public imagery should guide colour and morphology checks for
+  rocky worlds, Mars-like deserts, icy bodies, gas giants, and solar views:
+  https://eyes.nasa.gov/
+
 - Refine atmosphere, clouds, ocean glint, terrain normals, city lights, ice,
   night side, and star lighting.
+- Tune the new body-detail modes against reference imagery: solar granulation
+  and limb darkening, Jovian belts and oval storms, Uranus/Neptune-style ice
+  giant colour, Mars/Moon-style cratered surfaces, and high-albedo icy worlds.
 - Add profile-aware quality paths so High looks excellent and Low remains usable
   on iPhone-class devices.
 - Add visual regression screenshots for representative worlds.
+- Add visual regression screenshots for the new target classes: main-world
+  terrain, hot rocky, cold rocky/super-Earth, gas giant, ice giant,
+  mini-Neptune, star, and asteroid.
 
 Done when:
 

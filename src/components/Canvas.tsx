@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'preact/hooks'
 import {
-  pickSystemPlanet,
+  focusSystemTarget,
+  pickSystemBody,
   setHoverTarget,
-  setViewMode,
   viewMode,
 } from '../appState'
 import { RendererClient } from '../rendererClient'
@@ -39,11 +39,11 @@ export function Canvas() {
       if (now - lastHoverPick.current.t < HOVER_THROTTLE_MS) return
       const { x, y } = canvasPoint(e)
       lastHoverPick.current = { x, y, t: now }
-      const idx = pickSystemPlanet(x, y, now)
-      if (idx == null) {
+      const target = pickSystemBody(x, y, now)
+      if (target == null) {
         setHoverTarget(null)
       } else {
-        setHoverTarget({ index: idx, x, y })
+        setHoverTarget({ ...target, x, y })
       }
     }
 
@@ -54,11 +54,9 @@ export function Canvas() {
     function onClick(e: MouseEvent) {
       if (viewMode.value !== 'system') return
       const { x, y } = canvasPoint(e)
-      const idx = pickSystemPlanet(x, y, performance.now())
-      if (idx != null) {
-        // Click-to-zoom: drop into Main World view, focused on the picked
-        // planet's host star. (Per-planet camera-fly is the next step.)
-        setViewMode('detail')
+      const target = pickSystemBody(x, y, performance.now())
+      if (target != null) {
+        focusSystemTarget(target)
       }
     }
 

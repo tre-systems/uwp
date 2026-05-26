@@ -10,9 +10,10 @@ type Status = 'idle' | 'busy' | 'ok' | 'error'
 
 interface ExportPanelProps {
   disabled: boolean
+  allowCard?: boolean
 }
 
-export function ExportPanel({ disabled }: ExportPanelProps) {
+export function ExportPanel({ disabled, allowCard = true }: ExportPanelProps) {
   const [status, setStatus] = useState<Status>('idle')
   const [message, setMessage] = useState<string | null>(null)
 
@@ -42,14 +43,16 @@ export function ExportPanel({ disabled }: ExportPanelProps) {
         >
           Save frame
         </button>
-        <button
-          type="button"
-          class="export-btn"
-          disabled={disabled || status === 'busy'}
-          onClick={run('card')}
-        >
-          Planet card
-        </button>
+        {allowCard && (
+          <button
+            type="button"
+            class="export-btn"
+            disabled={disabled || status === 'busy'}
+            onClick={run('card')}
+          >
+            Planet card
+          </button>
+        )}
       </div>
       <p class={`export-status export-status-${status}`} aria-live="polite">
         {status === 'busy' && 'Composing PNG…'}

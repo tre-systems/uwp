@@ -347,6 +347,79 @@ fn biome_is_alpine(id: u32) -> bool { return id == 9u || id == 10u || id == 11u;
 fn biome_is_desert(id: u32) -> bool { return id == 7u; }
 fn biome_is_vegetated(id: u32) -> bool { return id == 4u || id == 5u || id == 8u; }
 
+fn asteroid_shape(dir: vec3<f32>) -> f32 {
+    let seed = u.seed_block.xyz;
+    let lobe = fbm(dir * 2.1 + seed * 0.33, 4) * 0.16;
+    let chip = ridged_fbm(dir * 8.0 + seed + vec3<f32>(19.0, -41.0, 73.0), 3) * 0.055;
+    let crater_dent = min(craters(dir) * 0.75, 0.10);
+    return max(0.72, 1.0 + lobe + chip + crater_dent);
+}
+
+fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32) -> vec3<f32> {
+    let lat = asin(clamp(dir.y, -1.0, 1.0));
+    let lon = atan2(dir.z, dir.x);
+    let seed = u.seed_block.xyz;
+    let shear = fbm(vec3<f32>(lat * 2.0, lon * 0.23 + time * 0.018, 0.0) + seed, 4);
+    let fine_shear = fbm(vec3<f32>(lat * 10.0, lon * 0.60 - time * 0.035, 2.0) + seed, 3);
+    let band_coord = lat * (10.0 + u.world_features.w * 8.0) + shear * 1.1 + fine_shear * 0.28;
+    let broad = 0.5 + 0.5 * sin(band_coord);
+    let narrow = smoothstep(0.52, 0.74, 0.5 + 0.5 * sin(band_coord * 2.7 + fine_shear * 1.4));
+    let belts = smoothstep(0.42, 0.82, broad) * (0.55 + narrow * 0.45);
+
+    var color = mix(u.sand_color.rgb, u.land_color.rgb, belts);
+    color = mix(color, u.mountain_color.rgb, smoothstep(0.76, 0.96, broad) * 0.35);
+    color = mix(color, u.snow_color.rgb, (1.0 - smoothstep(0.12, 0.48, broad)) * 0.42);
+
+    let turbulence = fbm(dir * 14.0 + seed + vec3<f32>(time * 0.02, 37.0, 0.0), 4);
+    color = color * (0.88 + turbulence * 0.20);
+
+    if (quality > 0.55) {
+        // Seeded anticyclonic oval: one large storm embedded in the
+        // temperate belts, with a reddish core and pale rim.
+        let storm_lat = (hash3_s(seed + vec3<f32>(11.0, 3.0, -7.0)) * 0.46 + 0.14)
+                      * select(-1.0, 1.0, hash3_s(seed + vec3<f32>(5.0, 9.0, 2.0)) > 0.5);
+        let storm_lon = hash3_s(seed + vec3<f32>(23.0, 41.0, 7.0)) * 6.2831853 + time * 0.025;
+        let dlat = lat - storm_lat;
+        let dlon = atan2(sin(lon - storm_lon), cos(lon - storm_lon));
+        let oval = exp(-(dlat * dlat * 95.0 + dlon * dlon * 17.0));
+        let rim = smoothstep(0.18, 0.55, oval) * (1.0 - smoothstep(0.62, 0.92, oval));
+        let core = smoothstep(0.48, 0.96, oval);
+        color = mix(color, u.sand_color.rgb * vec3<f32>(1.05, 0.62, 0.38), core * 0.75);
+        color = mix(color, u.snow_color.rgb * 1.05, rim * 0.42);
+    }
+
+    let polar_haze = smoothstep(0.62, 0.96, abs(dir.y));
+    color = mix(color, u.atmosphere_color.rgb * 0.95, polar_haze * 0.28);
+    return color;
+}
+
+fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>, time: f32) -> vec3<f32> {
+    let mu = clamp(dot(world_normal, view_dir), 0.0, 1.0);
+    let base = max(u.land_color.rgb, vec3<f32>(0.04));
+    let gran = fbm(dir * 42.0 + u.seed_block.xyz + vec3<f32>(time * 0.10, 0.0, 0.0), 4) * 0.5 + 0.5;
+    let cells = ridged_fbm(dir * 18.0 + u.seed_block.xyz * 1.7, 3);
+    var color = base * (0.88 + gran * 0.28 + cells * 0.16);
+
+    // Cool-star spots: not a physically simulated magnetic field, but
+    // latitude-gated dark active regions make G/K/M detail views read as
+    // stellar photospheres instead of flat emissive discs.
+    let spot_field = fbm(dir * 5.0 + u.seed_block.xyz + vec3<f32>(0.0, time * 0.018, 51.0), 4);
+    let spot_lat = smoothstep(0.12, 0.52, abs(dir.y)) * (1.0 - smoothstep(0.82, 0.98, abs(dir.y)));
+    let spots = smoothstep(0.45, 0.70, spot_field) * spot_lat;
+    color = mix(color, color * vec3<f32>(0.42, 0.36, 0.32), spots * 0.65);
+
+    let limb = 0.34 + 0.66 * mu;
+    let faculae = pow(1.0 - mu, 2.0) * (0.12 + gran * 0.06);
+    return color * limb * 5.0 + u.sand_color.rgb * faculae * 1.8;
+}
+
+fn asteroid_surface(dir: vec3<f32>) -> vec3<f32> {
+    let base = mix(u.mountain_color.rgb, u.land_color.rgb, fbm(dir * 3.0 + u.seed_block.xyz, 3) * 0.5 + 0.5);
+    let dust = mix(base, u.sand_color.rgb, smoothstep(-0.1, 0.5, fbm(dir * 12.0 + u.seed_block.xyz, 3)) * 0.35);
+    let crater = clamp(-craters(dir) * 6.0, 0.0, 1.0);
+    return mix(dust, dust * 0.45, crater);
+}
+
 // ---------- Vertex ----------
 
 struct VsIn {
@@ -363,13 +436,19 @@ struct VsOut {
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
     let dir = normalize(in.position);
-    let h = terrain_field(dir);
+    let body_kind = u.planet_params.w;
 
     let sea_h        = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
-    let above        = relief_above_sea(h, sea_h);
     let base_radius  = u.resolution.w;
-    let radius       = base_radius + above * mountain_amp * base_radius;
+    var radius       = base_radius;
+    if (body_kind < 0.5) {
+        let h = terrain_field(dir);
+        let above = relief_above_sea(h, sea_h);
+        radius = base_radius + above * mountain_amp * base_radius;
+    } else if (body_kind > 2.5) {
+        radius = base_radius * asteroid_shape(dir);
+    }
     let local_pos    = dir * radius;
 
     let world = (u.model * vec4<f32>(local_pos, 1.0)).xyz;
@@ -414,6 +493,30 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // interpolation to stay smooth while keeping terrain, lighting, and mesh
     // displacement in the same coordinate frame.
     let dir = normalize(in.sphere_dir);
+    let body_kind = u.planet_params.w;
+    let base_world_normal = normalize((u.model * vec4<f32>(dir, 0.0)).xyz);
+    let base_view_dir = normalize(u.camera_pos.xyz - in.world_pos);
+    let sun_dir = normalize(u.sun_dir.xyz);
+    let base_n_dot_l = max(dot(base_world_normal, sun_dir), 0.0);
+    if (body_kind > 1.5 && body_kind < 2.5) {
+        return vec4(stellar_surface(dir, base_world_normal, base_view_dir, u.misc.y), 1.0);
+    }
+    if (body_kind > 0.5 && body_kind < 1.5) {
+        let gas = gas_giant_surface(dir, u.misc.y, u.misc.w);
+        let ambient = u.atmosphere_color.rgb * 0.08 + vec3<f32>(0.018);
+        let limb_haze = pow(1.0 - max(dot(base_world_normal, base_view_dir), 0.0), 2.4);
+        var lit_gas = gas * (ambient + base_n_dot_l * 1.08);
+        lit_gas = mix(lit_gas, u.atmosphere_color.rgb * (0.50 + base_n_dot_l * 0.55), limb_haze * 0.34);
+        lit_gas = lit_gas + vec3<f32>(1.0, 0.56, 0.24) * smoothstep(0.0, 0.18, base_n_dot_l) * (1.0 - smoothstep(0.18, 0.42, base_n_dot_l)) * 0.10;
+        return vec4(lit_gas, 1.0);
+    }
+    if (body_kind > 2.5) {
+        let ast = asteroid_surface(dir);
+        let ambient = vec3<f32>(0.018);
+        let rim = pow(1.0 - max(dot(base_world_normal, base_view_dir), 0.0), 3.0);
+        let lit_ast = ast * (ambient + base_n_dot_l * 0.95) + u.sand_color.rgb * rim * 0.025;
+        return vec4(lit_ast, 1.0);
+    }
     let h = terrain_field(dir);
     let sea_h = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
@@ -465,7 +568,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let world_normal = normalize((u.model * vec4<f32>(local_normal, 0.0)).xyz);
 
-    let sun_dir = normalize(u.sun_dir.xyz);
     let n_dot_l = max(dot(world_normal, sun_dir), 0.0);
     let view_dir = normalize(u.camera_pos.xyz - in.world_pos);
 

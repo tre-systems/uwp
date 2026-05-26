@@ -13,6 +13,8 @@ struct Uniforms {
     // xyz = seed offsets, w = ice latitude (0..1)
     seed_block:      vec4<f32>,
     // x = water fraction, y = mountain_amp, z = signed sea height, w = unused
+    // x = water fraction, y = mountain_amp, z = signed sea height,
+    // w = body visual mode (0 terrain, 1 gas/ice giant, 2 star, 3 asteroid)
     planet_params:   vec4<f32>,
     // x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     misc:            vec4<f32>,

@@ -282,11 +282,20 @@ pub fn binary_kick(sys: &SolarSystem, time: f32) -> Option<f32> {
     Some((c.phase_rad + time * omega_b).sin())
 }
 
-/// Result of a ray-pick against the system view. `index` is the planet
-/// index inside `SolarSystem::planets`; the renderer client surfaces
-/// the rest of the metadata through `getSystem`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickKind {
+    Planet,
+    PrimaryStar,
+    CompanionStar,
+    AsteroidBelt,
+}
+
+/// Result of a ray-pick against the system view. `index` is the body index
+/// inside the matching list (`planets`, `belts`, or 0/1 for stars); the
+/// renderer client surfaces the rest of the metadata through `getSystem`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PickHit {
+    pub kind: PickKind,
     pub index: usize,
     /// Hit distance along the ray (camera-space units). Lets the caller
     /// resolve overlapping bodies if it later picks moons too.
@@ -298,6 +307,22 @@ pub struct PickHit {
 /// when the ray misses every planet. The pick mirrors `uniforms_for`'s
 /// position math so the user clicks exactly the sphere they see.
 pub fn pick_planet(
+    sys: &SolarSystem,
+    time: f32,
+    view_proj: Mat4,
+    camera_pos: Vec3,
+    ndc_x: f32,
+    ndc_y: f32,
+) -> Option<PickHit> {
+    pick_body(sys, time, view_proj, camera_pos, ndc_x, ndc_y)
+        .filter(|hit| hit.kind == PickKind::Planet)
+}
+
+/// Pick the closest selectable body in system view: primary star, companion
+/// star, planets, or asteroid belts. This mirrors the same display-space
+/// compression used by `uniforms_for`, so a click resolves the object the
+/// user actually sees rather than the raw physical AU position.
+pub fn pick_body(
     sys: &SolarSystem,
     time: f32,
     view_proj: Mat4,
@@ -336,6 +361,58 @@ pub fn pick_planet(
 
     let n_p = sys.planets.len().min(MAX_SYSTEM_PLANETS);
     let mut best: Option<PickHit> = None;
+
+    if let Some(t) = ray_sphere(camera_pos, ray_dir, Vec3::ZERO, star_disp * 1.15) {
+        best = Some(PickHit {
+            kind: PickKind::PrimaryStar,
+            index: 0,
+            distance: t,
+        });
+    }
+
+    if let Some(comp) = &sys.companion {
+        let omega = (0.012 / comp.separation_au.powf(1.5)).min(0.05);
+        let theta = comp.phase_rad + time * omega;
+        let incl = comp.inclination_deg.to_radians();
+        let r = comp.separation_au * SCENE_UNITS_PER_AU;
+        let pos = Vec3::new(
+            r * theta.cos(),
+            r * theta.sin() * incl.sin(),
+            r * theta.sin() * incl.cos(),
+        );
+        let disp_r =
+            (system_scale * 0.045 * (comp.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
+        if let Some(t) = ray_sphere(camera_pos, ray_dir, pos, disp_r * 1.15) {
+            if best.is_none_or(|b| t < b.distance) {
+                best = Some(PickHit {
+                    kind: PickKind::CompanionStar,
+                    index: 1,
+                    distance: t,
+                });
+            }
+        }
+    }
+
+    if ray_dir.y.abs() > 1e-5 {
+        let t = -camera_pos.y / ray_dir.y;
+        if t >= 0.0 {
+            let p = camera_pos + ray_dir * t;
+            let r = (p.x * p.x + p.z * p.z).sqrt();
+            for (i, belt) in sys.belts.iter().take(MAX_SYSTEM_BELTS).enumerate() {
+                let inner = belt.inner_au * SCENE_UNITS_PER_AU;
+                let outer = belt.outer_au * SCENE_UNITS_PER_AU;
+                let pad = (outer - inner).max(0.01) * 0.08;
+                if r >= inner - pad && r <= outer + pad && best.is_none_or(|b| t < b.distance) {
+                    best = Some(PickHit {
+                        kind: PickKind::AsteroidBelt,
+                        index: i,
+                        distance: t,
+                    });
+                }
+            }
+        }
+    }
+
     let mut prev_outer_edge = star_disp + gap;
     let kick = binary_kick(sys, time);
     for (i, planet) in sys.planets.iter().take(n_p).enumerate() {
@@ -355,6 +432,7 @@ pub fn pick_planet(
         if let Some(t) = ray_sphere(camera_pos, ray_dir, centre, pick_radius) {
             if best.is_none_or(|b| t < b.distance) {
                 best = Some(PickHit {
+                    kind: PickKind::Planet,
                     index: i,
                     distance: t,
                 });
@@ -453,7 +531,7 @@ fn schematic_color_for(body: BodyType, in_hz: bool) -> [f32; 3] {
 
 #[cfg(test)]
 mod tests {
-    use super::{pick_planet, uniforms_for, SystemUniforms};
+    use super::{pick_body, pick_planet, uniforms_for, PickKind, SystemUniforms};
     use crate::system;
     use glam::{Mat4, Vec3};
 
@@ -516,5 +594,43 @@ mod tests {
             assert!(hit.index < sys.planets.len());
             assert!(hit.distance >= 0.0);
         }
+    }
+
+    #[test]
+    fn pick_body_lands_on_primary_star() {
+        let sys = system::generate(7);
+        let camera_pos = Vec3::new(0.0, 20.0, 30.0);
+        let view = Mat4::look_at_rh(camera_pos, Vec3::ZERO, Vec3::Y);
+        let proj = Mat4::perspective_rh(35f32.to_radians(), 16.0 / 9.0, 0.05, 200.0);
+        let vp = proj * view;
+
+        let hit = pick_body(&sys, 0.0, vp, camera_pos, 0.0, 0.0).expect("star should pick");
+
+        assert_eq!(hit.kind, PickKind::PrimaryStar);
+        assert_eq!(hit.index, 0);
+    }
+
+    #[test]
+    fn pick_body_can_hit_asteroid_belt_plane() {
+        let mut sys = system::generate(3);
+        sys.planets.clear();
+        sys.belts = vec![crate::system::AsteroidBelt {
+            inner_au: 2.0,
+            outer_au: 3.0,
+            density: 0.8,
+        }];
+        let camera_pos = Vec3::new(0.0, 8.0, 8.0);
+        let view = Mat4::look_at_rh(camera_pos, Vec3::ZERO, Vec3::Y);
+        let proj = Mat4::perspective_rh(35f32.to_radians(), 1.0, 0.05, 200.0);
+        let vp = proj * view;
+        let world = glam::Vec4::new(2.5, 0.0, 0.0, 1.0);
+        let clip = vp * world;
+        let ndc_x = clip.x / clip.w;
+        let ndc_y = clip.y / clip.w;
+
+        let hit = pick_body(&sys, 0.0, vp, camera_pos, ndc_x, ndc_y).expect("belt should pick");
+
+        assert_eq!(hit.kind, PickKind::AsteroidBelt);
+        assert_eq!(hit.index, 0);
     }
 }

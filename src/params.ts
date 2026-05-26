@@ -21,6 +21,12 @@ export interface Params {
   population_intensity: number
   vegetation_richness: number
   atm_banding: number
+  /** 0 = terrain world, 1 = fluid gas/ice giant, 2 = stellar photosphere,
+   *  3 = small irregular asteroid/planetoid. */
+  body_visual_mode: number
+  /** 0 means derive from the current main-world climate in Rust. Non-zero
+   *  lets clicked non-main bodies carry their own climate/temperature. */
+  surface_temp_k: number
   planet_radius: number
   render_quality: number
 }
@@ -46,6 +52,8 @@ export const defaultParams: Params = {
   population_intensity: 0.0,
   vegetation_richness: 0.65,
   atm_banding: 0.0,
+  body_visual_mode: 0,
+  surface_temp_k: 0,
   planet_radius: 1.0,
   render_quality: 1.0,
 }
