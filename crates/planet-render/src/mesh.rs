@@ -16,7 +16,21 @@ pub struct MeshData {
 /// Cubesphere: 6 faces, each subdivided into `resolution` x `resolution` quads.
 /// Each face's UV is mapped into a [-1, 1] square offset on the appropriate axis,
 /// then normalized to land on a unit sphere.
+///
+/// Vertices on shared face boundaries are WELDED (deduplicated by spherified
+/// position). The previous version emitted 6 × n² independent vertices and
+/// adjacent face patches generated separate-but-coincident vertices at their
+/// shared edges. With WebGPU's rasterizer applying its own tie-breaking on
+/// triangle-edge coverage, the unshared edges produced sub-pixel gaps and
+/// faint dark lines along the cube-sphere face boundaries — visible as
+/// "straight edges" on the rendered planet at higher mesh resolution.
+/// Welding via spherified-position rounding shares the boundary vertices
+/// between adjacent faces' index buffers, so the rasterizer treats the edge
+/// as a single seam owned by one triangle pair instead of two competing
+/// pairs.
 pub fn cubesphere(resolution: u32) -> MeshData {
+    use std::collections::HashMap;
+
     assert!(resolution >= 2);
     let n = resolution as usize;
 
@@ -30,32 +44,53 @@ pub fn cubesphere(resolution: u32) -> MeshData {
         (Vec3::X, Vec3::Y),     // -Z
     ];
 
-    let mut vertices = Vec::with_capacity(6 * n * n);
-    let mut indices = Vec::with_capacity(6 * (n - 1) * (n - 1) * 6);
+    let mut vertices: Vec<Vertex> = Vec::with_capacity(6 * n * n);
+    let mut indices: Vec<u32> = Vec::with_capacity(6 * (n - 1) * (n - 1) * 6);
+    // Position-hash → global vertex index. Resolution of 1e5 gives ~10 µm
+    // precision on a unit sphere, well below any meaningful displacement
+    // delta between adjacent face patches' shared edges.
+    let mut position_index: HashMap<[i32; 3], u32> = HashMap::with_capacity(6 * n * n);
 
-    for (face_idx, (right, up)) in faces.iter().enumerate() {
+    for (right, up) in faces.iter() {
         let forward = right.cross(*up);
-        let base = (face_idx * n * n) as u32;
+        // Per-face local→global index map for assembling triangles after
+        // we've welded shared boundary vertices.
+        let mut local_to_global: Vec<u32> = Vec::with_capacity(n * n);
         for j in 0..n {
             for i in 0..n {
                 let u = (i as f32 / (n - 1) as f32) * 2.0 - 1.0;
                 let v = (j as f32 / (n - 1) as f32) * 2.0 - 1.0;
                 let p_cube = *right * u + *up * v + forward;
-                // Spherify with a uniform mapping that gives a more even distribution
-                // than plain normalize — reduces stretching at face corners.
+                // Spherify with a uniform mapping that gives a more even
+                // distribution than plain normalize — reduces stretching
+                // at face corners.
                 let p = spherify(p_cube);
-                vertices.push(Vertex {
-                    position: p.to_array(),
-                    _pad: 0.0,
-                });
+                let key = [
+                    (p.x * 1.0e5).round() as i32,
+                    (p.y * 1.0e5).round() as i32,
+                    (p.z * 1.0e5).round() as i32,
+                ];
+                let global_idx = match position_index.get(&key) {
+                    Some(&idx) => idx,
+                    None => {
+                        let idx = vertices.len() as u32;
+                        vertices.push(Vertex {
+                            position: p.to_array(),
+                            _pad: 0.0,
+                        });
+                        position_index.insert(key, idx);
+                        idx
+                    }
+                };
+                local_to_global.push(global_idx);
             }
         }
         for j in 0..n - 1 {
             for i in 0..n - 1 {
-                let a = base + (j * n + i) as u32;
-                let b = a + 1;
-                let c = a + n as u32;
-                let d = c + 1;
+                let a = local_to_global[j * n + i];
+                let b = local_to_global[j * n + i + 1];
+                let c = local_to_global[(j + 1) * n + i];
+                let d = local_to_global[(j + 1) * n + i + 1];
                 // Two triangles per quad
                 indices.extend_from_slice(&[a, c, b, b, c, d]);
             }

@@ -448,9 +448,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Wave shimmer — subtle moving normal perturbation gives the ocean
         // surface life and lets the sun specular scatter into a wider, more
         // believable highlight rather than a single dot.
+        // Calmer wave shimmer — previous 0.030 amplitude produced
+        // visible streaky artifacts on water at certain camera angles
+        // where the FBM noise pattern showed through the specular
+        // calculation. 0.014 keeps the surface alive enough to spread
+        // the GGX highlight without dominating it.
         let wave_a = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(u.misc.y * 0.40, 0.0, 0.0), 2);
         let wave_b = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, u.misc.y * 0.40), 2);
-        local_normal = normalize(dir + tangent * wave_a * 0.030 + bitangent * wave_b * 0.030);
+        local_normal = normalize(dir + tangent * wave_a * 0.014 + bitangent * wave_b * 0.014);
     } else {
         local_normal = dir;
     }
@@ -799,9 +804,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Roughness² along each axis. Cox-Munk wave statistics show along-wind
         // slope variance ~half the cross-wind variance — α_t (east) narrower,
         // α_b (north) wider. Stretches the highlight into an east-west streak
-        // matching ISS sun-glint photographs.
-        let a_t = 0.13;
-        let a_b = 0.28;
+        // matching ISS sun-glint photographs. Tuned wider than pure Cox-Munk
+        // so the highlight spreads as a soft glow rather than a sharp streak.
+        let a_t = 0.18;
+        let a_b = 0.32;
         let dnom = h_t * h_t / (a_t * a_t)
                  + h_b * h_b / (a_b * a_b)
                  + h_n * h_n;
@@ -819,10 +825,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Slightly warm sun colour — solar disc temperature ~5778 K — scaled
         // into HDR so the bloom pass can pick up the brightest glint pixels.
         let sun_color = vec3<f32>(1.05, 1.00, 0.92);
-        // Multiplier scales the spread-out GGX peak (∫D = 1, so per-pixel
-        // intensity is small) into the HDR range bloom can pick up.
+        // Multiplier scales the spread-out GGX peak. Lowered from 18 → 8
+        // to soften the highlight; the wider αs above already spread the
+        // energy further, so the visible glint stays comparable while
+        // streaky artifacts from wave-shimmer normals are damped.
         let spec = d_aniso * fresnel_h / (4.0 * n_dot_v);
-        lit = lit + sun_color * spec * sun_mask * 18.0;
+        lit = lit + sun_color * spec * sun_mask * 8.0;
     }
 
     // ---------- Cloud composite (3 layers, bottom-up) ----------
