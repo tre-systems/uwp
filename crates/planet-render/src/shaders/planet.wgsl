@@ -512,15 +512,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     // ---------- Dirty up ----------
-    // Subtle layered noise so the surface reads closer to a satellite photo
-    // than to a flat-shaded globe: patchy warm-dust tint at mid scale, fine
-    // grunge multiplier, and a small global desaturation.
+    // Multi-scale noise so continents don't read as flat-fill biome
+    // polygons: large warm-dust patches at continental scale, fine
+    // grunge, and a small global desaturation. Strength is biased
+    // toward LAND fragments (`above_water`) so oceans stay clean.
     let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), 3);
+    let dirt_mid = fbm(dir * 7.0 + u.seed_block.xyz + vec3<f32>(-19.0, 71.0, 113.0), 3);
     let dirt_hi  = fbm(dir * 26.0 + u.seed_block.xyz + vec3<f32>(7.0, 53.0, -113.0), 2);
     let warm_dirt = vec3<f32>(1.08, 0.95, 0.82);
-    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * 0.18;
+    let cool_tint = vec3<f32>(0.92, 0.97, 1.04);
+    // Continental warm-dust patches.
+    let patch_amt = smoothstep(-0.05, 0.45, dirt_low) * select(0.16, 0.28, above_water);
     surface = mix(surface, surface * warm_dirt, patch_amt);
-    surface = surface * (1.0 + dirt_hi * 0.07);
+    // Mid-scale variation pushes some patches cooler — gives forest /
+    // grassland sub-zones inside a single biome cell.
+    let cool_patch = smoothstep(0.0, 0.5, dirt_mid) * select(0.08, 0.20, above_water);
+    surface = mix(surface, surface * cool_tint, cool_patch);
+    // Fine-grain brightness modulation.
+    surface = surface * (1.0 + dirt_hi * select(0.06, 0.12, above_water));
     let luma = dot(surface, vec3<f32>(0.299, 0.587, 0.114));
     surface = mix(surface, vec3<f32>(luma), 0.07);
 
