@@ -561,11 +561,15 @@ fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
 ///   - a latitude band term (Hadley-cell aridity in the subtropics,
 ///     mid-latitude humidity, polar dryness),
 ///   - a continental-interior dryness term driven by elevation above
-///     sea level (mountains and high plateaus are drier),
+///     sea level (mountains and high plateaus are drier, but coastal
+///     areas stay damp),
 ///   - a per-seed noise term so deserts / wet zones aren't perfectly
 ///     zonal.
 ///
 /// Scaled by `vegetation_richness` so barren worlds read uniformly dry.
+/// Tuned so Earth-like worlds (atm 6, hydro 4-7) get widespread Plain
+/// / Grassland / Forest classification at temperate latitudes, with
+/// Desert / Savanna only in genuinely dry subtropical bands.
 fn compute_moisture(
     p: [f32; 3],
     abs_lat_norm: f32,
@@ -574,24 +578,27 @@ fn compute_moisture(
     seed: u32,
 ) -> f32 {
     // Latitude band: wet at the equator and ~50° latitude, dry at the
-    // subtropics (~25°) and at the poles. Modelled as
-    // cos(lat) * (1 - exp(-((|lat| - 50°)^2 / 200))) ... but we want a
-    // cheap, smooth approximation: a weighted blend of two cosines.
+    // subtropics (~25°) and at the poles. Bumped equator/mid amplitudes
+    // so habitable worlds aren't classified as global desert.
     let equator_band = (1.0 - abs_lat_norm).max(0.0).powf(1.4);
     let mid_band = (1.0 - (abs_lat_norm - 0.55).abs() * 2.2).clamp(0.0, 1.0);
     let polar_dry = 1.0 - (abs_lat_norm - 0.78).clamp(0.0, 0.22) * 4.5;
-    let lat_term = (equator_band * 0.55 + mid_band * 0.35).clamp(0.0, 1.0) * polar_dry;
+    let lat_term = (equator_band * 0.65 + mid_band * 0.45).clamp(0.0, 1.0) * polar_dry;
 
     // Continental interior dryness: above-sea elevation reduces
-    // moisture, capped so coastal hills aren't deserts.
-    let interior_dry = (above_sea * 1.8).clamp(0.0, 0.7);
+    // moisture, but only mildly. Real continents are wet on coasts AND
+    // in interior temperate zones (forest belts) — only high-altitude
+    // rain-shadow regions get arid.
+    let interior_dry = (above_sea * 0.9).clamp(0.0, 0.4);
 
     // Seed noise so deserts have real shape.
     let n_low = value_noise_3d([p[0] * 0.9, p[1] * 0.9, p[2] * 0.9], seed ^ 0x4E_3F_19_AB);
     let n_high = value_noise_3d([p[0] * 4.2, p[1] * 4.2, p[2] * 4.2], seed ^ 0x9C_1B_27_55);
     let noise = (n_low * 0.6 + n_high * 0.4) * 0.5 + 0.5; // -> [0,1]
 
-    let base = (lat_term * 0.65 + noise * 0.45 - interior_dry).clamp(0.0, 1.0);
+    // Final base. Lifted noise contribution so even lat-dry bands have
+    // visible variation rather than reading as uniform sand.
+    let base = (lat_term * 0.75 + noise * 0.55 - interior_dry + 0.10).clamp(0.0, 1.0);
     // Vegetation richness is a global moisture envelope: a Mars-like
     // world has richness ≈ 0 and the moisture channel collapses toward
     // a uniform dry value.

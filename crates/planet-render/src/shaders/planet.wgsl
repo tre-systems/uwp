@@ -465,9 +465,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let lat = abs(dir.y);
 
     // ---------- Biome colour ----------
-    // Categorical biome id from the Rust pre-bake (for masks); colour
-    // from a bilinear-weighted blend of the 4 nearest biome palette
-    // entries (smooth boundaries — no visible texel edges on the caps).
+    //
+    // Photorealism strategy: the Rust pre-bake gives the LARGE-SCALE
+    // biome classification (climate-driven, consistent across views).
+    // The shader layers RICH SUB-CELL procedural detail on top so
+    // continents read like satellite photos rather than flat-fill
+    // biome polygons.
+    //
+    //   - Biome atlas (1024 cells around the equator) sets the colour
+    //     family at the texel scale.
+    //   - Per-fragment FBM noise (vegetation patches, desert grain,
+    //     rocky slopes, beach strip, rivers, snow detail) fills in
+    //     the sub-cell variation a real-Earth-from-space photo shows.
+    //
+    // Biome flags gate which procedural effects fire: rivers only run
+    // on vegetated biomes, the beach strip only at Shore, etc.
+
     let biome = biome_id_at(dir);
     var surface: vec3<f32> = biome_color_blended(dir);
 
@@ -476,26 +489,119 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let alpine = select(0.0, 1.0, biome_is_alpine(biome));
     let snow = select(0.0, 1.0, biome_is_ice(biome));
     let desert_mask = select(0.0, 1.0, biome_is_desert(biome));
+    let is_vegetated_biome = biome_is_vegetated(biome) || biome == 3u || biome == 6u;
+    let is_shore = biome == 2u;
+    let is_ocean = biome_is_ocean(biome);
+
+    let veg_richness = u.world_features.z;
+    let above_amt_n = clamp(above_amt, 0.0, 1.0);
 
     if (above_water) {
-        // Slope-based rock blend — exposed cliffs, valleys, river banks read
-        // as bare rock regardless of biome. Applied on top of the palette
-        // so it preserves biome character on flat ground.
-        let rocky = smoothstep(0.06, 0.28, slope);
-        surface = mix(surface, u.mountain_color.rgb, rocky * 0.55);
+        // --- Elevation-driven gradient ---
+        // Real Earth-from-space photos show a smooth elevation
+        // gradient: bright sandy coast → biome interior → rocky highlands.
+        // Layer this on top of the biome base so continents read as
+        // continuous terrain, not discrete biome polygons.
+        let coast_t = smoothstep(0.0, 0.025, above_amt_n);
+        let alpine_t = smoothstep(0.35, 0.70, above_amt_n);
+        // Pull coastline tones toward sand for non-ice / non-volcanic biomes.
+        if (!biome_is_ice(biome) && biome != 14u) {
+            surface = mix(u.sand_color.rgb, surface, coast_t);
+        }
+        // Pull alpine tones toward mountain rock.
+        surface = mix(surface, u.mountain_color.rgb, alpine_t * 0.45);
 
-        // Ice biomes pick up fractured-leads detail so polar caps read as
-        // a real ice sheet, not a flat-white blob.
+        // --- Vegetation patchwork (forest / grassland / savanna) ---
+        // Tri-scale FBM yields organic patches inside a single biome
+        // cell — large zones at continental scale, medium patches
+        // (forests), fine grain (groves / pasture mosaic). Driven by
+        // both biome AND world veg_richness so a Mars-like world
+        // collapses to bare rock palette.
+        if (is_vegetated_biome && veg_richness > 0.02) {
+            let zone_n  = fbm(dir * 1.4 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 5);
+            let patch_n = fbm(dir * 4.2 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 4);
+            let grain_n = fbm(dir * 13.0 + u.seed_block.xyz + vec3<f32>(-91.0, 31.0, 71.0), 3);
+            let combined = zone_n * 0.55 + patch_n * 0.30 + grain_n * 0.15;
+            let forest_t   = u.land_color.rgb * vec3<f32>(0.55, 0.68, 0.50);
+            let grass_t    = u.land_color.rgb * vec3<f32>(1.10, 1.10, 0.90);
+            let savanna_t  = mix(u.land_color.rgb, u.sand_color.rgb, 0.70);
+            var vegetated = mix(forest_t, grass_t, smoothstep(-0.55, 0.15, combined));
+            vegetated = mix(vegetated, savanna_t, smoothstep(0.20, 0.65, combined));
+            // Cap the vegetation lift near the tree line — high
+            // mountains and dry highlands lose vegetation cover.
+            let tree_line_n = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(-49.0, 113.0, 67.0), 2);
+            let tree_line   = 0.32 + tree_line_n * 0.10;
+            let veg_top     = 1.0 - smoothstep(tree_line, tree_line + 0.14, above_amt_n);
+            // Stronger blend (0.65) so the vegetation texture reads as
+            // dominant on vegetated biomes, but the biome's base colour
+            // still pulls through.
+            surface = mix(surface, vegetated, clamp(veg_richness, 0.0, 1.0) * veg_top * 0.65);
+        }
+
+        // --- Continental desert grain ---
+        // Desert biomes get warm sand grain at fine scale so the
+        // surface doesn't read as a flat tan polygon.
+        if (biome_is_desert(biome)) {
+            let dune_n = fbm(dir * 16.0 + u.seed_block.xyz + vec3<f32>(73.0, -13.0, 51.0), 3);
+            let warm = u.sand_color.rgb * vec3<f32>(1.06, 1.00, 0.88);
+            let cool = u.sand_color.rgb * vec3<f32>(0.94, 0.92, 0.84);
+            let dune_color = mix(cool, warm, dune_n * 0.5 + 0.5);
+            surface = mix(surface, dune_color, 0.45);
+        }
+
+        // --- Slope-based rock ---
+        // Exposed cliffs / valleys / river banks read as bare rock
+        // regardless of biome — gives mountain ranges the visible
+        // ridge texture you see in ISS photos.
+        let rocky = smoothstep(0.06, 0.28, slope);
+        surface = mix(surface, u.mountain_color.rgb, rocky * 0.65);
+
+        // --- Mid-scale tint noise ---
+        // Fine procedural variation breaks up uniformity. Stronger on
+        // land (~24%) than ocean.
+        let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
+        surface = surface * (0.88 + tint_n * 0.24);
+
+        // --- Beach strip ---
+        // Bright sandy band right at the waterline. Only on humid
+        // worlds (dry/barren coasts don't have visible beaches).
+        // Applied AFTER vegetation tint so it cuts through forested
+        // coasts cleanly — the single most "satellite photo" cue.
+        if (veg_richness > 0.05 && is_shore) {
+            let beach = 1.0 - smoothstep(0.0, 0.010, above_amt_n);
+            let beach_color = mix(u.sand_color.rgb, vec3<f32>(0.98, 0.92, 0.74), 0.45);
+            surface = mix(surface, beach_color, beach * 0.85);
+        }
+
+        // --- Rivers ---
+        // Ridged FBM gives bright thin lines in flat low valleys on
+        // vegetated worlds. Real rivers form where water collects;
+        // gate on biome + slope + low elevation.
+        if (veg_richness > 0.10 && u.planet_params.x > 0.20 && is_vegetated_biome) {
+            let river_n = ridged_fbm(dir * 16.0 + u.seed_block.xyz + vec3<f32>(91.0, -17.0, 41.0), 3);
+            let river_line = smoothstep(0.88, 0.96, river_n);
+            let in_valley  = 1.0 - smoothstep(0.0, 0.15, slope);
+            let lowland    = 1.0 - smoothstep(0.05, 0.40, above_amt_n);
+            let river = river_line * in_valley * lowland * veg_richness * 0.9;
+            surface = mix(surface, u.ocean_color.rgb * 1.6, clamp(river, 0.0, 0.7));
+        }
+
+        // --- Snow modulation on Snow/Ice biomes ---
+        // Bright base with ice-detail noise + fractured-leads dark
+        // lines so caps read as real ice sheets, not flat-white blobs.
         if (biome_is_ice(biome)) {
+            let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
             let crack_n = ridged_fbm(dir * 22.0 + u.seed_block.xyz + vec3<f32>(41.0, 113.0, -57.0), 2);
             let ice_cracks = smoothstep(0.86, 0.96, crack_n);
-            surface = surface * (1.0 - ice_cracks * 0.45);
+            let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25) * (1.0 - ice_cracks * 0.55);
+            surface = mix(surface, ice_tone, 0.85);
         }
     } else {
-        // Smooth depth gradient for ocean biomes. The biome atlas only
-        // distinguishes DeepOcean / ShallowOcean at cell granularity; the
-        // per-fragment depth here gives a sub-cell smooth transition from
-        // turquoise shallows to deep navy abyss.
+        // --- Three-tone water with smooth depth gradient ---
+        // Per-fragment depth gives a continuous shallow→deep
+        // transition that reads better than two flat-tone biome
+        // cells meeting at a texel boundary. Bright turquoise reef
+        // tint where depth is sub-shelf.
         let depth = sea_h - h;
         let turquoise = mix(u.ocean_color.rgb * 1.8, vec3<f32>(0.35, 0.78, 0.78), 0.55);
         let shallow = u.ocean_color.rgb * 1.55;
@@ -503,35 +609,29 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         var water = mix(turquoise, shallow, smoothstep(0.0, 0.06, depth));
         water = mix(water, deep, smoothstep(0.10, 0.55, depth));
         surface = water;
-        // Pack-ice biome stays the snow palette so the ocean cap matches
-        // the land cap at the coast (the biome classifier already snapped
-        // both sides to ice based on lat + temp).
+        // Pack-ice biome stays the snow palette so the ocean cap
+        // matches the land cap at the coast (the biome classifier
+        // already snapped both sides to ice based on lat + temp).
         if (biome_is_ice(biome)) {
-            surface = u.snow_color.rgb * 0.94;
+            let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
+            let crack_n = ridged_fbm(dir * 22.0 + u.seed_block.xyz + vec3<f32>(41.0, 113.0, -57.0), 2);
+            let ice_cracks = smoothstep(0.84, 0.96, crack_n);
+            surface = u.snow_color.rgb * 0.94 * (0.88 + ice_detail * 0.22) * (1.0 - ice_cracks * 0.60);
         }
     }
 
-    // ---------- Dirty up ----------
-    // Multi-scale noise so continents don't read as flat-fill biome
-    // polygons: large warm-dust patches at continental scale, fine
-    // grunge, and a small global desaturation. Strength is biased
-    // toward LAND fragments (`above_water`) so oceans stay clean.
+    // ---------- Atmospheric haze / dust ----------
+    // Subtle global noise layer for satellite-photo realism: patchy
+    // warm-dust tint, a fine-grain multiplier, and a small global
+    // desaturation. Strength biased toward LAND so oceans stay clean.
     let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), 3);
-    let dirt_mid = fbm(dir * 7.0 + u.seed_block.xyz + vec3<f32>(-19.0, 71.0, 113.0), 3);
     let dirt_hi  = fbm(dir * 26.0 + u.seed_block.xyz + vec3<f32>(7.0, 53.0, -113.0), 2);
     let warm_dirt = vec3<f32>(1.08, 0.95, 0.82);
-    let cool_tint = vec3<f32>(0.92, 0.97, 1.04);
-    // Continental warm-dust patches.
-    let patch_amt = smoothstep(-0.05, 0.45, dirt_low) * select(0.16, 0.28, above_water);
+    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * select(0.10, 0.18, above_water);
     surface = mix(surface, surface * warm_dirt, patch_amt);
-    // Mid-scale variation pushes some patches cooler — gives forest /
-    // grassland sub-zones inside a single biome cell.
-    let cool_patch = smoothstep(0.0, 0.5, dirt_mid) * select(0.08, 0.20, above_water);
-    surface = mix(surface, surface * cool_tint, cool_patch);
-    // Fine-grain brightness modulation.
-    surface = surface * (1.0 + dirt_hi * select(0.06, 0.12, above_water));
+    surface = surface * (1.0 + dirt_hi * select(0.05, 0.08, above_water));
     let luma = dot(surface, vec3<f32>(0.299, 0.587, 0.114));
-    surface = mix(surface, vec3<f32>(luma), 0.07);
+    surface = mix(surface, vec3<f32>(luma), 0.05);
 
     // ---------- Cloud noise (3-layer system) ----------
     // Three distinct layers at different altitudes, each with its own scale,
