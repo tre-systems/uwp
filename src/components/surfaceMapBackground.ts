@@ -106,6 +106,8 @@ export async function renderSurfaceBackground(
   const biomeBuf = new Uint8Array(width * height)
   const inside = new Uint8Array(width * height)
   const latArr = new Float32Array(width * height)
+  const latNormArr = new Float32Array(width * height)
+  const lonNormArr = new Float32Array(width * height)
   // Yield to the event loop every CHUNK_ROWS scanlines. 64 keeps a
   // single chunk under ~10ms on mid-range hardware so input handlers
   // and frame paints can interleave between chunks.
@@ -123,6 +125,8 @@ export async function renderSurfaceBackground(
         inside[idx] = 1
         latArr[idx] = proj.lat
         const sample = normalisedSurfaceSample(proj.lat, proj.lon)
+        latNormArr[idx] = sample.lat
+        lonNormArr[idx] = sample.lon
         elev[idx] = sampleBilinear(
           heightmap,
           prebake.lon_cells,
@@ -171,18 +175,31 @@ export async function renderSurfaceBackground(
       const yD = y < height - 1 && inside[idx + width] ? idx + width : idx
       const dx = elev[xR] - elev[xL]
       const dy = elev[yD] - elev[yU]
-      const nx = -dx * 60
-      const ny = -dy * 60
+      const dryLand = opts.waterFraction < 0.08
+      const slopeScale = isWater ? 22 : dryLand ? 18 : 42
+      const nx = -dx * slopeScale
+      const ny = -dy * slopeScale
       const nz = 1
       const nl = Math.hypot(nx, ny, nz)
       const lamb = Math.max(0, (nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]) / nl)
-      // Ocean fragments take a gentler shade so the depth gradient
-      // reads correctly; land gets the full hillshade.
-      const shade = isWater ? 0.85 + lamb * 0.25 : 0.6 + lamb * 0.55
+      // Ocean fragments take only a very gentle shade. Real orbital imagery
+      // shows shelves and glint, not the full bathymetric polygon field.
+      const shade = isWater
+        ? 0.95 + lamb * 0.06
+        : dryLand
+          ? 0.78 + lamb * 0.26
+          : 0.68 + lamb * 0.42
 
-      let r = paletteSrgb[biomeId][0]
-      let g = paletteSrgb[biomeId][1]
-      let b = paletteSrgb[biomeId][2]
+      let [r, g, b] = biome
+        ? sampleBiomeColorSrgb(
+          biome,
+          prebake.lon_cells,
+          prebake.lat_cells,
+          latNormArr[idx],
+          lonNormArr[idx],
+          paletteSrgb,
+        )
+        : paletteSrgb[biomeId]
 
       if (isWater) {
         // Smooth depth gradient between shallow and deep ocean palette
@@ -191,7 +208,7 @@ export async function renderSurfaceBackground(
         // transition that reads better than two flat tones meeting at a
         // texel boundary.
         const depth = clamp(seaLevel - h, 0, 1)
-        const t = smoothstep(0.0, 0.5, depth)
+        const t = smoothstep(0.02, 0.35, depth) * 0.45
         const shallow = paletteSrgb[1]
         const deep = paletteSrgb[0]
         r = shallow[0] + (deep[0] - shallow[0]) * t
@@ -288,6 +305,44 @@ function sampleNearestByte(
   const lon = (((lonNorm % 1) + 1) % 1) * lonCells
   const j = Math.min(Math.floor(lon), lonCells - 1)
   return buf[i * lonCells + j]
+}
+
+function sampleBiomeColorSrgb(
+  buf: Uint8Array,
+  lonCells: number,
+  latCells: number,
+  latNorm: number,
+  lonNorm: number,
+  palette: readonly [number, number, number][],
+): [number, number, number] {
+  const lat = clamp(clamp(latNorm, 0, 1) * latCells - 0.5, 0, latCells - 1)
+  const lon = (((lonNorm % 1) + 1) % 1) * lonCells - 0.5
+  const lonFloor = Math.floor(lon)
+  const i0 = Math.floor(lat)
+  const i1 = Math.min(i0 + 1, latCells - 1)
+  const j0 = mod(lonFloor, lonCells)
+  const j1 = (j0 + 1) % lonCells
+  const fi = lat - i0
+  const fj = lon - lonFloor
+  const c00 = palette[buf[i0 * lonCells + j0]]
+  const c01 = palette[buf[i0 * lonCells + j1]]
+  const c10 = palette[buf[i1 * lonCells + j0]]
+  const c11 = palette[buf[i1 * lonCells + j1]]
+  const c0 = mixRgb8(c00, c01, fj)
+  const c1 = mixRgb8(c10, c11, fj)
+  return mixRgb8(c0, c1, fi)
+}
+
+function mixRgb8(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  t: number,
+): [number, number, number] {
+  return [
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+  ]
 }
 
 export function normalisedSurfaceSample(

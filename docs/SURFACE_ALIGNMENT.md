@@ -2,9 +2,11 @@
 
 The globe, icosahedral world map, and selected-hex region view should all
 describe the same physical surface. The globe and world map now share the
-Rust surface pre-bake for coastlines and major terrain; the remaining work is
-to replace coarse logical surface cells with a Rust-owned atlas of stable cell
-ids and to make region views sample local atlas patches.
+Rust surface pre-bake for coastlines, major terrain, and biome classification,
+and the visible world-map cells are Rust-owned atlas cells with stable ids.
+The remaining alignment gap is the region view: it receives the selected atlas
+cell today, but still paints its local scene procedurally instead of sampling
+neighbouring atlas cells directly.
 
 ## Current Performance Correction
 
@@ -71,68 +73,107 @@ References:
 - Starports and cities are now snapped to the centre of the visible surface
   hexes, so markers no longer float between cells.
 - The surface inspector still exposes the older 32 x 16 `SurfaceMap` DTO
-  coordinates, but clicks from the icosahedral map now carry the exact visual
-  cell's latitude, longitude, terrain, temperature, and elevation into the
-  region view.
+  coordinates for compatibility, but clicks from the icosahedral map now carry
+  the exact visual cell id, latitude, longitude, terrain, temperature, and
+  elevation into the region view.
+- Dry hydro-0 worlds use a barren biome path with smaller polar caps and no
+  highland snow override, matching Mars/Moon-style references more closely.
+- The SVG background blends neighbouring biome colours and uses gentler
+  dry-world/ocean hillshade so the map reads as shaded orbital terrain rather
+  than hard categorical polygons.
 
 ## Alignment Risks
 
 1. **Globe versus map detail.** The globe and map now share the pre-bake, but
    the GPU path samples the raw height atlas at shader resolution while the map
    samples it through coarser icosahedral cells. Coastlines and major terrain
-   should agree more closely after the centre-aligned sampling pass; biome
-   colouring and small-scale detail can still drift.
-2. **Visual hexes versus logical cells.** The current pointy-top cells are
-   generated in TypeScript from the net. The clicked cell now drives the
-   region view directly, but the cells are not yet Rust-owned canonical ids.
-3. **Region view versus selected map cell.** The region renderer receives the
+   agree; very small shader-only cloud, grain, city-light, and normal-detail
+   effects can still differ by design.
+2. **Region view versus selected map cell.** The region renderer receives the
    clicked visual cell's terrain/elevation summary, but it still paints a
    procedural local landscape rather than a patch sampled from the same
    authoritative surface buffer.
-4. **Photorealism at every level.** The globe, atlas, and region view should
+3. **Photorealism at every level.** The globe, atlas, and region view should
    use different rendering techniques, but they should share elevation,
    waterline, biome, climate, settlement, and lighting inputs.
 
 ## Target Architecture
 
-Introduce a Rust-owned `SurfaceAtlas` that is generated with the planet:
+The first Rust-owned `SurfaceAtlas` slice now ships with `SurfaceMap`:
 
 - `SurfaceCellId`: stable id containing face, cell coordinates, and resolution.
-- `SurfaceCell`: centre latitude/longitude, spherical boundary vertices, flat
-  net vertices, elevation, water depth, biome, climate bands, habitability,
-  hazards, settlement score, and optional features.
-- `SurfaceAtlas`: all visible world-map cells plus summary textures/buffers for
-  the renderer.
+- `SurfaceCell`: centre latitude/longitude, flat net boundary, elevation,
+  signed elevation, water depth, slope, moisture, temperature, biome, and
+  projected terrain.
+- `SurfaceAtlas`: all visible world-map cells at the current legacy 2d6-style
+  12-subdivision resolution, serialized from Rust beside the compatibility
+  32 x 16 grid.
+
+The surface generator also has a v1 geomorphology pass inspired by the
+references below: dry barren worlds get impact basins in the actual height
+field, while wet vegetated worlds get a cheap drainage accumulation / valley
+carving pass after tectonic uplift. This is not a full hydrology simulator, but
+it moves the app away from pure noise while preserving the lazy cached
+generation model.
 
 Every layer should consume this atlas:
 
 - **Globe:** upload the pre-bake / atlas buffers to the GPU and sample them in
   `planet.wgsl` for land/ocean/coastline/biome decisions. The v1 GPU upload is
-  in place for elevation and coastlines; biome and atlas-cell metadata remain.
+  in place for elevation and biomes. Atlas-cell metadata is serialized for the
+  Surface UI; richer GPU buffer upload remains conditional.
 - **World map:** render cells from serialized Rust `SurfaceCell` centres and
-  boundaries; no TypeScript-only geometry decisions beyond presentation.
-- **Inspector:** select by `SurfaceCellId`, not by rounded latitude/longitude.
-- **Region view:** generate local terrain from the selected cell's atlas patch
-  and nearby cells, so rivers, coastlines, cities, and hazards match the world
-  map.
+  boundaries. TypeScript still presents the SVG but no longer owns the visible
+  cell identities.
+- **Inspector:** select by `SurfaceCellId` when available, with rounded
+  latitude/longitude only as a legacy fallback.
+- **Region view:** receives the selected atlas cell id and exact physical
+  summary today. The remaining mismatch is that the local high-resolution
+  landscape still paints a procedural patch rather than sampling nearby atlas
+  cells directly.
 - **Exports:** use the same atlas state for globe cards, world-map exports, and
   referee region handouts.
 
+## Research Anchors
+
+- NASA Blue Marble Next Generation is the visual reference for Earth-like
+  colour relationships: ocean depth, vegetation belts, seasonal snow, and
+  cloud-haze balance.
+- NOAA ETOPO is the morphology reference for topography plus bathymetry and
+  shoreline continuity.
+- NASA MGS/MOLA Mars maps are the reference for dry, cratered, basin-heavy
+  rocky worlds.
+- OGC DGGS and H3 are the data-model references: spherical surface cells should
+  have stable ids and explicit boundaries, not only screen-space SVG positions.
+- Cordonnier et al. and Genevaux et al. are the procedural terrain references:
+  large-scale terrain should combine tectonic uplift, drainage, and erosion
+  instead of relying on FBM noise alone.
+
+References:
+
+- <https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/>
+- <https://www.ncei.noaa.gov/products/etopo-global-relief-model>
+- <https://science.nasa.gov/photojournal/mola-topographic-map>
+- <https://www.ogc.org/standards/dggs/>
+- <https://h3geo.org/docs/core-library/overview>
+- <https://researchportal.ip-paris.fr/fr/publications/large-scale-terrain-generation-from-tectonic-uplift-and-fluvial-e/>
+- <https://cgvlab.github.io/cgvlab/www/publications/Genevaux13ToG/>
+
 ## Implementation Sequence
 
-1. Move pointy-top surface-cell generation from TypeScript into Rust as a
-   serialized atlas with stable ids and cell centres.
-2. Replace the 32 x 16 `SurfaceMap` DTO with an atlas-backed DTO while keeping
+1. **Shipped.** Move pointy-top surface-cell generation from TypeScript into
+   Rust as a serialized atlas with stable ids and cell centres.
+2. **Shipped.** Add the atlas beside the 32 x 16 `SurfaceMap` DTO while keeping
    compatibility helpers for existing inspector code during the transition.
-3. Update `SurfaceMap.tsx` to render Rust-provided cells and select by
-   `SurfaceCellId`.
-4. Update starport and city placement to store `SurfaceCellId` directly.
-5. Upload the Rust pre-bake to the GPU and make `planet.wgsl` sample it, so the
-   globe and atlas agree on coastlines and major terrain. **v1 shipped for the
-   existing pre-bake heightmap; extend it when the Rust atlas lands.**
-6. Rework `RegionView` to generate from the selected cell and neighboring atlas
+3. **Shipped.** Update `SurfaceMap.tsx` to render Rust-provided cells and select
+   by `SurfaceCellId`.
+4. **Shipped.** Update starport and city placement to store `SurfaceCellId`
+   directly and snap markers to atlas-cell centres.
+5. **Shipped v1.** Upload the Rust pre-bake to the GPU and make `planet.wgsl`
+   sample it, so the globe and atlas agree on coastlines and major terrain.
+6. Rework `RegionView` to generate from the selected cell and neighbouring atlas
    cells rather than a standalone FBM landscape.
-7. Add contract tests:
+7. Continue contract tests:
    - same seed + water fraction produces deterministic atlas ids and terrain,
    - settlement ids always refer to valid cells,
    - selected-cell centre projects to the rendered map centre,

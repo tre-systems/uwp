@@ -19,8 +19,17 @@ export interface SurfaceHexCoord {
   row: number
 }
 
+export interface SurfaceCellId {
+  face: number
+  i: number
+  j: number
+  up: boolean
+  resolution: number
+}
+
 export interface SurfaceHex {
   coord: SurfaceHexCoord
+  cell_id?: SurfaceCellId | null
   terrain: Terrain
   latitude_deg: number
   longitude_deg: number
@@ -30,15 +39,44 @@ export interface SurfaceHex {
 
 export interface Settlement {
   coord: SurfaceHexCoord
+  cell_id?: SurfaceCellId | null
   /** 0 = village, 1 = town, 2 = city, 3 = metropolis. */
   tier: number
+}
+
+export interface SurfaceAtlasCell {
+  id: SurfaceCellId
+  coord: SurfaceHexCoord
+  x: number
+  y: number
+  latitude_deg: number
+  longitude_deg: number
+  elevation: number
+  elevation_signed: number
+  water_depth: number
+  slope: number
+  moisture: number
+  temperature_k: number
+  biome_id: number
+  terrain: Terrain
+  flat_boundary: Array<[number, number]>
+}
+
+export interface SurfaceAtlas {
+  resolution: number
+  hex_radius: number
+  net_width: number
+  net_height: number
+  cells: SurfaceAtlasCell[]
 }
 
 export interface SurfaceMap {
   seed: number
   ocean_fraction: number
+  atlas?: SurfaceAtlas
   hexes: SurfaceHex[]
   starport: SurfaceHexCoord | null
+  starport_cell_id?: SurfaceCellId | null
   cities: Settlement[]
 }
 

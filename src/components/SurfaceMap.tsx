@@ -11,6 +11,9 @@ import {
   terrainLabel,
   type SurfaceMap as SurfaceMapDTO,
   type SurfaceHex,
+  type SurfaceAtlas,
+  type SurfaceAtlasCell,
+  type SurfaceCellId,
   type Settlement,
   type SurfaceHexCoord,
   type Terrain,
@@ -64,18 +67,28 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
 
   const seaLevelParam = params.value.sea_level
   const iceLatitudeDeg = params.value.ice_latitude * 90
+  const atmosphereDensity = params.value.atmosphere_density
+  const vegetationRichness = params.value.vegetation_richness
+  const paletteBase = {
+    ocean: params.value.ocean_color,
+    land: params.value.land_color,
+    mountain: params.value.mountain_color,
+    sand: params.value.sand_color,
+    snow: params.value.snow_color,
+  }
   const mainWorld = system && system.main_world >= 0 ? system.planets[system.main_world] ?? null : null
   const meanTempK = mainWorld?.climate.mean_surface_temp_k ?? mainWorld?.temperature_k ?? 288
   const iceFraction = mainWorld?.climate.ice_fraction ?? 0.0
   const prebake = useMemo(() => {
     if (!map) return null
     return getSurfacePrebake()
-  }, [map?.seed, seaLevelParam])
+  }, [map?.seed, seaLevelParam, iceLatitudeDeg, atmosphereDensity, vegetationRichness, meanTempK])
 
   // Rebuild the icosahedral hex set whenever the inputs that drive
   // terrain / sea level / temperature change. Done synchronously in a
   // useMemo so the UI repaints atomically.
   const surface = useMemo(() => {
+    if (map?.atlas) return surfaceFromAtlas(map.atlas)
     if (!prebake) return null
     return buildIcosahedralSurface({
       prebake,
@@ -84,7 +97,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       meanTempK,
       subdivisions: SUBDIVISIONS,
     })
-  }, [prebake, seaLevelParam, iceFraction, meanTempK])
+  }, [map?.atlas, prebake, seaLevelParam, iceFraction, meanTempK])
 
   // Rendered background, recomputed alongside the surface. The render
   // is async + chunked so the UI thread stays responsive on slower
@@ -101,13 +114,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
         iceLatitudeDeg,
         meanTempK,
         width: surfaceBackgroundWidth(containerRef.current),
-        paletteBase: {
-          ocean: params.value.ocean_color,
-          land: params.value.land_color,
-          mountain: params.value.mountain_color,
-          sand: params.value.sand_color,
-          snow: params.value.snow_color,
-        },
+        paletteBase,
       },
       controller.signal,
     )
@@ -122,7 +129,18 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
     return () => {
       controller.abort()
     }
-  }, [map?.seed, prebake, seaLevelParam, iceLatitudeDeg, meanTempK])
+  }, [
+    map?.seed,
+    prebake,
+    seaLevelParam,
+    iceLatitudeDeg,
+    meanTempK,
+    paletteBase.ocean,
+    paletteBase.land,
+    paletteBase.mountain,
+    paletteBase.sand,
+    paletteBase.snow,
+  ])
 
   useEffect(() => {
     setSelectedCellKey(null)
@@ -141,7 +159,9 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   // icosahedron so they land on the new net. coord (col, row) maps
   // back to (lat, lon) via the same convention surface_map.rs uses.
   const cityPoints = map.cities.map((s) => projectCity(s, map.seed, surface))
-  const starportPoint = map.starport ? projectStarport(map.starport, surface) : null
+  const starportPoint = map.starport
+    ? projectStarport(map.starport, map.starport_cell_id ?? null, surface)
+    : null
 
   return (
     <div
@@ -289,7 +309,7 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
         }
       }}
     >
-      <path d={hexPath(hex.x, hex.y, r)} class="surface-hex-shape" fill={terrainFill(hex.terrain)} />
+      <path d={hexPathForCell(hex, r)} class="surface-hex-shape" fill={terrainFill(hex.terrain)} />
     </g>
   )
 }
@@ -339,15 +359,19 @@ function CityMarker({ x, y, tier, name }: { x: number; y: number; tier: number; 
 }
 
 function projectCity(s: Settlement, worldSeed: number, surface: IcosaSurface | null): { x: number; y: number; tier: number; name: string } {
-  const { x, y } = projectSurfaceCoord(s.coord, surface)
+  const { x, y } = projectSurfaceCoord(s.coord, surface, s.cell_id ?? null)
   return { x, y, tier: s.tier, name: cityName(worldSeed, s.coord) }
 }
 
-function projectStarport(coord: SurfaceHexCoord, surface: IcosaSurface | null): { x: number; y: number } {
-  return projectSurfaceCoord(coord, surface)
+function projectStarport(coord: SurfaceHexCoord, cellId: SurfaceCellId | null, surface: IcosaSurface | null): { x: number; y: number } {
+  return projectSurfaceCoord(coord, surface, cellId)
 }
 
-function projectSurfaceCoord(coord: SurfaceHexCoord, surface: IcosaSurface | null): { x: number; y: number } {
+function projectSurfaceCoord(coord: SurfaceHexCoord, surface: IcosaSurface | null, cellId: SurfaceCellId | null = null): { x: number; y: number } {
+  if (cellId && surface) {
+    const exact = surface.hexes.find((hex) => sameCellId(hex.cellId, cellId))
+    if (exact) return { x: exact.x, y: exact.y }
+  }
   return snapToSurfaceHex(projectColRow(coord), surface)
 }
 
@@ -391,6 +415,13 @@ function hexPath(cx: number, cy: number, r: number): string {
   return `M${pts.join(' L')}Z`
 }
 
+function hexPathForCell(hex: IcosaHex, r: number): string {
+  if (hex.flatBoundary?.length === 6) {
+    return `M${hex.flatBoundary.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' L')}Z`
+  }
+  return hexPath(hex.x, hex.y, r)
+}
+
 // ---------- terrain styling ----------
 
 const TERRAIN_FILL: Record<Terrain, string> = {
@@ -427,6 +458,7 @@ function coordOfHex(h: IcosaHex): string {
 }
 
 function keyOfHex(h: IcosaHex): string {
+  if (h.cellId) return cellIdKey(h.cellId)
   return `${h.faceIdx}:${h.upPointing ? 1 : 0}:${h.x.toFixed(3)}:${h.y.toFixed(3)}`
 }
 
@@ -435,6 +467,7 @@ function coordOfSel(sel: SurfaceHexCoord): string {
 }
 
 function coordForHex(h: IcosaHex): SurfaceHexCoord {
+  if (h.coord) return h.coord
   const lonNorm = ((h.lonDeg + 180) / 360)
   const latNorm = ((h.latDeg + 90) / 180)
   return {
@@ -446,12 +479,53 @@ function coordForHex(h: IcosaHex): SurfaceHexCoord {
 function surfaceCellForHex(h: IcosaHex, coord: SurfaceHexCoord): SurfaceHex {
   return {
     coord,
+    cell_id: h.cellId ?? null,
     terrain: h.terrain,
     latitude_deg: h.latDeg,
     longitude_deg: h.lonDeg,
     temperature_k: h.temperatureK,
     elevation: (h.elevation + 1) * 0.5,
   }
+}
+
+function surfaceFromAtlas(atlas: SurfaceAtlas): IcosaSurface {
+  return {
+    hexes: atlas.cells.map(cellFromAtlas),
+    seaLevel: 0,
+    hexRadius: atlas.hex_radius,
+    subdivisions: atlas.resolution,
+  }
+}
+
+function cellFromAtlas(cell: SurfaceAtlasCell): IcosaHex {
+  return {
+    cellId: cell.id,
+    coord: cell.coord,
+    x: cell.x,
+    y: cell.y,
+    flatBoundary: cell.flat_boundary,
+    latDeg: cell.latitude_deg,
+    lonDeg: cell.longitude_deg,
+    biome: cell.biome_id,
+    terrain: cell.terrain,
+    temperatureK: cell.temperature_k,
+    elevation: cell.elevation_signed,
+    faceIdx: cell.id.face,
+    upPointing: cell.id.up,
+  }
+}
+
+function sameCellId(a: SurfaceCellId | undefined, b: SurfaceCellId): boolean {
+  return !!a &&
+    a.face === b.face &&
+    a.i === b.i &&
+    a.j === b.j &&
+    a.up === b.up &&
+    a.resolution === b.resolution
+}
+
+function cellIdKey(id: SurfaceCellId): string {
+  return `${id.resolution}:${id.face}:${id.i}:${id.j}:${id.up ? 1 : 0}`
 }
 
 function coordKey(coord: SurfaceHexCoord): string {

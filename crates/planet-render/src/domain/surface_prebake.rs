@@ -46,12 +46,11 @@ pub const PREBAKE_LAT: usize = 512;
 /// Resolution tiers selected by render profile. Heightmap RAM cost
 /// (4 bytes/cell) and the biome/moisture/temp companions scale
 /// linearly with cell count, so weak devices fall back to the smallest
-/// tier and capable desktops can pick up the largest.
+/// tier and capable desktops use the canonical 1024 x 512 atlas. Higher
+/// apparent quality should come from shader/detail work; a 2048 x 1024
+/// synchronous WASM bake made startup and iPhone interaction too sluggish.
 pub const PREBAKE_LOW_LON: usize = 512;
 pub const PREBAKE_LOW_LAT: usize = 256;
-pub const PREBAKE_HIGH_LON: usize = 2048;
-pub const PREBAKE_HIGH_LAT: usize = 1024;
-
 const LRU_CAPACITY: usize = 4;
 
 /// Map a 0..1 render-quality scalar to a (lon, lat) atlas resolution.
@@ -60,10 +59,8 @@ const LRU_CAPACITY: usize = 4;
 pub fn resolution_for_quality(quality: f32) -> (u32, u32) {
     if quality < 0.55 {
         (PREBAKE_LOW_LON as u32, PREBAKE_LOW_LAT as u32)
-    } else if quality < 0.95 {
-        (PREBAKE_LON as u32, PREBAKE_LAT as u32)
     } else {
-        (PREBAKE_HIGH_LON as u32, PREBAKE_HIGH_LAT as u32)
+        (PREBAKE_LON as u32, PREBAKE_LAT as u32)
     }
 }
 
@@ -435,18 +432,19 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
                 -std::f32::consts::PI + (j as f32 + 0.5) / lon_cells as f32 * std::f32::consts::TAU;
             // Unit-sphere Cartesian point.
             let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
-            let (best, second) = nearest_two(&plates, p);
+            let tectonic_p = tectonic_warp(p, seed);
+            let (best, second) = nearest_two(&plates, tectonic_p);
             // Boundary closeness: 1 at a perfect interior of a plate,
             // approaching 0 at a boundary. Used to weight uplift.
             let edge = 1.0 - (best.dist / second.dist.max(1e-5)).clamp(0.0, 1.0);
             let plate = &plates[best.idx];
 
-            // Continental / oceanic baseline from the nearest plates. Blend
-            // toward the second-nearest plate at boundaries so coastlines and
-            // lowlands are not hard Voronoi edges.
+            // Continental / oceanic baseline from a soft blend of nearby
+            // plates. Nearest-plate Voronoi elevation produces straight
+            // polygonal coastlines; inverse-distance blending keeps plate
+            // identity for uplift while continents read as organic masses.
             let other = &plates[second.idx];
-            let boundary_mix = 0.5 * (1.0 - edge);
-            let mut h = plate.mean_elev * (1.0 - boundary_mix) + other.mean_elev * boundary_mix;
+            let mut h = soft_plate_elevation(&plates, tectonic_p);
 
             // Boundary forcing: project the plate drift vectors at the
             // sample point and check if they converge (positive) or
@@ -474,10 +472,21 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
         }
     }
 
+    // Post-tectonic surface processes. Dry, airless worlds pick up
+    // cratered impact basins; wet worlds get a cheap fluvial pass that
+    // carves dendritic lowland valleys. These are deliberately coarse
+    // planetary-scale signals. The shader still adds high-frequency
+    // visual garnish, but the underlying atlas now carries more real
+    // geomorphology than FBM alone.
+    apply_impact_basins(&mut heightmap, lon_cells, lat_cells, input);
+
     // Sea level: pick the quantile of the heightmap that matches the
     // requested water fraction. Done after the heightmap pass so every
     // consumer agrees on where the coastline sits.
-    let sea_level = quantile_height(&heightmap, water_fraction);
+    let mut sea_level = quantile_height(&heightmap, water_fraction);
+
+    apply_fluvial_erosion_proxy(&mut heightmap, lon_cells, lat_cells, sea_level, input);
+    sea_level = quantile_height(&heightmap, water_fraction);
 
     // Second pass: moisture and temperature need elevation + sea_level
     // to compute properly, so they have to wait until the heightmap is
@@ -555,6 +564,116 @@ fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
     } else {
         sorted[target_below]
     }
+}
+
+fn apply_impact_basins(
+    heightmap: &mut [f32],
+    lon_cells: usize,
+    lat_cells: usize,
+    input: &BakeInput,
+) {
+    if input.water_fraction > 0.12 || input.vegetation_richness > 0.12 {
+        return;
+    }
+    let mut rng = Rng::new(input.seed ^ 0xC0_5A_57_E5);
+    let crater_count = 8 + (rng.f01() * 10.0) as usize;
+    let mut craters = Vec::with_capacity(crater_count);
+    for _ in 0..crater_count {
+        craters.push(Crater {
+            centre: sample_sphere(&mut rng),
+            radius: rng.range(0.012, 0.075),
+            depth: rng.range(0.035, 0.16),
+        });
+    }
+
+    for i in 0..lat_cells {
+        let lat = -std::f32::consts::FRAC_PI_2
+            + (i as f32 + 0.5) / lat_cells as f32 * std::f32::consts::PI;
+        let (sin_lat, cos_lat) = (lat.sin(), lat.cos());
+        for j in 0..lon_cells {
+            let lon =
+                -std::f32::consts::PI + (j as f32 + 0.5) / lon_cells as f32 * std::f32::consts::TAU;
+            let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
+            let mut delta = 0.0;
+            for crater in &craters {
+                let d = (1.0 - dot(crater.centre, p)).max(0.0);
+                if d > crater.radius {
+                    continue;
+                }
+                let t = (d / crater.radius).clamp(0.0, 1.0);
+                let bowl = (1.0 - t).powf(2.2);
+                let rim = smoothstep_range(0.72, 1.0, t) * (1.0 - smoothstep_range(0.96, 1.0, t));
+                delta -= crater.depth * bowl;
+                delta += crater.depth * 0.28 * rim;
+            }
+            let idx = i * lon_cells + j;
+            heightmap[idx] = (heightmap[idx] + delta).clamp(-1.0, 1.0);
+        }
+    }
+}
+
+fn apply_fluvial_erosion_proxy(
+    heightmap: &mut [f32],
+    lon_cells: usize,
+    lat_cells: usize,
+    sea_level: f32,
+    input: &BakeInput,
+) {
+    if input.water_fraction < 0.18 || input.vegetation_richness < 0.08 {
+        return;
+    }
+    for i in 0..lat_cells {
+        let lat = -std::f32::consts::FRAC_PI_2
+            + (i as f32 + 0.5) / lat_cells as f32 * std::f32::consts::PI;
+        let (sin_lat, cos_lat) = (lat.sin(), lat.cos());
+        let abs_lat = (lat.abs() / std::f32::consts::FRAC_PI_2).clamp(0.0, 1.0);
+        let rain = rainfall_band(abs_lat)
+            * input.water_fraction.clamp(0.0, 1.0)
+            * input.vegetation_richness.clamp(0.0, 1.0);
+        for j in 0..lon_cells {
+            let lon =
+                -std::f32::consts::PI + (j as f32 + 0.5) / lon_cells as f32 * std::f32::consts::TAU;
+            let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
+            let idx = i * lon_cells + j;
+            let above = heightmap[idx] - sea_level;
+            if above <= 0.0 {
+                continue;
+            }
+            let valley_large = ridged_value(p, input.seed ^ 0xA7_31_9D_55, 3.2);
+            let valley_branch = ridged_value(p, input.seed ^ 0x61_D2_4B_09, 9.5);
+            let valley = (valley_large * 0.70 + valley_branch * 0.30).clamp(0.0, 1.0);
+            let dendritic = smoothstep_range(0.72, 0.94, valley);
+            let lowland = 1.0 - smoothstep_range(0.32, 0.82, above);
+            let headwater = smoothstep_range(0.04, 0.22, above);
+            let carve = dendritic * lowland * headwater * rain * 0.050;
+            heightmap[idx] = (heightmap[idx] - carve).clamp(-1.0, 1.0);
+        }
+    }
+}
+
+fn rainfall_band(abs_lat_norm: f32) -> f32 {
+    let equator = (1.0 - abs_lat_norm).max(0.0).powf(1.2);
+    let mid = (1.0 - (abs_lat_norm - 0.56).abs() * 2.4).clamp(0.0, 1.0);
+    let subtropical_dry = 1.0 - (1.0 - (abs_lat_norm - 0.30).abs() * 5.0).clamp(0.0, 1.0) * 0.55;
+    ((equator * 0.55 + mid * 0.55 + 0.05) * subtropical_dry).clamp(0.0, 1.0)
+}
+
+fn ridged_value(p: [f32; 3], seed: u32, scale: f32) -> f32 {
+    1.0 - value_noise_lattice([p[0] * scale, p[1] * scale, p[2] * scale], seed).abs()
+}
+
+fn smoothstep_range(edge0: f32, edge1: f32, x: f32) -> f32 {
+    if (edge1 - edge0).abs() < f32::EPSILON {
+        return if x >= edge1 { 1.0 } else { 0.0 };
+    }
+    smoothstep(((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0))
+}
+
+#[derive(Clone, Copy)]
+struct Crater {
+    centre: [f32; 3],
+    radius: f32,
+    depth: f32,
 }
 
 /// Per-cell moisture in [0, 1]. Sums:
@@ -677,6 +796,16 @@ pub fn classify_biome(
         return BiomeId::Mountain;
     }
 
+    // Barren-world override: no vegetation infrastructure available. Keep this
+    // before cold/highland snow so Mars-like hydro-0 worlds don't become
+    // globally white just because their thin atmospheres make highlands cold.
+    if vegetation_richness < 0.05 {
+        if above > 0.60 {
+            return BiomeId::Mountain;
+        }
+        return BiomeId::Barren;
+    }
+
     // High elevation.
     if above > 0.55 {
         // Cold high peaks pick up snow caps even off-pole.
@@ -696,11 +825,6 @@ pub fn classify_biome(
     // Cold lowlands → tundra.
     if temp_k < FREEZE_K + 4.0 {
         return BiomeId::Tundra;
-    }
-
-    // Barren-world override: no vegetation infrastructure available.
-    if vegetation_richness < 0.05 {
-        return BiomeId::Barren;
     }
 
     // Dry hot → desert. Dry temperate → savanna.
@@ -784,6 +908,23 @@ fn sample_tangent(rng: &mut Rng, centre: [f32; 3]) -> [f32; 3] {
     [t[0] * speed, t[1] * speed, t[2] * speed]
 }
 
+fn tectonic_warp(p: [f32; 3], seed: u32) -> [f32; 3] {
+    let scale = 1.15;
+    let wx = value_noise_lattice(
+        [p[0] * scale + 11.7, p[1] * scale - 3.1, p[2] * scale + 5.4],
+        seed ^ 0xA9_24_71_D3,
+    );
+    let wy = value_noise_lattice(
+        [p[0] * scale - 19.2, p[1] * scale + 7.6, p[2] * scale - 2.8],
+        seed ^ 0x51_8D_2C_B7,
+    );
+    let wz = value_noise_lattice(
+        [p[0] * scale + 2.3, p[1] * scale + 17.9, p[2] * scale - 13.4],
+        seed ^ 0xD4_31_A6_0B,
+    );
+    normalise3([p[0] + wx * 0.18, p[1] + wy * 0.18, p[2] + wz * 0.18])
+}
+
 #[derive(Clone, Copy)]
 struct PlateHit {
     idx: usize,
@@ -812,6 +953,22 @@ fn nearest_two(plates: &[Plate], p: [f32; 3]) -> (PlateHit, PlateHit) {
     (best, second)
 }
 
+fn soft_plate_elevation(plates: &[Plate], p: [f32; 3]) -> f32 {
+    let mut weighted = 0.0;
+    let mut total = 0.0;
+    for plate in plates {
+        let d = (1.0 - dot(plate.centre, p)).max(0.0);
+        let w = 1.0 / (d + 0.035).powf(1.65);
+        weighted += plate.mean_elev * w;
+        total += w;
+    }
+    if total <= 0.0 {
+        0.0
+    } else {
+        weighted / total
+    }
+}
+
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
@@ -827,6 +984,14 @@ fn sub_norm(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
 
 fn neg(a: [f32; 3]) -> [f32; 3] {
     [-a[0], -a[1], -a[2]]
+}
+
+fn normalise3(mut v: [f32; 3]) -> [f32; 3] {
+    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-6);
+    v[0] /= n;
+    v[1] /= n;
+    v[2] /= n;
+    v
 }
 
 fn hash3(x: i32, y: i32, z: i32, seed: u32) -> f32 {
@@ -1081,7 +1246,7 @@ mod tests {
         let (mid_lon, mid_lat) = resolution_for_quality(0.75);
         let (hi_lon, hi_lat) = resolution_for_quality(1.0);
         assert!(lo_lon < mid_lon && lo_lat < mid_lat);
-        assert!(mid_lon < hi_lon && mid_lat < hi_lat);
+        assert_eq!((hi_lon, hi_lat), (mid_lon, mid_lat));
         // Always a 2:1 aspect to match equirectangular sampling.
         assert_eq!(lo_lon, lo_lat * 2);
         assert_eq!(mid_lon, mid_lat * 2);
@@ -1098,8 +1263,8 @@ mod tests {
         assert_eq!(low.biome_id.len(), PREBAKE_LOW_LON * PREBAKE_LOW_LAT);
         // High-tier bake should produce the large atlas.
         let high = generate_with(BakeInput::earthlike(2, 0.6).with_quality(1.0));
-        assert_eq!(high.lon_cells, PREBAKE_HIGH_LON as u32);
-        assert_eq!(high.lat_cells, PREBAKE_HIGH_LAT as u32);
+        assert_eq!(high.lon_cells, PREBAKE_LON as u32);
+        assert_eq!(high.lat_cells, PREBAKE_LAT as u32);
     }
 
     #[test]
@@ -1129,5 +1294,58 @@ mod tests {
         assert_eq!(warm.heightmap, cold.heightmap);
         // Biome ids should differ — cold world has wider ice + tundra.
         assert_ne!(warm.biome_id, cold.biome_id);
+    }
+
+    #[test]
+    fn wet_world_surface_processes_keep_requested_ocean_fraction() {
+        let bake = generate_with(BakeInput {
+            seed: 777,
+            water_fraction: 0.68,
+            ice_latitude: 0.82,
+            mean_temp_k: 288.0,
+            vegetation_richness: 0.75,
+            lon_cells: 128,
+            lat_cells: 64,
+        });
+        let actual = bake.ocean_fraction(bake.sea_level);
+        assert!(
+            (actual - 0.68).abs() < 0.02,
+            "surface-process pass should preserve water quantile, got {actual}"
+        );
+    }
+
+    #[test]
+    fn dry_barren_worlds_gain_distinct_impact_basin_relief() {
+        let dry = generate_with(BakeInput {
+            seed: 1234,
+            water_fraction: 0.04,
+            ice_latitude: 0.95,
+            mean_temp_k: 220.0,
+            vegetation_richness: 0.0,
+            lon_cells: 128,
+            lat_cells: 64,
+        });
+        let less_barren = generate_with(BakeInput {
+            seed: 1234,
+            water_fraction: 0.04,
+            ice_latitude: 0.95,
+            mean_temp_k: 220.0,
+            vegetation_richness: 0.4,
+            lon_cells: 128,
+            lat_cells: 64,
+        });
+        assert_ne!(
+            dry.heightmap, less_barren.heightmap,
+            "impact basins should be part of the physical surface, not only shader tint"
+        );
+        let frosty = dry
+            .biome_id
+            .iter()
+            .filter(|id| matches!(BiomeId::from_u8(**id), BiomeId::Snow | BiomeId::Ice))
+            .count();
+        assert!(
+            frosty as f32 / (dry.biome_id.len() as f32) < 0.02,
+            "dry barren worlds should not turn globally snowy"
+        );
     }
 }

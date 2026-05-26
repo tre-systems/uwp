@@ -138,6 +138,11 @@ export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
   const atmVeg = atmCode >= 4 && atmCode <= 9 ? 1.0 : atmCode === 3 || atmCode === 13 ? 0.4 : 0
   const hydroVeg = hydroCode >= 3 && hydroCode <= 8 ? 1.0 : hydroCode >= 2 ? 0.6 : 0.0
   const vegetation_richness = atmVeg * hydroVeg
+  const ice_latitude =
+    hydroCode <= 1 && atmCode <= 3 ? 0.94 :
+    hydroCode <= 2 ? 0.90 :
+    hydroCode >= 9 ? 0.78 :
+    0.82
   const habitableAtm = atmCode >= 2 && atmCode <= 9 && atmCode !== 11 && atmCode !== 12
   const tech_factor = clamp((tech - 2) / 5, 0, 1)
   const population_intensity = habitableAtm
@@ -157,6 +162,7 @@ export function paramsPatchFromUwpDigits(uwp: UwpDigits): Partial<Params> {
     atmosphere_density: atmo.density,
     atmosphere_color: atmo.color,
     cloud_coverage: atmo.cloud_coverage,
+    ice_latitude,
     crater_density,
     vegetation_richness,
     population_intensity,

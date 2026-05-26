@@ -13,7 +13,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::climate::ClimateSummary;
-use super::surface_prebake::{self, BakeInput, BiomeId, PreBake, PREBAKE_LAT, PREBAKE_LON};
+use super::surface_atlas::{
+    self, project_biome_to_terrain, SurfaceAtlas, SurfaceCellId, SURFACE_ATLAS_SUBDIVISIONS,
+};
+use super::surface_prebake::{self, BakeInput, PreBake, PREBAKE_LAT, PREBAKE_LON};
 use super::system::{BodyType, Planet};
 
 pub const SURFACE_COLS: u8 = 32;
@@ -42,6 +45,9 @@ pub struct SurfaceHexCoord {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct SurfaceHex {
     pub coord: SurfaceHexCoord,
+    /// Stable atlas cell id when this hex came from the icosahedral
+    /// surface atlas. Legacy 32 x 16 callers can leave it unset.
+    pub cell_id: Option<SurfaceCellId>,
     pub terrain: Terrain,
     /// Latitude in degrees, -90 (south) to +90 (north), at the hex centre.
     pub latitude_deg: f32,
@@ -57,6 +63,7 @@ pub struct SurfaceHex {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settlement {
     pub coord: SurfaceHexCoord,
+    pub cell_id: Option<SurfaceCellId>,
     /// 0 = village, 1 = town, 2 = city, 3 = metropolis.
     pub tier: u8,
 }
@@ -67,8 +74,12 @@ pub struct SurfaceMap {
     /// Ocean fraction across the grid (matches climate.liquid_water_fraction
     /// up to rounding).
     pub ocean_fraction: f32,
+    /// Canonical visible atlas used by the Surface view. The older `hexes`
+    /// field remains as a coarse compatibility grid for panel summaries.
+    pub atlas: SurfaceAtlas,
     pub hexes: Vec<SurfaceHex>,
     pub starport: Option<SurfaceHexCoord>,
+    pub starport_cell_id: Option<SurfaceCellId>,
     pub cities: Vec<Settlement>,
 }
 
@@ -117,31 +128,47 @@ fn elevation_from_prebake(prebake: &PreBake, col: u8, row: u8) -> f32 {
 }
 
 pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> SurfaceMap {
+    let water = climate.liquid_water_fraction.clamp(0.0, 1.0);
+    let ice = climate.ice_fraction.clamp(0.0, 1.0);
+    let ice_lat = (1.0 - ice).clamp(0.05, 0.95);
+    let veg_rich =
+        (climate.habitability * 0.85 + climate.liquid_water_fraction * 0.15).clamp(0.0, 1.0);
+    generate_with_bake_input(
+        planet,
+        climate,
+        seed,
+        BakeInput {
+            seed,
+            water_fraction: water,
+            ice_latitude: ice_lat,
+            mean_temp_k: climate.mean_surface_temp_k,
+            vegetation_richness: veg_rich,
+            lon_cells: PREBAKE_LON as u32,
+            lat_cells: PREBAKE_LAT as u32,
+        },
+    )
+}
+
+pub fn generate_with_bake_input(
+    planet: &Planet,
+    climate: &ClimateSummary,
+    seed: u32,
+    bake_input: BakeInput,
+) -> SurfaceMap {
     let mut hexes = Vec::with_capacity((SURFACE_COLS as usize) * (SURFACE_ROWS as usize));
     let mut ocean_cells = 0usize;
     let mut total_cells = 0usize;
 
-    let water = climate.liquid_water_fraction.clamp(0.0, 1.0);
-    let ice = climate.ice_fraction.clamp(0.0, 1.0);
-    let mean_t = climate.mean_surface_temp_k;
+    let water = bake_input.water_fraction.clamp(0.0, 1.0);
+    let mean_t = bake_input.mean_temp_k;
 
     // Map climate into the BakeInput shape the pre-bake's biome
     // classifier consumes. The pre-bake is then the single source of
     // truth for biome at every cell — the SVG background, the icosa
     // hex layer, and now this Rust 32×16 grid all read the same atlas
     // so terrain labels and painted colours can't disagree.
-    let ice_lat = (1.0 - ice).clamp(0.05, 0.95);
-    let veg_rich =
-        (climate.habitability * 0.85 + climate.liquid_water_fraction * 0.15).clamp(0.0, 1.0);
-    let prebake = surface_prebake::generate_with(BakeInput {
-        seed,
-        water_fraction: water,
-        ice_latitude: ice_lat,
-        mean_temp_k: mean_t,
-        vegetation_richness: veg_rich,
-        lon_cells: PREBAKE_LON as u32,
-        lat_cells: PREBAKE_LAT as u32,
-    });
+    let prebake = surface_prebake::generate_with(bake_input);
+    let atlas = surface_atlas::generate(&prebake, planet, water, SURFACE_ATLAS_SUBDIVISIONS);
     // The pre-bake's sea_level field is what the WGSL shader + JS
     // background also use, but the biome classifier already baked it
     // into the cell colours, so we don't reference it directly here.
@@ -173,6 +200,8 @@ pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> Surface
 
             hexes.push(SurfaceHex {
                 coord: SurfaceHexCoord { col, row },
+                cell_id: nearest_atlas_cell_for_coord(&atlas, SurfaceHexCoord { col, row })
+                    .map(|cell| cell.id),
                 terrain,
                 latitude_deg: lat_deg,
                 longitude_deg: lon_deg,
@@ -183,10 +212,12 @@ pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> Surface
     }
 
     let ocean_fraction = ocean_cells as f32 / total_cells.max(1) as f32;
-    let starport = pick_starport(&hexes, planet, &mut Rng::new(seed ^ 0x5707_5704));
+    let starport_cell = pick_starport_cell(&atlas, planet, &mut Rng::new(seed ^ 0x5707_5704));
+    let starport = starport_cell.map(|cell| cell.coord);
+    let starport_cell_id = starport_cell.map(|cell| cell.id);
     let cities = pick_cities(
-        &hexes,
-        starport,
+        &atlas,
+        starport_cell_id,
         population_settlement_count(planet, climate),
         &mut Rng::new(seed ^ 0x0C17_71E5),
     );
@@ -194,48 +225,28 @@ pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> Surface
     SurfaceMap {
         seed,
         ocean_fraction,
+        atlas,
         hexes,
         starport,
+        starport_cell_id,
         cities,
     }
 }
 
-/// Map the rich BiomeId set from the pre-bake to the legacy Terrain
-/// enum the surface-map JSON ships in. A handful of overrides catch
-/// edge cases the continent-scale atlas can't fully express (Inferno
-/// body class → volcanic regardless of biome; bone-dry worlds collapse
-/// shoreline → plain).
-fn project_biome_to_terrain(biome: BiomeId, body: BodyType, water: f32) -> Terrain {
-    if matches!(body, BodyType::Inferno) {
-        // Inferno worlds: mountains and volcanic patches override any
-        // wetter biome the classifier might have picked.
-        return match biome {
-            BiomeId::DeepOcean | BiomeId::ShallowOcean => Terrain::Volcanic,
-            BiomeId::Mountain | BiomeId::AlpineRock => Terrain::Mountain,
-            _ => Terrain::Volcanic,
-        };
-    }
-    match biome {
-        BiomeId::DeepOcean | BiomeId::ShallowOcean => Terrain::Ocean,
-        BiomeId::Shore => {
-            if water < 0.05 {
-                Terrain::Plain
-            } else {
-                Terrain::Shoreline
-            }
-        }
-        BiomeId::Plain | BiomeId::Grassland | BiomeId::Savanna => Terrain::Plain,
-        BiomeId::Forest => Terrain::Forest,
-        BiomeId::Hills => Terrain::Hill,
-        BiomeId::Mountain | BiomeId::AlpineRock => Terrain::Mountain,
-        BiomeId::Desert | BiomeId::Barren => Terrain::Desert,
-        BiomeId::Tundra => Terrain::Tundra,
-        BiomeId::Snow | BiomeId::Ice => Terrain::Ice,
-        BiomeId::Volcanic => Terrain::Volcanic,
+pub fn effective_surface_mean_temp_k(base_mean_temp_k: f32, atmosphere_density: f32) -> f32 {
+    let warmth_from_atm = atmosphere_density * 30.0;
+    if base_mean_temp_k.is_finite() && base_mean_temp_k > 0.0 {
+        base_mean_temp_k + warmth_from_atm * 0.3
+    } else {
+        270.0 + warmth_from_atm
     }
 }
 
-fn pick_starport(hexes: &[SurfaceHex], planet: &Planet, rng: &mut Rng) -> Option<SurfaceHexCoord> {
+fn pick_starport_cell<'a>(
+    atlas: &'a SurfaceAtlas,
+    planet: &Planet,
+    rng: &mut Rng,
+) -> Option<&'a surface_atlas::SurfaceAtlasCell> {
     // Habitable, low-elevation, non-ocean cells with a coastal preference.
     if !matches!(
         planet.body_type,
@@ -243,10 +254,10 @@ fn pick_starport(hexes: &[SurfaceHex], planet: &Planet, rng: &mut Rng) -> Option
     ) {
         return None;
     }
-    let mut best: Option<(f32, SurfaceHexCoord)> = None;
-    for hex in hexes {
+    let mut best: Option<(f32, &surface_atlas::SurfaceAtlasCell)> = None;
+    for cell in &atlas.cells {
         let mut score = 0.0_f32;
-        match hex.terrain {
+        match cell.terrain {
             Terrain::Plain => score += 1.0,
             Terrain::Shoreline => score += 1.4,
             Terrain::Forest => score += 0.7,
@@ -254,14 +265,15 @@ fn pick_starport(hexes: &[SurfaceHex], planet: &Planet, rng: &mut Rng) -> Option
             _ => continue,
         }
         // Prefer mid-latitudes (most habitable).
-        score += (1.0 - (hex.latitude_deg.abs() / 60.0).min(1.0)) * 0.6;
+        score += (1.0 - (cell.latitude_deg.abs() / 60.0).min(1.0)) * 0.6;
+        score += (1.0 - cell.slope.min(1.0)) * 0.25;
         // Tiny jitter so swapping seeds picks different cells when ties.
         score += rng.f01() * 0.15;
         if best.is_none_or(|(b, _)| score > b) {
-            best = Some((score, hex.coord));
+            best = Some((score, cell));
         }
     }
-    best.map(|(_, c)| c)
+    best.map(|(_, cell)| cell)
 }
 
 fn population_settlement_count(planet: &Planet, climate: &ClimateSummary) -> usize {
@@ -281,8 +293,8 @@ fn population_settlement_count(planet: &Planet, climate: &ClimateSummary) -> usi
 }
 
 fn pick_cities(
-    hexes: &[SurfaceHex],
-    starport: Option<SurfaceHexCoord>,
+    atlas: &SurfaceAtlas,
+    starport: Option<SurfaceCellId>,
     target: usize,
     rng: &mut Rng,
 ) -> Vec<Settlement> {
@@ -291,7 +303,8 @@ fn pick_cities(
     }
     // Score each habitable cell; sample without replacement weighted by
     // score and enforce a minimum hex separation so cities don't clump.
-    let mut scored: Vec<(f32, &SurfaceHex)> = hexes
+    let mut scored: Vec<(f32, &surface_atlas::SurfaceAtlasCell)> = atlas
+        .cells
         .iter()
         .filter_map(|h| {
             let base = match h.terrain {
@@ -314,7 +327,7 @@ fn pick_cities(
             break;
         }
         if let Some(sp) = starport {
-            if sp == hex.coord {
+            if sp == hex.id {
                 continue;
             }
         }
@@ -337,15 +350,52 @@ fn pick_cities(
         };
         placed.push(Settlement {
             coord: hex.coord,
+            cell_id: Some(hex.id),
             tier,
         });
     }
     placed
 }
 
+fn nearest_atlas_cell_for_coord(
+    atlas: &SurfaceAtlas,
+    coord: SurfaceHexCoord,
+) -> Option<&surface_atlas::SurfaceAtlasCell> {
+    let lat_deg = -90.0 + (coord.row as f32 + 0.5) * 180.0 / SURFACE_ROWS as f32;
+    let lon_deg = -180.0 + (coord.col as f32 + 0.5) * 360.0 / SURFACE_COLS as f32;
+    nearest_atlas_cell_by_lat_lon(atlas, lat_deg, lon_deg)
+}
+
+fn nearest_atlas_cell_by_lat_lon(
+    atlas: &SurfaceAtlas,
+    lat_deg: f32,
+    lon_deg: f32,
+) -> Option<&surface_atlas::SurfaceAtlasCell> {
+    atlas.cells.iter().min_by(|a, b| {
+        let da = spherical_distance_score(a.latitude_deg, a.longitude_deg, lat_deg, lon_deg);
+        let db = spherical_distance_score(b.latitude_deg, b.longitude_deg, lat_deg, lon_deg);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })
+}
+
+fn spherical_distance_score(a_lat: f32, a_lon: f32, b_lat: f32, b_lon: f32) -> f32 {
+    let a_lat = a_lat.to_radians();
+    let a_lon = a_lon.to_radians();
+    let b_lat = b_lat.to_radians();
+    let b_lon = b_lon.to_radians();
+    let ax = a_lat.cos() * a_lon.cos();
+    let ay = a_lat.sin();
+    let az = a_lat.cos() * a_lon.sin();
+    let bx = b_lat.cos() * b_lon.cos();
+    let by = b_lat.sin();
+    let bz = b_lat.cos() * b_lon.sin();
+    1.0 - (ax * bx + ay * by + az * bz)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::surface_prebake::BiomeId;
     use crate::system;
 
     fn earthlike_planet() -> (Planet, ClimateSummary) {

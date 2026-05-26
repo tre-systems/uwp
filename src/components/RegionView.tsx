@@ -69,11 +69,14 @@ export function RegionView() {
     canvas.style.height = `${FRAME_HEIGHT}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    const starport = map.starport && map.starport.col === hex.col && map.starport.row === hex.row
+    const selectedCellId = surfaceHex.cell_id ?? null
+    const starport = surfaceCellMatches(map.starport_cell_id ?? null, selectedCellId) ||
+      (!selectedCellId && map.starport && map.starport.col === hex.col && map.starport.row === hex.row)
       ? { name: 'Starport', x: 0.5, y: 0.55 }
       : null
     const settlements = map.cities
-      .filter((s) => s.coord.col === hex.col && s.coord.row === hex.row)
+      .filter((s) => surfaceCellMatches(s.cell_id ?? null, selectedCellId) ||
+        (!selectedCellId && s.coord.col === hex.col && s.coord.row === hex.row))
       .map((s, i) => ({
         // We don't have settlement coords within a hex from the Rust
         // model, so scatter cities deterministically inside the frame.
@@ -251,6 +254,18 @@ function mix32(a: number, b: number): number {
   h = ((h ^ (h >>> 16)) * 0x85ebca6b) >>> 0
   h = ((h ^ (h >>> 13)) * 0xc2b2ae35) >>> 0
   return h ^ (h >>> 16)
+}
+
+function surfaceCellMatches(
+  a: import('../domain/surfaceMap').SurfaceCellId | null,
+  b: import('../domain/surfaceMap').SurfaceCellId | null,
+): boolean {
+  return !!a && !!b &&
+    a.face === b.face &&
+    a.i === b.i &&
+    a.j === b.j &&
+    a.up === b.up &&
+    a.resolution === b.resolution
 }
 
 function climateBandLabel(latDeg: number, tempK: number): string {

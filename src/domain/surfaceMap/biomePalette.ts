@@ -90,7 +90,7 @@ export function biomeColorLinear(id: number, base: PaletteBaseColors): Rgb01 {
     case 14:
       return [0.1, 0.07, 0.05] // Volcanic
     default:
-      return scale(base.mountain, 0.85) // Barren
+      return mix3(base.mountain, base.sand, 0.55) // Barren
   }
 }
 

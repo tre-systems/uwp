@@ -481,7 +481,7 @@ src/components/
 
 ### Phases
 
-Phases 1-6 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integration). The world map and globe now share the Rust pre-bake for coastlines and major elevation. Region drill-downs opened from the icosahedral map now carry the clicked visual cell's terrain, latitude, temperature, and elevation. The remaining mismatch is at the atlas-cell level: the visible icosahedral cells are still TypeScript-generated rather than Rust-owned stable ids, and the region view still paints a local procedural landscape instead of sampling an atlas patch.
+Phases 1-7 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integration, then Rust-owned atlas cells). The world map and globe now share the Rust pre-bake for coastlines and major elevation. The visible icosahedral cells are serialized from Rust as stable `SurfaceCellId`s with exact centres, boundaries, climate/terrain summaries, and settlement ids. Region drill-downs opened from the icosahedral map now carry the clicked atlas cell's terrain, latitude, temperature, elevation, and id. The remaining mismatch is region detail: it still paints a local procedural landscape instead of sampling an atlas patch and neighbouring cells.
 
 1. **Rust surface-map generation.** *Shipped → `6785193`.* `domain::surface_map::generate` walks a 32×16 hex grid, picks sea level by quantile of a three-octave value noise so ocean fraction tracks `climate.liquid_water_fraction`, classifies terrain (Ocean / Shoreline / Plain / Forest / Hill / Mountain / Desert / Tundra / Ice / Volcanic) from elevation + latitude + climate + body-type. Four unit tests pin determinism, grid extent, ocean-fraction tracking, and polar-ice growth on a synthesised cold world.
 
@@ -497,7 +497,9 @@ Phases 1-6 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integ
 
 7. **Globe ↔ surface bridge.** *Shipped → `e3eb716`.* `Camera::point_at` aims the detail-view camera at a (lat, lon); `Renderer::point_at_surface` applies the spin to `rotation_t` and pauses auto-rotate so the target stays still. Wired through `pointAtSurface` and `selectAndFocusSurfaceHex` on `appState`; clicking a hex in the SVG focuses the globe immediately, and the inspector grows a "Show on globe" button that aims + switches to Main World in one click.
 
-8. **Optional WebGPU port.** *Conditional — deferred.* Same shape as subsector phase 8: only worth doing if the SVG version hits a perf or visual-consistency limit.
+8. **Rust-owned atlas-cell identities.** *Shipped in the current surface realism pass.* `domain::surface_atlas` owns the visible icosahedral cells, stable ids, flat boundaries, water depth, slope, moisture, temperature, biome id, and projected terrain. `SurfaceMap` keeps the older 32 x 16 cells only as compatibility metadata while starports, cities, selection, and Region view receive atlas ids.
+
+9. **Optional WebGPU port.** *Conditional — deferred.* Same shape as subsector phase 8: only worth doing if the SVG version hits a perf or visual-consistency limit.
 
 ### Phase 1 Acceptance Criteria
 

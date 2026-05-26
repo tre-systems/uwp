@@ -16,12 +16,18 @@ import {
   netToSphere,
   TRI_SIDE,
 } from '../domain/icosahedron'
-import type { Terrain } from '../domain/surfaceMap'
+import type { SurfaceCellId, SurfaceHexCoord, Terrain } from '../domain/surfaceMap'
 
 export interface IcosaHex {
+  /** Stable Rust atlas cell id when this came from SurfaceMap.atlas. */
+  cellId?: SurfaceCellId
+  /** Legacy compatibility coordinate in the 32 x 16 world-map grid. */
+  coord?: SurfaceHexCoord
   /** Flat-net pixel position of this hex cell's centre. */
   x: number
   y: number
+  /** Optional precomputed pointy-top hex boundary from Rust. */
+  flatBoundary?: Array<[number, number]>
   /** Sphere position in degrees, for tooltips / region drill-down. */
   latDeg: number
   lonDeg: number

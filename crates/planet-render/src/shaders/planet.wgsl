@@ -338,7 +338,7 @@ fn biome_color(id: u32) -> vec3<f32> {
     if (id == 12u) { return mix(u.snow_color.rgb * 0.85, u.mountain_color.rgb * 0.70, 0.40); } // Tundra
     if (id == 13u) { return u.snow_color.rgb * 0.94; }                                   // Ice
     if (id == 14u) { return vec3<f32>(0.10, 0.07, 0.05); }                               // Volcanic
-    return u.mountain_color.rgb * 0.85;                                                  // Barren
+    return mix(u.mountain_color.rgb, u.sand_color.rgb, 0.55);                            // Barren
 }
 
 fn biome_is_ocean(id: u32) -> bool { return id == 0u || id == 1u; }
@@ -407,10 +407,13 @@ fn surface_dir_from_screen(ndc: vec2<f32>, fallback: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // Sample the procedural surface from the actual view ray instead of from
-    // interpolated mesh attributes. That keeps continent scale stable across
-    // the globe while the mesh continues to provide depth and terrain relief.
-    let dir = surface_dir_from_screen(in.ndc, in.sphere_dir);
+    // Sample from the rendered mesh direction. A previous screen-ray
+    // reconstruction made the colour field disagree with the displaced
+    // surface on dry high-relief worlds, exposing large face-shaped bands.
+    // The cubesphere is already welded and dense enough for per-fragment
+    // interpolation to stay smooth while keeping terrain, lighting, and mesh
+    // displacement in the same coordinate frame.
+    let dir = normalize(in.sphere_dir);
     let h = terrain_field(dir);
     let sea_h = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
@@ -603,9 +606,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // High-elevation snow caps (mountain peaks) — gated on
         // above_amt with per-area jitter so snow line isn't uniform.
         let snow_jitter = fbm(dir * 4.0 + u.seed_block.xyz + vec3<f32>(303.0, 71.0, -19.0), 2) * 0.18;
-        let snow_alt = smoothstep(0.62 + snow_jitter, 0.86 + snow_jitter, above_amt_n);
         let dry_world = step(u.planet_params.x, 0.15);
-        let snow_amt = clamp(snow_alt + snow_polar * (1.0 - dry_world * 0.85), 0.0, 1.0);
+        let snow_alt = smoothstep(0.62 + snow_jitter, 0.86 + snow_jitter, above_amt_n) * (1.0 - dry_world);
+        let snow_amt = clamp(snow_alt + snow_polar * (1.0 - dry_world), 0.0, 1.0);
         let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
         let crack_n = ridged_fbm(dir * 22.0 + u.seed_block.xyz + vec3<f32>(41.0, 113.0, -57.0), 2);
         let ice_cracks = smoothstep(0.86, 0.96, crack_n);
@@ -618,11 +621,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // cells meeting at a texel boundary. Bright turquoise reef
         // tint where depth is sub-shelf.
         let depth = sea_h - h;
-        let turquoise = mix(u.ocean_color.rgb * 1.8, vec3<f32>(0.35, 0.78, 0.78), 0.55);
-        let shallow = u.ocean_color.rgb * 1.55;
-        let deep = u.ocean_color.rgb * 0.34;
-        var water = mix(turquoise, shallow, smoothstep(0.0, 0.06, depth));
-        water = mix(water, deep, smoothstep(0.10, 0.55, depth));
+        let turquoise = mix(u.ocean_color.rgb * 1.55, vec3<f32>(0.35, 0.78, 0.78), 0.35);
+        let open_ocean = u.ocean_color.rgb * 0.72;
+        let deep = u.ocean_color.rgb * 0.52;
+        var water = mix(turquoise, open_ocean, smoothstep(0.0, 0.10, depth));
+        water = mix(water, deep, smoothstep(0.35, 0.90, depth) * 0.35);
         surface = water;
         // Polar pack-ice — continuous latitude blend. No biome flag.
         let ice_lat = u.seed_block.w;
@@ -658,7 +661,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let banding    = u.world_features.w;
     let band_x     = 1.0 - sqrt(banding) * 0.95;
     let band_warp  = vec3<f32>(band_x, 1.0, band_x);
-    let coverage   = u.misc.z;
+    let coverage   = u.misc.z * smoothstep(0.05, 0.25, u.planet_params.x);
     let time       = u.misc.y;
 
     // Sun direction in local (planet-spinning) frame — used by both the

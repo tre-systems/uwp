@@ -196,7 +196,10 @@ export class RendererClient {
     const mainWorld = system && system.main_world >= 0
       ? system.planets[system.main_world] ?? null
       : null
-    const meanTempK = mainWorld?.climate?.mean_surface_temp_k ?? 288
+    const meanTempK = effectiveSurfaceMeanTempK(
+      mainWorld?.climate?.mean_surface_temp_k ?? 288,
+      params.value.atmosphere_density,
+    )
     const cached = this.surfacePrebakeCache
     if (
       cached &&
@@ -562,4 +565,11 @@ function quantileHeight(heightmap: Float32Array, q: number): number {
   sorted.sort((a, b) => a - b)
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(q * sorted.length)))
   return sorted[idx] ?? 0
+}
+
+function effectiveSurfaceMeanTempK(baseMeanTempK: number, atmosphereDensity: number): number {
+  const warmthFromAtm = atmosphereDensity * 30
+  return Number.isFinite(baseMeanTempK) && baseMeanTempK > 0
+    ? baseMeanTempK + warmthFromAtm * 0.3
+    : 270 + warmthFromAtm
 }

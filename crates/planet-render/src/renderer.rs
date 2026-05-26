@@ -213,11 +213,16 @@ impl Renderer {
         if idx < 0 {
             return 288.0;
         }
-        self.system
+        let base = self
+            .system
             .planets
             .get(idx as usize)
             .map(|p| p.climate.mean_surface_temp_k)
-            .unwrap_or(288.0)
+            .unwrap_or(288.0);
+        crate::domain::surface_map::effective_surface_mean_temp_k(
+            base,
+            self.params.atmosphere_density,
+        )
     }
 
     fn rebuild_terrain_atlas(&mut self) {

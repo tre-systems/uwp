@@ -2,6 +2,7 @@ import {
   currentSurfaceMap,
   openRegionView,
   pointAtSurface,
+  selectedSurfaceCell,
   selectedSurfaceHex,
   setSelectedSurfaceHex,
   setViewMode,
@@ -23,6 +24,7 @@ interface SurfaceMapEditorProps {
 export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps) {
   const map = currentSurfaceMap.value
   const sel = selectedSurfaceHex.value
+  const exactSelection = selectedSurfaceCell.value
   if (!map) {
     return (
       <section>
@@ -31,9 +33,16 @@ export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps)
       </section>
     )
   }
-  const selected = sel
+  const selected = exactSelection ?? (sel
     ? map.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
-    : null
+    : null)
+  const selectedCellKey = selected?.cell_id ? cellIdKey(selected.cell_id) : null
+  const starportSelected = selectedCellKey && map.starport_cell_id
+    ? selectedCellKey === cellIdKey(map.starport_cell_id)
+    : !!selected && !!map.starport && map.starport.col === selected.coord.col && map.starport.row === selected.coord.row
+  const gridLabel = map.atlas
+    ? `${map.atlas.cells.length.toLocaleString()} atlas cells`
+    : '32 x 16 hexes'
   const cityCount = map.cities.length
   const starportLabel = map.starport ? hexCoordLabel(map.starport) : '—'
   return (
@@ -43,7 +52,7 @@ export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps)
         <dl class="sys-meta">
           <div class="sys-meta-row">
             <dt>Grid</dt>
-            <dd>32 × 16 hexes</dd>
+            <dd>{gridLabel}</dd>
           </div>
           <div class="sys-meta-row">
             <dt>Ocean</dt>
@@ -65,7 +74,7 @@ export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps)
         )}
       </section>
 
-      {selected && <SurfaceHexDetail hex={selected} starportSelected={!!map.starport && map.starport.col === selected.coord.col && map.starport.row === selected.coord.row} />}
+      {selected && <SurfaceHexDetail hex={selected} starportSelected={!!starportSelected} />}
     </>
   )
 }
@@ -107,9 +116,13 @@ function SurfaceHexDetail({ hex, starportSelected }: { hex: SurfaceHex; starport
         )}
       </dl>
       <div class="sys-actions">
-        <button onClick={() => openRegionView(hex.coord)}>Open region view</button>
+        <button onClick={() => openRegionView(hex.coord, hex)}>Open region view</button>
         <button class="ghost" onClick={showOnGlobe}>Show on globe</button>
       </div>
     </section>
   )
+}
+
+function cellIdKey(id: NonNullable<SurfaceHex['cell_id']>): string {
+  return `${id.resolution}:${id.face}:${id.i}:${id.j}:${id.up ? 1 : 0}`
 }

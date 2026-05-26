@@ -125,12 +125,10 @@ impl Planet {
         // Mix the climate mean toward the UWP's implied temperature so the
         // surface bands track when the user pulls the planet hot or cold.
         // Modest weight - the model is still mostly stellar-flux driven.
-        let warmth_from_atm = params.atmosphere_density * 30.0;
-        if climate.mean_surface_temp_k.is_finite() && climate.mean_surface_temp_k > 0.0 {
-            climate.mean_surface_temp_k += warmth_from_atm * 0.3;
-        } else {
-            climate.mean_surface_temp_k = 270.0 + warmth_from_atm;
-        }
+        climate.mean_surface_temp_k = surface_map::effective_surface_mean_temp_k(
+            climate.mean_surface_temp_k,
+            params.atmosphere_density,
+        );
         // Surface-map settlement count keys off habitability; ensure a
         // populated UWP shows cities even when the climate fallback gave
         // a zero score. population_intensity comes from the UWP pop digit
@@ -141,7 +139,20 @@ impl Planet {
                 .habitability
                 .max((params.population_intensity * 0.85).clamp(0.0, 1.0));
         }
-        let map = surface_map::generate(planet, &climate, params.seed);
+        let map = surface_map::generate_with_bake_input(
+            planet,
+            &climate,
+            params.seed,
+            surface_prebake::BakeInput {
+                seed: params.seed,
+                water_fraction: water,
+                ice_latitude: params.ice_latitude,
+                mean_temp_k: climate.mean_surface_temp_k,
+                vegetation_richness: params.vegetation_richness,
+                lon_cells: surface_prebake::PREBAKE_LON as u32,
+                lat_cells: surface_prebake::PREBAKE_LAT as u32,
+            },
+        );
         serde_wasm_bindgen::to_value(&map).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }

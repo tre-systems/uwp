@@ -252,19 +252,23 @@ Done when:
 
 Make surface maps useful as play artifacts, not just inspection widgets.
 
-Status: in progress. The visible icosahedral net now uses a denser
-12-subdivision pointy-top hex lattice, and its pre-bake backdrop renders to an
-adaptive high-resolution raster (up to 2560 px desktop / 2048 px touch) before
-being fitted into the SVG.
+Status: in progress. The visible icosahedral net now uses Rust-owned
+12-subdivision atlas cells with stable `SurfaceCellId`s, exact lat/lon
+centres, flat boundaries, terrain, biome, moisture, temperature, slope, and
+water-depth summaries. Starports and cities store atlas ids and snap to atlas
+cell centres. The pre-bake backdrop remains an adaptive high-resolution raster
+behind the SVG cells.
 
 - Replace rounded 32 x 16 surface coordinates with stable surface-cell ids from
-  the Rust atlas.
+  the Rust atlas. *(v1 shipped; 32 x 16 remains as compatibility metadata.)*
 - Add climate/biome overlays: temperature bands, precipitation when available,
   terrain, habitability, settlement density, and travel hazards.
 - Add surface-map export that captures the visible SVG/map, not the hidden
   WebGPU canvas.
 - Add region-level generation for selected hexes: local terrain, settlements,
-  hazards, and adventure hooks.
+  hazards, and adventure hooks. The selected atlas id now reaches Region view;
+  the remaining work is to sample neighbouring atlas cells instead of painting
+  a standalone FBM patch.
 
 Done when:
 
