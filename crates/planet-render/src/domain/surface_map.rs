@@ -382,6 +382,83 @@ mod tests {
     }
 
     #[test]
+    fn biome_to_terrain_projection_is_stable() {
+        // Pin the BiomeId → Terrain mapping so future tuning doesn't
+        // silently change inspector labels or settlement scoring on
+        // existing worlds. Group expected pairings explicitly.
+        let cases = [
+            (
+                BiomeId::DeepOcean,
+                BodyType::Terrestrial,
+                0.6,
+                Terrain::Ocean,
+            ),
+            (
+                BiomeId::ShallowOcean,
+                BodyType::Terrestrial,
+                0.6,
+                Terrain::Ocean,
+            ),
+            (
+                BiomeId::Shore,
+                BodyType::Terrestrial,
+                0.6,
+                Terrain::Shoreline,
+            ),
+            (BiomeId::Shore, BodyType::Rocky, 0.02, Terrain::Plain), // bone-dry shore→plain
+            (BiomeId::Plain, BodyType::Terrestrial, 0.6, Terrain::Plain),
+            (
+                BiomeId::Grassland,
+                BodyType::Terrestrial,
+                0.6,
+                Terrain::Plain,
+            ),
+            (BiomeId::Forest, BodyType::Terrestrial, 0.6, Terrain::Forest),
+            (BiomeId::Savanna, BodyType::Terrestrial, 0.6, Terrain::Plain),
+            (BiomeId::Hills, BodyType::Terrestrial, 0.6, Terrain::Hill),
+            (
+                BiomeId::Mountain,
+                BodyType::Terrestrial,
+                0.6,
+                Terrain::Mountain,
+            ),
+            (
+                BiomeId::AlpineRock,
+                BodyType::Terrestrial,
+                0.6,
+                Terrain::Mountain,
+            ),
+            (BiomeId::Desert, BodyType::Terrestrial, 0.1, Terrain::Desert),
+            (BiomeId::Barren, BodyType::Rocky, 0.0, Terrain::Desert),
+            (BiomeId::Tundra, BodyType::Terrestrial, 0.6, Terrain::Tundra),
+            (BiomeId::Snow, BodyType::Terrestrial, 0.6, Terrain::Ice),
+            (BiomeId::Ice, BodyType::Terrestrial, 0.6, Terrain::Ice),
+            (
+                BiomeId::Volcanic,
+                BodyType::Terrestrial,
+                0.0,
+                Terrain::Volcanic,
+            ),
+            // Inferno overrides everything to Volcanic / Mountain.
+            (BiomeId::Forest, BodyType::Inferno, 0.0, Terrain::Volcanic),
+            (BiomeId::Mountain, BodyType::Inferno, 0.0, Terrain::Mountain),
+            (
+                BiomeId::DeepOcean,
+                BodyType::Inferno,
+                0.0,
+                Terrain::Volcanic,
+            ),
+        ];
+        for (biome, body, water, expected) in cases {
+            let got = project_biome_to_terrain(biome, body, water);
+            assert_eq!(
+                got, expected,
+                "biome {biome:?} body {body:?} water {water} -> {got:?}, expected {expected:?}"
+            );
+        }
+    }
+
+    #[test]
     fn fills_grid() {
         let (p, c) = earthlike_planet();
         let m = generate(&p, &c, 1);
