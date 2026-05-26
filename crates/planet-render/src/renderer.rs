@@ -106,11 +106,16 @@ impl Renderer {
             &system_resources.bind_group_layout,
         );
         let initial_params = PlanetParams::default();
+        // Initial atlas paint uses an Earth-default climate — the JS
+        // layer updates params + system as soon as it knows the user's
+        // selected world, which triggers a rebuild with the real
+        // mean_surface_temp_k.
         let terrain_atlas = detail_scene::create_terrain_atlas(
             &device,
             &queue,
             &pipelines.terrain_bind_group_layout,
             &initial_params,
+            288.0,
         );
 
         let depth_view = detail_scene::create_depth_view(&device, width, height);
@@ -188,17 +193,41 @@ impl Renderer {
 
     pub fn set_params(&mut self, params: PlanetParams) {
         let terrain_changed = self.params.seed != params.seed
-            || (self.params.sea_level - params.sea_level).abs() > f32::EPSILON;
+            || (self.params.sea_level - params.sea_level).abs() > f32::EPSILON
+            || (self.params.ice_latitude - params.ice_latitude).abs() > f32::EPSILON
+            || (self.params.vegetation_richness - params.vegetation_richness).abs() > f32::EPSILON
+            || (self.params.render_quality - params.render_quality).abs() > f32::EPSILON;
         self.params = params;
         if terrain_changed {
-            self.terrain_atlas = detail_scene::create_terrain_atlas(
-                &self.device,
-                &self.queue,
-                &self.terrain_bind_group_layout,
-                &self.params,
-            );
+            self.rebuild_terrain_atlas();
         }
         self.detail_uniforms_dirty = true;
+    }
+
+    /// Look up the main world's mean surface temperature from the
+    /// current system. Falls back to Earth-default if no main world is
+    /// resolvable. Used to drive biome classification on the globe so
+    /// frozen / hot worlds get the right colour palette.
+    fn current_mean_temp_k(&self) -> f32 {
+        let idx = self.system.main_world;
+        if idx < 0 {
+            return 288.0;
+        }
+        self.system
+            .planets
+            .get(idx as usize)
+            .map(|p| p.climate.mean_surface_temp_k)
+            .unwrap_or(288.0)
+    }
+
+    fn rebuild_terrain_atlas(&mut self) {
+        self.terrain_atlas = detail_scene::create_terrain_atlas(
+            &self.device,
+            &self.queue,
+            &self.terrain_bind_group_layout,
+            &self.params,
+            self.current_mean_temp_k(),
+        );
     }
 
     pub fn set_mesh_quality(&mut self, mesh_quality: f32) {
@@ -206,11 +235,13 @@ impl Renderer {
     }
 
     pub fn set_view_mode(&mut self, mode: ViewMode) {
-        if self.view_mode == mode {
-            return;
-        }
+        let mode_changed = self.view_mode != mode;
         self.view_mode = mode;
-        // Reset camera distance to fit whichever scene we're about to render.
+        // Always refit the camera when entering Detail — the JS layer
+        // navigates between worlds without changing the renderer's
+        // view-mode flag, so an early-exit-on-unchanged-mode strands
+        // the camera at the previous world's distance. (Cheap to
+        // recompute; safe to call every entry.)
         match mode {
             ViewMode::Detail => {
                 self.camera.distance = detail_scene::camera_fit_distance(
@@ -221,19 +252,25 @@ impl Renderer {
                 );
             }
             ViewMode::System => {
-                self.camera.distance = self.system_camera_fit_distance();
+                if mode_changed {
+                    self.camera.distance = self.system_camera_fit_distance();
+                }
             }
         }
-        self.detail_uniforms_dirty = true;
+        if mode_changed {
+            self.detail_uniforms_dirty = true;
+        }
     }
 
     pub fn set_system_seed(&mut self, seed: u32) {
         self.system = generate_system(seed);
-        // If we're currently in system view, refit the camera to the new outer
-        // orbit so swapping systems doesn't leave us looking at empty space.
+        // Refit the camera if we're already looking at the system, and
+        // rebuild the terrain atlas so the new main world's climate
+        // drives biome classification.
         if self.view_mode == ViewMode::System {
             self.camera.distance = self.system_camera_fit_distance();
         }
+        self.rebuild_terrain_atlas();
     }
 
     fn system_camera_fit_distance(&self) -> f32 {
@@ -282,8 +319,12 @@ impl Renderer {
         }
         self.system.planets[i].seed = new_seed;
         crate::system::recompute_planet_climate(&mut self.system.planets[i]);
-        // Surface noise driven by the seed; the rendered planet will look
-        // different on the next frame without re-running the whole generator.
+        // If the main world was rerolled, the biome classification on
+        // the globe needs to reflect the new climate. Cheap (LRU
+        // catches identical inputs) so refresh unconditionally.
+        if self.system.main_world == idx as i32 {
+            self.rebuild_terrain_atlas();
+        }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

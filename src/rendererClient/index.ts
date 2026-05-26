@@ -1,6 +1,7 @@
 import { effect } from '@preact/signals'
-import { Planet, generateSurfacePrebake } from '../../pkg/planet_render'
+import { Planet, generateSurfacePrebake, generateSurfacePrebakeFull } from '../../pkg/planet_render'
 import {
+  currentSystem,
   params,
   renderQualityMode,
   registerRendererControls,
@@ -78,6 +79,9 @@ export class RendererClient {
   private surfacePrebakeCache: {
     seed: number
     waterFraction: number
+    iceLatitude: number
+    meanTempK: number
+    vegetationRichness: number
     bake: SurfacePrebakeSnapshot
   } | null = null
 
@@ -183,16 +187,37 @@ export class RendererClient {
     if (!planet) return null
     const seed = params.value.seed >>> 0
     const waterFraction = params.value.sea_level
+    const iceLatitude = params.value.ice_latitude
+    const vegetationRichness = params.value.vegetation_richness
+    // Pull the main world's mean surface temperature from the latest
+    // system snapshot so biome classification on the painted background
+    // matches what the renderer's atlas produces for the globe.
+    const system = currentSystem.value
+    const mainWorld = system && system.main_world >= 0
+      ? system.planets[system.main_world] ?? null
+      : null
+    const meanTempK = mainWorld?.climate?.mean_surface_temp_k ?? 288
     const cached = this.surfacePrebakeCache
     if (
       cached &&
       cached.seed === seed &&
-      Math.abs(cached.waterFraction - waterFraction) < 0.0005
+      Math.abs(cached.waterFraction - waterFraction) < 0.0005 &&
+      Math.abs(cached.iceLatitude - iceLatitude) < 0.0005 &&
+      Math.abs(cached.meanTempK - meanTempK) < 0.05 &&
+      Math.abs(cached.vegetationRichness - vegetationRichness) < 0.0005
     ) {
       return cached.bake
     }
     try {
-      const bake = generateSurfacePrebake(seed, waterFraction) as {
+      // Prefer the climate-aware bridge; it produces biome ids that
+      // match the renderer atlas + Rust surface_map exactly.
+      const bake = generateSurfacePrebakeFull(
+        seed,
+        waterFraction,
+        iceLatitude,
+        meanTempK,
+        vegetationRichness,
+      ) as {
         lon_cells: number
         lat_cells: number
         heightmap: Float32Array | number[]
@@ -220,11 +245,49 @@ export class RendererClient {
         biome_id,
         sea_level_threshold,
       }
-      this.surfacePrebakeCache = { seed, waterFraction, bake: snapshot }
+      this.surfacePrebakeCache = {
+        seed,
+        waterFraction,
+        iceLatitude,
+        meanTempK,
+        vegetationRichness,
+        bake: snapshot,
+      }
       return snapshot
     } catch (err) {
-      console.warn('generateSurfacePrebake failed', err)
-      return null
+      console.warn('generateSurfacePrebakeFull failed', err)
+      // Fallback to the legacy two-arg signature; surface still
+      // renders, just with Earth-default biome classification.
+      try {
+        const bake = generateSurfacePrebake(seed, waterFraction) as {
+          lon_cells: number
+          lat_cells: number
+          heightmap: Float32Array | number[]
+          biome_id?: Uint8Array | number[]
+          sea_level?: number
+        }
+        const heightmap = bake.heightmap instanceof Float32Array
+          ? bake.heightmap
+          : Float32Array.from(bake.heightmap)
+        const biome_id = bake.biome_id instanceof Uint8Array
+          ? bake.biome_id
+          : bake.biome_id
+            ? Uint8Array.from(bake.biome_id)
+            : undefined
+        const sea_level_threshold = typeof bake.sea_level === 'number'
+          ? bake.sea_level
+          : quantileHeight(heightmap, waterFraction)
+        return {
+          lon_cells: bake.lon_cells,
+          lat_cells: bake.lat_cells,
+          heightmap,
+          biome_id,
+          sea_level_threshold,
+        }
+      } catch (err2) {
+        console.warn('generateSurfacePrebake fallback failed', err2)
+        return null
+      }
     }
   }
 

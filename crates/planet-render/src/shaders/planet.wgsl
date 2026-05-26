@@ -266,7 +266,9 @@ fn relief_above_sea(h: f32, sea_h: f32) -> f32 {
 }
 
 // Sample the canonical biome id for a sphere direction. Categorical, so
-// nearest-neighbour, no bilinear.
+// nearest-neighbour — used for biome flags (alpine / snow / desert) and
+// for the slope-rock and lighting masks. Per-cell colour blending uses
+// `biome_color_blended` below to avoid hard pixel borders.
 fn biome_id_at(dir: vec3<f32>) -> u32 {
     let dims = textureDimensions(biome_atlas);
     let w = i32(dims.x);
@@ -278,6 +280,41 @@ fn biome_id_at(dir: vec3<f32>) -> u32 {
     let i = min(i32(lat_norm * f32(h)), h - 1);
     let j = min(i32(lon_norm * f32(w)), w - 1);
     return textureLoad(biome_atlas, vec2<i32>(j, i), 0).x;
+}
+
+// Bilinear-weighted blend of the four nearest biome palette colours.
+// Cheap (four palette lookups, four mixes) and kills the visible texel
+// boundaries you'd otherwise see at biome borders — most obviously on
+// the polar caps. Biome ids themselves stay categorical for downstream
+// mask logic.
+fn biome_color_blended(dir: vec3<f32>) -> vec3<f32> {
+    let dims = textureDimensions(biome_atlas);
+    let w = i32(dims.x);
+    let h = i32(dims.y);
+    let lat = asin(clamp(dir.y, -1.0, 1.0));
+    let lon = atan2(dir.z, dir.x);
+    // Centre-aligned texel sampling so the four nearest cells we blend
+    // are spaced symmetrically around the view-ray direction.
+    let lat_u = clamp((clamp(lat / 3.14159265 + 0.5, 0.0, 1.0) * f32(h)) - 0.5, 0.0, f32(h - 1));
+    let lon_u = fract(lon / 6.28318530 + 0.5) * f32(w) - 0.5;
+    let lon_floor = floor(lon_u);
+    let i0 = i32(floor(lat_u));
+    let i1 = min(i0 + 1, h - 1);
+    let j0 = ((i32(lon_floor) % w) + w) % w;
+    let j1 = (j0 + 1) % w;
+    let fi = fract(lat_u);
+    let fj = lon_u - lon_floor;
+    let b00 = textureLoad(biome_atlas, vec2<i32>(j0, i0), 0).x;
+    let b01 = textureLoad(biome_atlas, vec2<i32>(j1, i0), 0).x;
+    let b10 = textureLoad(biome_atlas, vec2<i32>(j0, i1), 0).x;
+    let b11 = textureLoad(biome_atlas, vec2<i32>(j1, i1), 0).x;
+    let c00 = biome_color(b00);
+    let c01 = biome_color(b01);
+    let c10 = biome_color(b10);
+    let c11 = biome_color(b11);
+    let c0 = mix(c00, c01, fj);
+    let c1 = mix(c10, c11, fj);
+    return mix(c0, c1, fi);
 }
 
 // Canonical biome palette. Mirrors the Rust `BiomeId` enum order. The
@@ -428,11 +465,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let lat = abs(dir.y);
 
     // ---------- Biome colour ----------
-    // Categorical biome id from the Rust pre-bake. The id maps to a
-    // palette here, and to the same palette on the surface map / region
-    // view — that's how the three views agree on what's at a coord.
+    // Categorical biome id from the Rust pre-bake (for masks); colour
+    // from a bilinear-weighted blend of the 4 nearest biome palette
+    // entries (smooth boundaries — no visible texel edges on the caps).
     let biome = biome_id_at(dir);
-    var surface: vec3<f32> = biome_color(biome);
+    var surface: vec3<f32> = biome_color_blended(dir);
 
     // Derive masks used by the city-lights pass below. Cheap bool->float
     // beats the FBM stacks the previous shader ran for these.

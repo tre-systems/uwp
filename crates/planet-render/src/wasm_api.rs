@@ -156,12 +156,37 @@ pub fn generate_subsector(seed: u32, density: f32) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&sub).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-/// Generate the per-seed surface pre-bake (heightmap + plate ids).
-/// Future shader integration can sample this for the globe surface so
-/// the rendered planet and the surface hex map agree on continents.
-/// Today it is consumed by `surface_map::generate` (Rust-side).
+/// Generate the per-seed surface pre-bake (heightmap + plate ids +
+/// biome / moisture / temperature channels). Use this when only the
+/// seed + water fraction are known; biome classification falls back to
+/// Earth-default climate scalars and may not match a cold / hot world.
+/// Prefer `generateSurfacePrebakeFull` when climate is available.
 #[wasm_bindgen(js_name = generateSurfacePrebake)]
 pub fn generate_surface_prebake(seed: u32, water_fraction: f32) -> Result<JsValue, JsValue> {
     let bake = surface_prebake::generate(seed, water_fraction);
+    serde_wasm_bindgen::to_value(&bake).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Generate the per-seed surface pre-bake with full climate context so
+/// biome classification matches what the renderer's terrain atlas
+/// produces. Used by the JS surface-map background so its painted
+/// biomes line up with the globe shader, even on frozen / hot worlds.
+#[wasm_bindgen(js_name = generateSurfacePrebakeFull)]
+pub fn generate_surface_prebake_full(
+    seed: u32,
+    water_fraction: f32,
+    ice_latitude: f32,
+    mean_temp_k: f32,
+    vegetation_richness: f32,
+) -> Result<JsValue, JsValue> {
+    let bake = surface_prebake::generate_with(surface_prebake::BakeInput {
+        seed,
+        water_fraction,
+        ice_latitude,
+        mean_temp_k,
+        vegetation_richness,
+        lon_cells: surface_prebake::PREBAKE_LON as u32,
+        lat_cells: surface_prebake::PREBAKE_LAT as u32,
+    });
     serde_wasm_bindgen::to_value(&bake).map_err(|e| JsValue::from_str(&e.to_string()))
 }

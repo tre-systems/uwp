@@ -496,6 +496,17 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
             moisture[idx] = moisture_v;
             temperature_k[idx] = temp_v;
 
+            // Lat-band noise perturbs the polar cap onset so the
+            // Snow / Ice biome boundary reads as ragged peninsulas and
+            // gulfs, not a clean smoothstep ring. Coarse FBM gives the
+            // lobe shape; high-frequency value noise gives finger
+            // detail.
+            let cap_lobe =
+                value_noise_3d([p[0] * 2.8, p[1] * 2.8, p[2] * 2.8], seed ^ 0xA1_5C_9E_31) * 0.10;
+            let cap_finger =
+                value_noise_3d([p[0] * 9.0, p[1] * 9.0, p[2] * 9.0], seed ^ 0x47_B3_19_7F) * 0.05;
+            let effective_ice_lat = (input.ice_latitude - cap_lobe - cap_finger).clamp(0.05, 0.99);
+
             let lat_norm_signed = i as f32 / lat_cells as f32; // 0..1, south->north
             biome_id[idx] = classify_biome(
                 h,
@@ -504,7 +515,7 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
                 moisture_v,
                 temp_v,
                 input.vegetation_richness,
-                input.ice_latitude,
+                effective_ice_lat,
             ) as u8;
         }
     }

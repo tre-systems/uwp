@@ -86,21 +86,20 @@ pub fn create_terrain_atlas(
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
     params: &PlanetParams,
+    mean_temp_k: f32,
 ) -> TerrainAtlas {
     // Atlas resolution follows render_quality so weak devices get a
     // smaller upload (and a quicker bake) and high-end devices pick up
     // a sharper coastline. Tier helper lives on BakeInput so the
-    // surface_map path can stay in sync.
+    // surface_map path can stay in sync. mean_temp_k flows in from the
+    // main world's ClimateSummary so a frozen / hot world classifies
+    // biomes correctly on the globe.
     let bake = surface_prebake::generate_with(
         BakeInput {
             seed: params.seed,
             water_fraction: params.sea_level,
             ice_latitude: params.ice_latitude,
-            // Climate threading lands in Phase C — for now we use the
-            // Earth-ish default so biome IDs are populated. Once the
-            // renderer owns climate state we'll pass
-            // climate.mean_surface_temp_k here.
-            mean_temp_k: 288.0,
+            mean_temp_k,
             vegetation_richness: params.vegetation_richness,
             lon_cells: surface_prebake::PREBAKE_LON as u32,
             lat_cells: surface_prebake::PREBAKE_LAT as u32,

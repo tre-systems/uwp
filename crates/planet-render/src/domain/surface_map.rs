@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::climate::ClimateSummary;
-use super::surface_prebake::{self, PreBake};
+use super::surface_prebake::{self, BakeInput, BiomeId, PreBake, PREBAKE_LAT, PREBAKE_LON};
 use super::system::{BodyType, Planet};
 
 pub const SURFACE_COLS: u8 = 32;
@@ -125,57 +125,46 @@ pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> Surface
     let ice = climate.ice_fraction.clamp(0.0, 1.0);
     let mean_t = climate.mean_surface_temp_k;
 
-    // Bake a per-seed heightmap (plate tectonics + multi-octave noise)
-    // once, then sample it at every hex. Same quantile-based sea-level
-    // pass guarantees the ocean fraction lands close to the climate
-    // water inventory regardless of the underlying noise distribution.
-    let prebake = surface_prebake::generate(seed, water);
-    let mut elevations: Vec<f32> =
-        Vec::with_capacity((SURFACE_COLS as usize) * (SURFACE_ROWS as usize));
-    for row in 0..SURFACE_ROWS {
-        for col in 0..SURFACE_COLS {
-            elevations.push(elevation_from_prebake(&prebake, col, row));
-        }
-    }
-    let mut sorted = elevations.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let target_below = (water * sorted.len() as f32).clamp(0.0, sorted.len() as f32) as usize;
-    let sea_level = if target_below == 0 {
-        sorted[0] - 0.001
-    } else if target_below >= sorted.len() {
-        sorted[sorted.len() - 1] + 0.001
-    } else {
-        sorted[target_below]
-    };
+    // Map climate into the BakeInput shape the pre-bake's biome
+    // classifier consumes. The pre-bake is then the single source of
+    // truth for biome at every cell — the SVG background, the icosa
+    // hex layer, and now this Rust 32×16 grid all read the same atlas
+    // so terrain labels and painted colours can't disagree.
+    let ice_lat = (1.0 - ice).clamp(0.05, 0.95);
+    let veg_rich =
+        (climate.habitability * 0.85 + climate.liquid_water_fraction * 0.15).clamp(0.0, 1.0);
+    let prebake = surface_prebake::generate_with(BakeInput {
+        seed,
+        water_fraction: water,
+        ice_latitude: ice_lat,
+        mean_temp_k: mean_t,
+        vegetation_richness: veg_rich,
+        lon_cells: PREBAKE_LON as u32,
+        lat_cells: PREBAKE_LAT as u32,
+    });
+    // The pre-bake's sea_level field is what the WGSL shader + JS
+    // background also use, but the biome classifier already baked it
+    // into the cell colours, so we don't reference it directly here.
 
     for row in 0..SURFACE_ROWS {
         for col in 0..SURFACE_COLS {
             let lat_deg = -90.0 + (row as f32 + 0.5) * 180.0 / SURFACE_ROWS as f32;
             let lon_deg = -180.0 + (col as f32 + 0.5) * 360.0 / SURFACE_COLS as f32;
-            let idx = row as usize * SURFACE_COLS as usize + col as usize;
-            let elev_signed = elevations[idx];
+            let elev_signed = elevation_from_prebake(&prebake, col, row);
             let elev_norm = (elev_signed * 0.5 + 0.5).clamp(0.0, 1.0);
 
-            // Latitude factor scaled to drive ice extent: at the climate
-            // ice_fraction value the polar band starts.
             let abs_lat = lat_deg.abs() / 90.0;
-
-            // Local temperature: mean - latitude-gradient * |lat|.
-            // 60 K equator-to-pole spread roughly mirrors Earth.
             let local_t = mean_t - 60.0 * (abs_lat - 0.4).max(0.0);
 
-            let terrain = classify(
-                planet.body_type,
-                elev_signed,
-                sea_level,
-                abs_lat,
-                ice,
-                local_t,
-                water,
-                seed,
-                col,
-                row,
-            );
+            // Sample biome from the pre-bake (single source of truth).
+            // Body type and water inventory still gate a couple of
+            // overrides for Inferno worlds and bone-dry worlds since
+            // those classifications aren't fully captured by the
+            // continent-scale biome atlas alone.
+            let lat_norm = (row as f32 + 0.5) / SURFACE_ROWS as f32;
+            let lon_norm = (col as f32 + 0.5) / SURFACE_COLS as f32;
+            let biome = prebake.sample_biome(lat_norm, lon_norm);
+            let terrain = project_biome_to_terrain(biome, planet.body_type, water);
 
             if matches!(terrain, Terrain::Ocean) {
                 ocean_cells += 1;
@@ -211,80 +200,39 @@ pub fn generate(planet: &Planet, climate: &ClimateSummary, seed: u32) -> Surface
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn classify(
-    body: BodyType,
-    elev_signed: f32,
-    sea_level: f32,
-    abs_lat: f32,
-    ice_fraction: f32,
-    local_t: f32,
-    water: f32,
-    seed: u32,
-    col: u8,
-    row: u8,
-) -> Terrain {
-    const FREEZE: f32 = 273.15;
-
-    // Tiny tie-break noise so volcanic / desert speckle the broader bands.
-    let salt = (col as u32)
-        .wrapping_mul(0x9E37_79B9)
-        .wrapping_add((row as u32).wrapping_mul(0x85EB_CA6B))
-        .wrapping_add(seed)
-        .rotate_left(13);
-    let speckle = (salt as f32 / u32::MAX as f32).abs();
-
-    // Polar ice extent rises with the global ice fraction.
-    let ice_band = 1.0 - ice_fraction.clamp(0.0, 0.8) * 0.55;
-    if abs_lat > ice_band {
-        if water < 0.05 || elev_signed > sea_level {
-            return Terrain::Ice;
-        }
-        return Terrain::Ice;
-    }
-
-    // Submerged
-    if elev_signed < sea_level {
-        return Terrain::Ocean;
-    }
-    if (elev_signed - sea_level).abs() < 0.06 && water > 0.1 {
-        return Terrain::Shoreline;
-    }
-
-    // Volcanic worlds: temperature > 500 K reads as Inferno-like; speckle volcanic.
+/// Map the rich BiomeId set from the pre-bake to the legacy Terrain
+/// enum the surface-map JSON ships in. A handful of overrides catch
+/// edge cases the continent-scale atlas can't fully express (Inferno
+/// body class → volcanic regardless of biome; bone-dry worlds collapse
+/// shoreline → plain).
+fn project_biome_to_terrain(biome: BiomeId, body: BodyType, water: f32) -> Terrain {
     if matches!(body, BodyType::Inferno) {
-        return if speckle > 0.85 {
-            Terrain::Volcanic
-        } else {
-            Terrain::Mountain
+        // Inferno worlds: mountains and volcanic patches override any
+        // wetter biome the classifier might have picked.
+        return match biome {
+            BiomeId::DeepOcean | BiomeId::ShallowOcean => Terrain::Volcanic,
+            BiomeId::Mountain | BiomeId::AlpineRock => Terrain::Mountain,
+            _ => Terrain::Volcanic,
         };
     }
-
-    // High elevation -> mountain. Mid-high -> hill.
-    if elev_signed > sea_level + 0.55 {
-        return Terrain::Mountain;
+    match biome {
+        BiomeId::DeepOcean | BiomeId::ShallowOcean => Terrain::Ocean,
+        BiomeId::Shore => {
+            if water < 0.05 {
+                Terrain::Plain
+            } else {
+                Terrain::Shoreline
+            }
+        }
+        BiomeId::Plain | BiomeId::Grassland | BiomeId::Savanna => Terrain::Plain,
+        BiomeId::Forest => Terrain::Forest,
+        BiomeId::Hills => Terrain::Hill,
+        BiomeId::Mountain | BiomeId::AlpineRock => Terrain::Mountain,
+        BiomeId::Desert | BiomeId::Barren => Terrain::Desert,
+        BiomeId::Tundra => Terrain::Tundra,
+        BiomeId::Snow | BiomeId::Ice => Terrain::Ice,
+        BiomeId::Volcanic => Terrain::Volcanic,
     }
-    if elev_signed > sea_level + 0.30 {
-        return Terrain::Hill;
-    }
-
-    // Cold mid-latitudes -> tundra.
-    if local_t < FREEZE + 5.0 {
-        return Terrain::Tundra;
-    }
-
-    // Hot, dry mid-band -> desert.
-    if local_t > FREEZE + 35.0 && water < 0.30 {
-        return Terrain::Desert;
-    }
-    // Temperate + water -> forest at moderate elevation, plain at low.
-    if water > 0.20
-        && (FREEZE + 5.0..FREEZE + 38.0).contains(&local_t)
-        && (elev_signed > sea_level + 0.10 || speckle > 0.55)
-    {
-        return Terrain::Forest;
-    }
-    Terrain::Plain
 }
 
 fn pick_starport(hexes: &[SurfaceHex], planet: &Planet, rng: &mut Rng) -> Option<SurfaceHexCoord> {
