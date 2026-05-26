@@ -520,7 +520,11 @@ fn vs_main(in: VsIn) -> VsOut {
 // ---------- Fragment ----------
 // Output is HDR linear — the atmosphere pass tonemaps everything for display.
 
-fn surface_dir_from_screen(ndc: vec2<f32>, fallback: vec3<f32>) -> vec3<f32> {
+fn surface_dir_from_screen(frag_xy: vec2<f32>, fallback: vec3<f32>) -> vec3<f32> {
+    let ndc = vec2<f32>(
+        frag_xy.x / max(u.resolution.x, 1.0) * 2.0 - 1.0,
+        1.0 - frag_xy.y / max(u.resolution.y, 1.0) * 2.0
+    );
     let ndc_near = vec4<f32>(ndc, 0.0, 1.0);
     let ndc_far  = vec4<f32>(ndc, 1.0, 1.0);
     let w_near = u.inv_view_proj * ndc_near;
@@ -541,14 +545,19 @@ fn surface_dir_from_screen(ndc: vec2<f32>, fallback: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // Sample from the rendered mesh direction. A previous screen-ray
-    // reconstruction made the colour field disagree with the displaced
-    // surface on dry high-relief worlds, exposing large face-shaped bands.
-    // The cubesphere is already welded and dense enough for per-fragment
-    // interpolation to stay smooth while keeping terrain, lighting, and mesh
-    // displacement in the same coordinate frame.
-    let dir = normalize(in.sphere_dir);
+    // Sample the visible spherical surface by casting the current fragment
+    // back through the camera and intersecting the analytic base sphere.
+    // This keeps continents and cloud bands glued to the planet as they
+    // rotate over the limb; interpolated cubesphere directions stretch on
+    // steep perspective angles and make features appear to grow at the edge.
+    // Asteroids keep the mesh direction because their irregular silhouette is
+    // intentionally not an analytic sphere.
+    let mesh_dir = normalize(in.sphere_dir);
     let body_kind = u.planet_params.w;
+    var dir = mesh_dir;
+    if (body_kind <= 2.5) {
+        dir = surface_dir_from_screen(in.position.xy, mesh_dir);
+    }
     let base_world_normal = normalize((u.model * vec4<f32>(dir, 0.0)).xyz);
     let base_view_dir = normalize(u.camera_pos.xyz - in.world_pos);
     let sun_dir = normalize(u.sun_dir.xyz);
