@@ -110,3 +110,47 @@ fn spherify(p: Vec3) -> Vec3 {
         p.z * (1.0 - x2 * 0.5 - y2 * 0.5 + x2 * y2 / 3.0).sqrt(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cubesphere_welds_face_boundary_vertices() {
+        let mesh = cubesphere(8);
+        let n = 8usize;
+        // Welded cube-sphere counts:
+        //   8 corners (3-way sharing → unique)
+        //   12 edges × (n−2) edge vertices (2-way sharing → unique)
+        //   6 faces × (n−2)² interior vertices (no sharing)
+        // For n=8: 8 + 12·6 + 6·36 = 8 + 72 + 216 = 296.
+        // Without welding the count would be 6n² = 384. The 88-vertex
+        // reduction is what eliminates the sub-pixel rasterization
+        // gaps at face boundaries.
+        let expected = 8 + 12 * (n - 2) + 6 * (n - 2).pow(2);
+        assert_eq!(
+            mesh.vertices.len(),
+            expected,
+            "expected welded count {expected}, got {}",
+            mesh.vertices.len()
+        );
+        // Sanity check: must be strictly less than the non-welded count.
+        assert!(
+            mesh.vertices.len() < 6 * n * n,
+            "welding should reduce vertex count below {} but got {}",
+            6 * n * n,
+            mesh.vertices.len()
+        );
+    }
+
+    #[test]
+    fn cubesphere_indices_cover_full_topology() {
+        let mesh = cubesphere(8);
+        let n = 8u32;
+        // 6 faces × (n-1)² quads × 2 triangles × 3 indices = expected
+        // index count. Should be unchanged by welding (welding is a
+        // vertex operation; topology is still 6 face patches).
+        let expected = 6 * (n - 1) * (n - 1) * 6;
+        assert_eq!(mesh.indices.len() as u32, expected);
+    }
+}
