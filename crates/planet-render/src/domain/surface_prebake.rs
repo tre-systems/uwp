@@ -43,7 +43,29 @@ use serde::{Deserialize, Serialize};
 pub const PREBAKE_LON: usize = 1024;
 pub const PREBAKE_LAT: usize = 512;
 
+/// Resolution tiers selected by render profile. Heightmap RAM cost
+/// (4 bytes/cell) and the biome/moisture/temp companions scale
+/// linearly with cell count, so weak devices fall back to the smallest
+/// tier and capable desktops can pick up the largest.
+pub const PREBAKE_LOW_LON: usize = 512;
+pub const PREBAKE_LOW_LAT: usize = 256;
+pub const PREBAKE_HIGH_LON: usize = 2048;
+pub const PREBAKE_HIGH_LAT: usize = 1024;
+
 const LRU_CAPACITY: usize = 4;
+
+/// Map a 0..1 render-quality scalar to a (lon, lat) atlas resolution.
+/// Mirrors the JS-side renderProfile tiers so atlas size lines up with
+/// shader detail level.
+pub fn resolution_for_quality(quality: f32) -> (u32, u32) {
+    if quality < 0.55 {
+        (PREBAKE_LOW_LON as u32, PREBAKE_LOW_LAT as u32)
+    } else if quality < 0.95 {
+        (PREBAKE_LON as u32, PREBAKE_LAT as u32)
+    } else {
+        (PREBAKE_HIGH_LON as u32, PREBAKE_HIGH_LAT as u32)
+    }
+}
 
 thread_local! {
     static PREBAKE_LRU: RefCell<Vec<PreBakeCacheEntry>> = const { RefCell::new(Vec::new()) };
@@ -62,6 +84,8 @@ struct PreBakeKey {
     ice_bits: u32,
     temp_bits: u32,
     veg_bits: u32,
+    lon_cells: u32,
+    lat_cells: u32,
 }
 
 impl PreBakeKey {
@@ -72,6 +96,8 @@ impl PreBakeKey {
             ice_bits: input.ice_latitude.clamp(0.0, 1.0).to_bits(),
             temp_bits: input.mean_temp_k.max(0.0).to_bits(),
             veg_bits: input.vegetation_richness.clamp(0.0, 1.0).to_bits(),
+            lon_cells: input.lon_cells,
+            lat_cells: input.lat_cells,
         }
     }
 }
@@ -90,6 +116,11 @@ pub struct BakeInput {
     pub mean_temp_k: f32,
     /// 0 = barren rock, 1 = lush Earth. Drives moisture amplitude.
     pub vegetation_richness: f32,
+    /// Longitude resolution of the atlas. Defaults to PREBAKE_LON; use
+    /// `resolution_for_quality()` to pick a tier from a render profile.
+    pub lon_cells: u32,
+    /// Latitude resolution of the atlas. Defaults to PREBAKE_LAT.
+    pub lat_cells: u32,
 }
 
 impl BakeInput {
@@ -101,7 +132,19 @@ impl BakeInput {
             ice_latitude: 0.82,
             mean_temp_k: 288.0,
             vegetation_richness: 0.65,
+            lon_cells: PREBAKE_LON as u32,
+            lat_cells: PREBAKE_LAT as u32,
         }
+    }
+
+    /// Apply a render-quality scalar (0..1) to pick the atlas
+    /// resolution tier. Use this in renderer paths that have access to
+    /// the player's render profile.
+    pub fn with_quality(mut self, quality: f32) -> Self {
+        let (lon, lat) = resolution_for_quality(quality);
+        self.lon_cells = lon;
+        self.lat_cells = lat;
+        self
     }
 }
 
@@ -366,23 +409,25 @@ fn lru_put(key: PreBakeKey, bake: PreBake) {
 fn generate_uncached(input: &BakeInput) -> PreBake {
     let seed = input.seed;
     let water_fraction = input.water_fraction.clamp(0.0, 1.0);
+    let lon_cells = input.lon_cells.max(16) as usize;
+    let lat_cells = input.lat_cells.max(8) as usize;
     let mut rng = Rng::new(seed);
     let plates = make_plates(&mut rng, water_fraction);
 
-    let total = PREBAKE_LAT * PREBAKE_LON;
+    let total = lat_cells * lon_cells;
     let mut heightmap = vec![0.0f32; total];
     let mut plate_id = vec![0u8; total];
     let mut moisture = vec![0.0f32; total];
     let mut temperature_k = vec![0.0f32; total];
     let mut biome_id = vec![0u8; total];
 
-    for i in 0..PREBAKE_LAT {
+    for i in 0..lat_cells {
         let lat = -std::f32::consts::FRAC_PI_2
-            + (i as f32 + 0.5) / PREBAKE_LAT as f32 * std::f32::consts::PI;
+            + (i as f32 + 0.5) / lat_cells as f32 * std::f32::consts::PI;
         let (sin_lat, cos_lat) = (lat.sin(), lat.cos());
-        for j in 0..PREBAKE_LON {
-            let lon = -std::f32::consts::PI
-                + (j as f32 + 0.5) / PREBAKE_LON as f32 * std::f32::consts::TAU;
+        for j in 0..lon_cells {
+            let lon =
+                -std::f32::consts::PI + (j as f32 + 0.5) / lon_cells as f32 * std::f32::consts::TAU;
             // Unit-sphere Cartesian point.
             let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
             let (best, second) = nearest_two(&plates, p);
@@ -418,7 +463,7 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
             // has a consistent distribution.
             h = h.clamp(-1.0, 1.0);
 
-            let idx = i * PREBAKE_LON + j;
+            let idx = i * lon_cells + j;
             heightmap[idx] = h;
             plate_id[idx] = best.idx as u8;
         }
@@ -432,16 +477,16 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
     // Second pass: moisture and temperature need elevation + sea_level
     // to compute properly, so they have to wait until the heightmap is
     // complete.
-    for i in 0..PREBAKE_LAT {
+    for i in 0..lat_cells {
         let lat = -std::f32::consts::FRAC_PI_2
-            + (i as f32 + 0.5) / PREBAKE_LAT as f32 * std::f32::consts::PI;
+            + (i as f32 + 0.5) / lat_cells as f32 * std::f32::consts::PI;
         let abs_lat_norm = (lat.abs() / std::f32::consts::FRAC_PI_2).clamp(0.0, 1.0);
         let (sin_lat, cos_lat) = (lat.sin(), lat.cos());
-        for j in 0..PREBAKE_LON {
-            let lon = -std::f32::consts::PI
-                + (j as f32 + 0.5) / PREBAKE_LON as f32 * std::f32::consts::TAU;
+        for j in 0..lon_cells {
+            let lon =
+                -std::f32::consts::PI + (j as f32 + 0.5) / lon_cells as f32 * std::f32::consts::TAU;
             let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
-            let idx = i * PREBAKE_LON + j;
+            let idx = i * lon_cells + j;
             let h = heightmap[idx];
             let above_sea = (h - sea_level).max(0.0);
 
@@ -451,7 +496,7 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
             moisture[idx] = moisture_v;
             temperature_k[idx] = temp_v;
 
-            let lat_norm_signed = i as f32 / PREBAKE_LAT as f32; // 0..1, south->north
+            let lat_norm_signed = i as f32 / lat_cells as f32; // 0..1, south->north
             biome_id[idx] = classify_biome(
                 h,
                 sea_level,
@@ -465,8 +510,8 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
     }
 
     PreBake {
-        lon_cells: PREBAKE_LON as u32,
-        lat_cells: PREBAKE_LAT as u32,
+        lon_cells: lon_cells as u32,
+        lat_cells: lat_cells as u32,
         heightmap,
         plate_id,
         plates,
@@ -1008,6 +1053,33 @@ mod tests {
     }
 
     #[test]
+    fn resolution_for_quality_picks_tiers() {
+        let (lo_lon, lo_lat) = resolution_for_quality(0.30);
+        let (mid_lon, mid_lat) = resolution_for_quality(0.75);
+        let (hi_lon, hi_lat) = resolution_for_quality(1.0);
+        assert!(lo_lon < mid_lon && lo_lat < mid_lat);
+        assert!(mid_lon < hi_lon && mid_lat < hi_lat);
+        // Always a 2:1 aspect to match equirectangular sampling.
+        assert_eq!(lo_lon, lo_lat * 2);
+        assert_eq!(mid_lon, mid_lat * 2);
+        assert_eq!(hi_lon, hi_lat * 2);
+    }
+
+    #[test]
+    fn bake_respects_explicit_resolution() {
+        // Low-tier bake should produce the small atlas.
+        let low = generate_with(BakeInput::earthlike(2, 0.6).with_quality(0.20));
+        assert_eq!(low.lon_cells, PREBAKE_LOW_LON as u32);
+        assert_eq!(low.lat_cells, PREBAKE_LOW_LAT as u32);
+        assert_eq!(low.heightmap.len(), PREBAKE_LOW_LON * PREBAKE_LOW_LAT);
+        assert_eq!(low.biome_id.len(), PREBAKE_LOW_LON * PREBAKE_LOW_LAT);
+        // High-tier bake should produce the large atlas.
+        let high = generate_with(BakeInput::earthlike(2, 0.6).with_quality(1.0));
+        assert_eq!(high.lon_cells, PREBAKE_HIGH_LON as u32);
+        assert_eq!(high.lat_cells, PREBAKE_HIGH_LAT as u32);
+    }
+
+    #[test]
     fn cache_keyed_on_climate_scalars() {
         // Same seed + water but different climate should produce
         // different biome ids — proving the cache key includes climate.
@@ -1017,6 +1089,8 @@ mod tests {
             ice_latitude: 0.82,
             mean_temp_k: 295.0,
             vegetation_richness: 0.7,
+            lon_cells: PREBAKE_LON as u32,
+            lat_cells: PREBAKE_LAT as u32,
         });
         let cold = generate_with(BakeInput {
             seed: 555,
@@ -1024,6 +1098,8 @@ mod tests {
             ice_latitude: 0.55,
             mean_temp_k: 240.0,
             vegetation_richness: 0.7,
+            lon_cells: PREBAKE_LON as u32,
+            lat_cells: PREBAKE_LAT as u32,
         });
         // Heightmap is purely a function of (seed, water_fraction) so
         // it should match.
