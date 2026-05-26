@@ -36,6 +36,34 @@ describe('paramsPatchForSystemTarget', () => {
     })
   })
 
+  it('keeps clicked star detail scale meaningfully different across stellar radii', () => {
+    const mDwarf = fakeSystem([])
+    mDwarf.star = {
+      spectral: 'M',
+      mass_solar: 0.22,
+      luminosity_solar: 0.006,
+      radius_solar: 0.22,
+      temperature_k: 3200,
+      color: [1.0, 0.45, 0.25],
+    }
+    const blueGiant = fakeSystem([])
+    blueGiant.star = {
+      spectral: 'B',
+      mass_solar: 6.5,
+      luminosity_solar: 900,
+      radius_solar: 6.0,
+      temperature_k: 18_000,
+      color: [0.70, 0.82, 1.0],
+    }
+
+    const mPatch = paramsPatchForSystemTarget(mDwarf, { kind: 'star', index: 0 })
+    const bPatch = paramsPatchForSystemTarget(blueGiant, { kind: 'star', index: 0 })
+
+    expect(mPatch?.planet_radius).toBeLessThan(0.5)
+    expect(bPatch?.planet_radius).toBeGreaterThan(2)
+    expect((bPatch?.planet_radius ?? 0) / (mPatch?.planet_radius ?? 1)).toBeGreaterThan(4)
+  })
+
   it('uses distinct fluid submodes for gas giants, ice giants, and mini-neptunes', () => {
     const system = fakeSystem([
       fakePlanet({ seed: 1, body_type: 'GasGiant', radius_earth: 11, mass_earth: 318, temp: 145 }),

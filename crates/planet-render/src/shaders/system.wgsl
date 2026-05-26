@@ -34,6 +34,8 @@ const BT_FROZEN: f32      = 7.0;
 //   belts[i]      : x = inner_au, y = outer_au, z = density, w = unused
 //   companion     : xyz = position, w = display radius (0 = no companion)
 //   companion_color: xyz = colour, w = intensity
+//   stars_meta    : x/y = primary temp/warmth, z/w = companion temp/warmth
+//   star_params   : x/y = primary seed/radius, z/w = companion seed/radius
 struct SystemData {
     /// x = planet count, y = primary-star display radius, z = primary intensity,
     /// w = moon count.
@@ -49,6 +51,9 @@ struct SystemData {
     /// x = primary temperature K, y = primary warmth (R-B from blackbody),
     /// z = companion temperature K, w = companion warmth.
     stars_meta: vec4<f32>,
+    /// x = primary seed, y = primary radius_solar, z = companion seed,
+    /// w = companion radius_solar.
+    star_params: vec4<f32>,
 };
 
 struct VsOut {
@@ -315,7 +320,10 @@ fn render_star(
     radius: f32,
     base: vec3<f32>,
     intensity: f32,
+    temperature_k: f32,
     warmth: f32,
+    physical_radius: f32,
+    seed: f32,
     best_t: f32,
 ) -> StarHit {
     var h: StarHit;
@@ -326,6 +334,15 @@ fn render_star(
     if (t > 0.0 && t < best_t) {
         let hit_pos = orig + dir * t;
         let n = normalize(hit_pos - centre);
+        let seed_vec = vec3<f32>(
+            seed * 0.013 + 17.0,
+            seed * 0.021 - 43.0,
+            seed * 0.034 + 91.0,
+        );
+        let cool = 1.0 - smoothstep(3900.0, 5600.0, temperature_k);
+        let hot = smoothstep(7600.0, 12000.0, temperature_k);
+        let solar = exp(-pow((temperature_k - 5778.0) / 2300.0, 2.0));
+        let giant = smoothstep(1.8, 8.0, physical_radius);
         // Eddington limb darkening I(μ) = I₀ (a + b·μ + c·μ²). Standard
         // photometric limb-darkening laws give stronger darkening for cooler
         // stars (their photospheres are more opaque to grazing rays). We bias
@@ -333,34 +350,59 @@ fn render_star(
         // M-dwarfs and a near-uniform disc on O/B stars.
         let mu = max(dot(n, -dir), 0.0);
         let cool_strength = clamp(warmth * 1.4, 0.0, 1.0);
-        let limb = mix((2.0 + 3.0 * mu) / 5.0,           // hot star, mild
-                       (0.4 + 1.6 * mu - 0.0 * mu * mu),  // cool star, strong
-                       cool_strength);
+        let limb = mix((0.70 + 0.30 * mu),                  // hot star, mild
+                       (0.32 + 1.68 * mu - 0.20 * mu * mu), // cool star, strong
+                       max(cool_strength, cool));
 
         // Granulation cell size: small for hot blue stars (~smooth photosphere),
         // big and chunky for cool M-dwarfs (Sol's granules are ~1500 km,
         // M-dwarf granules can be ~10 % of the star's radius). The shader
         // scale is in normal-space — smaller scale = larger visible cells.
-        let g_scale = mix(36.0, 8.0, cool_strength);
-        let g_amp   = mix(0.20, 0.45, cool_strength);
-        let grain   = 1.0 + (fbm3(n * g_scale, 3) - 0.5) * g_amp;
+        let g_scale = mix(64.0, 10.0, cool) / (1.0 + giant * 0.55);
+        let g_amp   = (mix(0.16, 0.55, cool) + solar * 0.10 + giant * 0.08) * (1.0 - hot * 0.45);
+        let fine_grain = fbm3(n * g_scale + seed_vec, 4) - 0.5;
+        let super_gran = fbm3(n * mix(8.0, 3.2, cool) + seed_vec * 1.9, 3) - 0.5;
+        let hot_mottle = (fbm3(n * 26.0 + seed_vec * 2.7, 3) - 0.5) * hot * 0.10;
+        let grain = 1.0 + fine_grain * g_amp + super_gran * (0.12 + cool * 0.20) + hot_mottle;
 
         // Sunspots: F/G/K stars show small dark spots; M-dwarfs show large
         // irregular active regions; O/B/A are nearly featureless. Spots cluster
         // at sub-equatorial latitudes for solar-types and anywhere on M-dwarfs.
-        let spot_band = exp(-pow((abs(n.y) - 0.35), 2.0) * 18.0); // ±30° latitudes
-        let spot_field = fbm3(n * 6.0 + vec3<f32>(91.0, 7.0, -41.0), 4);
-        let solar_spot_mask = step(0.62, spot_field);
-        let m_spot_mask = smoothstep(0.48, 0.66, spot_field);
+        let spot_band = exp(-pow((abs(n.y) - 0.35), 2.0) * 18.0);
+        let spot_anywhere = 0.72 + 0.28 * fbm3(n * 2.4 + seed_vec * 0.7, 2);
+        let spot_lat = mix(spot_band, spot_anywhere, cool);
+        let spot_field = fbm3(n * mix(8.5, 3.8, cool) + seed_vec + vec3<f32>(13.0, -29.0, 7.0), 4);
+        let spot_threshold = mix(0.60, 0.42, cool) - solar * 0.08;
+        let solar_spot_mask = smoothstep(spot_threshold, spot_threshold + 0.16, spot_field);
+        let m_spot_mask = smoothstep(0.42, 0.66, spot_field);
         // Spot strength ramps up between A (warmth ~0) and M (warmth ~0.6).
-        let spot_strength = smoothstep(0.05, 0.55, warmth);
-        let solar_spots = solar_spot_mask * spot_band * 0.40;
-        let m_spots = m_spot_mask * 0.30;
+        let spot_strength = (solar * 0.72 + cool * 1.00) * (1.0 - hot * 0.92);
+        let solar_spots = solar_spot_mask * spot_lat * 0.42;
+        let m_spots = m_spot_mask * spot_lat * 0.55;
         let spots = mix(solar_spots, m_spots, smoothstep(0.30, 0.55, warmth))
                   * spot_strength;
+        let lat = asin(clamp(n.y, -1.0, 1.0));
+        let lon = atan2(n.z, n.x);
+        var active_spots = 0.0;
+        for (var i: i32 = 0; i < 4; i = i + 1) {
+            let fi = f32(i);
+            let h0 = hash31(seed_vec + vec3<f32>(17.0 + fi, 41.0, 9.0));
+            let h1 = hash31(seed_vec + vec3<f32>(71.0, 13.0 + fi, 29.0));
+            let h2 = hash31(seed_vec + vec3<f32>(5.0, 97.0, 23.0 + fi));
+            let spot_lat_c = (h0 * 0.72 - 0.36) * mix(0.75, 1.25, cool);
+            let spot_lon_c = h1 * TAU;
+            let d_lat = lat - spot_lat_c;
+            let d_lon = atan2(sin(lon - spot_lon_c), cos(lon - spot_lon_c));
+            let oval = exp(-(d_lat * d_lat * mix(180.0, 54.0, cool)
+                           + d_lon * d_lon * mix(72.0, 24.0, cool)));
+            let gate = smoothstep(0.18, 0.58, h2) * (solar * 0.78 + cool * 0.95) * (1.0 - hot);
+            active_spots = max(active_spots, oval * gate);
+        }
+        let starspots = max(spots, active_spots);
 
         // Final surface multiplier — darker where spots fall.
-        let surface = grain * (1.0 - spots);
+        let spot_tint = mix(vec3<f32>(0.36, 0.32, 0.27), vec3<f32>(0.18, 0.11, 0.08), cool);
+        let surface = grain * mix(vec3<f32>(1.0), spot_tint, clamp(starspots, 0.0, 0.88));
 
         // Warmth-tint shift on the limb — bias toward red/orange at the edge
         // for K/M, toward blue for hot stars (Doppler-like illusion).
@@ -370,7 +412,20 @@ fn render_star(
         let edge = 1.0 - mu;
         let tinted = mix(base, base * limb_tint, edge * 0.55);
 
-        h.color = tinted * limb * surface * intensity;
+        let faculae = pow(edge, 2.1)
+            * (solar * 0.30 + cool * 0.16)
+            * (0.65 + fbm3(n * 18.0 + seed_vec * 0.4, 3) * 0.70);
+        let az = atan2(n.z, n.x);
+        let active_arc = smoothstep(
+            0.90,
+            0.995,
+            sin(az * (3.0 + floor(fract(seed * 0.2) * 5.0)) + seed * 0.071) * 0.5 + 0.5
+        ) * pow(edge, 7.0) * (cool * 0.34 + solar * 0.12);
+        let chromosphere = mix(vec3<f32>(0.75, 0.88, 1.45), vec3<f32>(1.35, 0.34, 0.18), cool_strength + cool * 0.35);
+
+        h.color = tinted * limb * surface * intensity
+                + base * faculae * intensity * 0.70
+                + chromosphere * active_arc * intensity * 0.55;
         h.t = t;
         h.hit = true;
     }
@@ -384,6 +439,8 @@ fn render_corona(
     radius: f32,
     base: vec3<f32>,
     intensity: f32,
+    temperature_k: f32,
+    seed: f32,
 ) -> vec3<f32> {
     let to_star = centre - orig;
     let star_dist = length(to_star);
@@ -394,9 +451,23 @@ fn render_corona(
     let cos_disc = cos(ang_disc);
     let outside = max(cos_disc - cos_align, 0.0);
     let outside_norm = outside / max(1.0 - cos_disc, 1e-3);
-    let corona = exp(-outside_norm * 4.0) * 0.55
-               + exp(-outside_norm * 20.0) * 0.35;
-    return base * corona * intensity * 0.40;
+    let hot = smoothstep(7600.0, 12000.0, temperature_k);
+    let cool = 1.0 - smoothstep(3900.0, 5600.0, temperature_k);
+    let helper = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(star_dir_w.y) > 0.92);
+    let axis_u = normalize(cross(helper, star_dir_w));
+    let axis_v = normalize(cross(star_dir_w, axis_u));
+    let az = atan2(dot(dir, axis_v), dot(dir, axis_u));
+    let ray_count = mix(5.0, 11.0, hot);
+    let ray_phase = seed * 0.037;
+    let ray_hash = sin(az * ray_count + ray_phase) * 0.5 + 0.5;
+    let streamers = pow(max(1.0 - outside_norm, 0.0), mix(3.2, 1.8, hot))
+        * smoothstep(0.56, 0.96, ray_hash)
+        * (0.08 + hot * 0.13 + cool * 0.05);
+    let corona = exp(-outside_norm * mix(5.2, 2.9, hot)) * 0.42
+               + exp(-outside_norm * 18.0) * 0.26
+               + streamers;
+    let corona_tint = mix(vec3<f32>(0.86, 0.94, 1.24), vec3<f32>(1.20, 0.62, 0.34), cool);
+    return base * corona_tint * corona * intensity * 0.36;
 }
 
 @fragment
@@ -613,7 +684,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         ray_origin, ray_dir,
         vec3<f32>(0.0), sys.info.y,
         sys.star_color.rgb, sys.info.z,
-        sys.stars_meta.y, best_t,
+        sys.stars_meta.x, sys.stars_meta.y,
+        sys.star_params.y,
+        sys.star_params.x, best_t,
     );
     if (primary.hit) {
         hit_color = primary.color;
@@ -629,7 +702,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             ray_origin, ray_dir,
             sys.companion.xyz, comp_r,
             sys.companion_color.rgb, sys.companion_color.w,
-            sys.stars_meta.w, best_t,
+            sys.stars_meta.z, sys.stars_meta.w,
+            sys.star_params.w,
+            sys.star_params.z, best_t,
         );
         if (companion.hit) {
             hit_color = companion.color;
@@ -651,12 +726,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             ray_origin, ray_dir,
             vec3<f32>(0.0), sys.info.y,
             sys.star_color.rgb, sys.info.z,
+            sys.stars_meta.x, sys.star_params.x,
         );
         if (comp_r > 0.0) {
             color = color + render_corona(
                 ray_origin, ray_dir,
                 sys.companion.xyz, comp_r,
                 sys.companion_color.rgb, sys.companion_color.w,
+                sys.stars_meta.z, sys.star_params.z,
             );
         }
     }

@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3, Vec4};
 
-use crate::system::{BodyType, SolarSystem};
+use crate::system::{BodyType, SolarSystem, Star};
 
 pub const MAX_SYSTEM_PLANETS: usize = 16;
 pub const MAX_SYSTEM_MOONS: usize = 32;
@@ -18,6 +18,8 @@ pub const SCENE_UNITS_PER_AU: f32 = 1.0;
 ///   belts[i]      : x = inner_au, y = outer_au, z = density [0..1], w = unused
 ///   companion     : xyz = world position, w = display radius (0 = no companion)
 ///   companion_color: xyz = colour, w = intensity
+///   stars_meta    : x/y = primary temp/warmth, z/w = companion temp/warmth
+///   star_params   : x/y = primary seed/radius, z/w = companion seed/radius
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
 pub struct SystemUniforms {
@@ -35,6 +37,9 @@ pub struct SystemUniforms {
     /// x = primary temperature, y = primary warmth, z = companion temperature,
     /// w = companion warmth.
     pub stars_meta: [f32; 4],
+    /// x = primary seed, y = primary radius_solar, z = companion seed,
+    /// w = companion radius_solar.
+    pub star_params: [f32; 4],
 }
 
 pub struct SystemResources {
@@ -124,7 +129,7 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
     let system_scale = outer_orbit.max(outer_belt).max(1.0);
 
     let star_disp = star_display_radius(sys, system_scale);
-    let intensity = 1.4 + sys.star.luminosity_solar.powf(0.2);
+    let intensity = display_intensity_for_star(&sys.star);
 
     let gap = star_disp * 0.45;
     let mut display_orbit_r = [0.0f32; MAX_SYSTEM_PLANETS];
@@ -215,6 +220,7 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
             .map(|c| c.star.color[0] - c.star.color[2])
             .unwrap_or(0.0),
     ];
+    out.star_params = [star_seed(sys.seed), sys.star.radius_solar, 0.0, 0.0];
 
     if let Some(comp) = &sys.companion {
         let omega = (0.012 / comp.separation_au.powf(1.5)).min(0.05);
@@ -226,9 +232,8 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
         let ci = incl.cos();
         let si = incl.sin();
         let pos = [r * cp, r * sp * si, r * sp * ci];
-        let disp_r =
-            (system_scale * 0.045 * (comp.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
-        let comp_intensity = 1.4 + comp.star.luminosity_solar.powf(0.2);
+        let disp_r = display_radius_for_star(&comp.star, system_scale);
+        let comp_intensity = display_intensity_for_star(&comp.star);
         out.companion = [pos[0], pos[1], pos[2], disp_r];
         out.companion_color = [
             comp.star.color[0],
@@ -236,6 +241,8 @@ pub fn uniforms_for(sys: &SolarSystem, time: f32) -> SystemUniforms {
             comp.star.color[2],
             comp_intensity,
         ];
+        out.star_params[2] = star_seed(sys.seed ^ 0xA51C_E5ED);
+        out.star_params[3] = comp.star.radius_solar;
     }
     out
 }
@@ -380,8 +387,7 @@ pub fn pick_body(
             r * theta.sin() * incl.sin(),
             r * theta.sin() * incl.cos(),
         );
-        let disp_r =
-            (system_scale * 0.045 * (comp.star.radius_solar.max(0.3)).powf(0.35)).max(0.04);
+        let disp_r = display_radius_for_star(&comp.star, system_scale);
         if let Some(t) = ray_sphere(camera_pos, ray_dir, pos, disp_r * 1.15) {
             if best.is_none_or(|b| t < b.distance) {
                 best = Some(PickHit {
@@ -485,7 +491,23 @@ pub fn encode_render(
 }
 
 fn star_display_radius(sys: &SolarSystem, system_scale: f32) -> f32 {
-    (system_scale * 0.045 * sys.star.radius_solar.max(0.3).powf(0.35)).max(0.04)
+    display_radius_for_star(&sys.star, system_scale)
+}
+
+fn display_radius_for_star(star: &Star, system_scale: f32) -> f32 {
+    let scale_unit = system_scale.max(0.5);
+    let radius = star.radius_solar.max(0.08);
+    let temp_factor = (star.temperature_k / 5778.0).clamp(0.45, 2.8).powf(0.25);
+    let raw = scale_unit * 0.040 * radius.powf(0.68) * temp_factor;
+    raw.clamp(scale_unit * 0.012, scale_unit * 0.080).max(0.030)
+}
+
+fn display_intensity_for_star(star: &Star) -> f32 {
+    (1.15 + star.luminosity_solar.max(0.0001).powf(0.16)).clamp(1.25, 5.5)
+}
+
+fn star_seed(seed: u32) -> f32 {
+    ((seed % 9973) as f32) / 9973.0 * 1000.0
 }
 
 fn display_radius_for(body: BodyType, real_radius_earth: f32, system_scale: f32) -> f32 {
@@ -531,15 +553,51 @@ fn schematic_color_for(body: BodyType, in_hz: bool) -> [f32; 3] {
 
 #[cfg(test)]
 mod tests {
-    use super::{pick_body, pick_planet, uniforms_for, PickKind, SystemUniforms};
-    use crate::system;
+    use super::{
+        display_radius_for_star, pick_body, pick_planet, uniforms_for, PickKind, SystemUniforms,
+    };
+    use crate::system::{self, SpectralClass, Star};
     use glam::{Mat4, Vec3};
 
     #[test]
     fn system_uniform_contract_stays_shader_aligned() {
-        assert_eq!(std::mem::size_of::<SystemUniforms>(), 1424);
+        assert_eq!(std::mem::size_of::<SystemUniforms>(), 1440);
         assert_eq!(std::mem::align_of::<SystemUniforms>(), 4);
         assert_eq!(std::mem::size_of::<SystemUniforms>() % 16, 0);
+    }
+
+    #[test]
+    fn star_display_radius_tracks_physical_radius_and_temperature() {
+        let m_dwarf = test_star(SpectralClass::M, 0.22, 0.006, 3200.0);
+        let solar = test_star(SpectralClass::G, 1.0, 1.0, 5778.0);
+        let blue_giant = test_star(SpectralClass::B, 6.0, 800.0, 18_000.0);
+
+        let m_r = display_radius_for_star(&m_dwarf, 10.0);
+        let g_r = display_radius_for_star(&solar, 10.0);
+        let b_r = display_radius_for_star(&blue_giant, 10.0);
+
+        assert!(m_r < g_r, "M dwarf should render smaller than solar-type");
+        assert!(b_r > g_r, "hot giant should render larger than solar-type");
+        assert!(
+            b_r / m_r > 3.0,
+            "visual scale should not collapse star classes"
+        );
+    }
+
+    fn test_star(
+        spectral: SpectralClass,
+        radius_solar: f32,
+        luminosity_solar: f32,
+        temperature_k: f32,
+    ) -> Star {
+        Star {
+            spectral,
+            mass_solar: 1.0,
+            radius_solar,
+            luminosity_solar,
+            temperature_k,
+            color: [1.0, 0.9, 0.8],
+        }
     }
 
     #[test]

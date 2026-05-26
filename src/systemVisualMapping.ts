@@ -184,6 +184,7 @@ function planetPatch(planet: Planet): Partial<Params> {
 
 function starPatch(star: Star, seed: number): Partial<Params> {
   const base = star.color.map((c) => clamp(c, 0.05, 1.2)) as RGB
+  const visualRadius = clamp(Math.pow(Math.max(star.radius_solar, 0.08), 0.62), 0.35, 2.4)
   return {
     seed: seed >>> 0,
     sea_level: 0,
@@ -196,7 +197,7 @@ function starPatch(star: Star, seed: number): Partial<Params> {
     atm_banding: 0,
     body_visual_mode: 2,
     surface_temp_k: star.temperature_k,
-    planet_radius: clamp(Math.sqrt(star.radius_solar), 0.55, 1.75),
+    planet_radius: visualRadius,
     ocean_color: scaleColor(base, 0.30),
     land_color: base,
     mountain_color: scaleColor(base, 0.62),

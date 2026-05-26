@@ -429,22 +429,75 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
 fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>, time: f32) -> vec3<f32> {
     let mu = clamp(dot(world_normal, view_dir), 0.0, 1.0);
     let base = max(u.land_color.rgb, vec3<f32>(0.04));
-    let gran = fbm(dir * 42.0 + u.seed_block.xyz + vec3<f32>(time * 0.10, 0.0, 0.0), 4) * 0.5 + 0.5;
-    let cells = ridged_fbm(dir * 18.0 + u.seed_block.xyz * 1.7, 3);
-    var color = base * (0.88 + gran * 0.28 + cells * 0.16);
+    let warmth = clamp((base.r - base.b) * 1.45, 0.0, 1.0);
+    let hotness = clamp((base.b - base.r) * 2.2, 0.0, 1.0);
+    let solar_like = exp(-pow((base.g - 0.92) / 0.18, 2.0)) * (1.0 - hotness * 0.6);
+    let seed = u.seed_block.xyz;
+    let slow_time = vec3<f32>(time * 0.08, time * -0.035, time * 0.02);
+
+    // Temperature-sensitive convection: blue-white stars stay comparatively
+    // smooth, solar stars get fine rice-grain granulation, and cool K/M stars
+    // grow large mottled cells.
+    let fine_scale = mix(62.0, 12.0, warmth);
+    let large_scale = mix(11.0, 3.0, warmth);
+    let fine = fbm(dir * fine_scale + seed + slow_time, 4) - 0.5;
+    let cells = ridged_fbm(dir * large_scale + seed * 1.7 - slow_time.yzx, 4) - 0.45;
+    let hot_mottle = (fbm(dir * 24.0 + seed * 2.4, 3) - 0.5) * hotness * 0.10;
+    var color = base * (1.0 + fine * mix(0.18, 0.52, warmth) + cells * (0.16 + warmth * 0.22) + hot_mottle);
 
     // Cool-star spots: not a physically simulated magnetic field, but
     // latitude-gated dark active regions make G/K/M detail views read as
     // stellar photospheres instead of flat emissive discs.
-    let spot_field = fbm(dir * 5.0 + u.seed_block.xyz + vec3<f32>(0.0, time * 0.018, 51.0), 4);
-    let spot_lat = smoothstep(0.12, 0.52, abs(dir.y)) * (1.0 - smoothstep(0.82, 0.98, abs(dir.y)));
-    let spots = smoothstep(0.45, 0.70, spot_field) * spot_lat;
-    color = mix(color, color * vec3<f32>(0.42, 0.36, 0.32), spots * 0.65);
+    let spot_field = fbm(dir * mix(8.0, 3.8, warmth) + seed + vec3<f32>(0.0, time * 0.018, 51.0), 4);
+    let solar_band = exp(-pow((abs(dir.y) - 0.34), 2.0) * 17.0);
+    let cool_gate = 0.72 + 0.28 * fbm(dir * 2.2 + seed * 0.4, 2);
+    let spot_lat = mix(solar_band, cool_gate, warmth);
+    let spot_threshold = mix(0.58, 0.40, warmth) - solar_like * 0.10;
+    let spots = smoothstep(spot_threshold, spot_threshold + 0.18, spot_field)
+              * spot_lat
+              * (solar_like * 0.78 + warmth * 1.05)
+              * (1.0 - hotness * 0.92);
+    let lat = asin(clamp(dir.y, -1.0, 1.0));
+    let lon = atan2(dir.z, dir.x);
+    var active_spots = 0.0;
+    for (var i: i32 = 0; i < 4; i = i + 1) {
+        let fi = f32(i);
+        let h0 = hash3_s(seed + vec3<f32>(17.0 + fi, 41.0, 9.0));
+        let h1 = hash3_s(seed + vec3<f32>(71.0, 13.0 + fi, 29.0));
+        let h2 = hash3_s(seed + vec3<f32>(5.0, 97.0, 23.0 + fi));
+        let spot_lat_c = (h0 * 0.72 - 0.36) * mix(0.75, 1.25, warmth);
+        let spot_lon_c = h1 * 6.2831853 + time * (0.010 + fi * 0.004);
+        let d_lat = lat - spot_lat_c;
+        let d_lon = atan2(sin(lon - spot_lon_c), cos(lon - spot_lon_c));
+        let oval = exp(-(d_lat * d_lat * mix(180.0, 54.0, warmth)
+                       + d_lon * d_lon * mix(72.0, 24.0, warmth)));
+        let gate = smoothstep(0.18, 0.58, h2) * (solar_like * 0.80 + warmth * 0.95) * (1.0 - hotness);
+        active_spots = max(active_spots, oval * gate);
+    }
+    let starspots = max(spots, active_spots);
+    let spot_tint = mix(vec3<f32>(0.34, 0.30, 0.26), vec3<f32>(0.18, 0.11, 0.08), warmth);
+    color = mix(color, color * spot_tint, clamp(starspots, 0.0, 0.94));
+    color = max(vec3<f32>(0.0), base + (color - base) * 1.65);
 
-    let limb = 0.34 + 0.66 * mu;
-    let faculae = pow(1.0 - mu, 2.0) * (0.12 + gran * 0.06);
-    let chromosphere = pow(1.0 - mu, 5.0) * 0.30;
-    return color * limb * 5.0 + u.sand_color.rgb * faculae * 1.8 + u.snow_color.rgb * chromosphere;
+    let edge = 1.0 - mu;
+    let limb = mix(0.72 + 0.28 * mu, 0.30 + 1.72 * mu - 0.18 * mu * mu, warmth);
+    let faculae = pow(edge, 2.1)
+                * (solar_like * 0.32 + warmth * 0.18)
+                * (0.65 + fbm(dir * 20.0 + seed * 2.1, 3) * 0.70);
+    let az = atan2(dir.z, dir.x);
+    let active_arc = smoothstep(
+        0.91,
+        0.995,
+        sin(az * (3.0 + floor(fract(u.seed_block.x * 1.7) * 5.0)) + u.seed_block.y * 5.0) * 0.5 + 0.5
+    ) * pow(edge, 7.0) * (warmth * 0.38 + solar_like * 0.14);
+    let chromosphere = mix(vec3<f32>(0.75, 0.88, 1.45), vec3<f32>(1.35, 0.34, 0.18), warmth);
+    let limb_tint = mix(vec3<f32>(0.90, 0.96, 1.12), vec3<f32>(1.12, 0.72, 0.45), warmth);
+    let tinted = mix(color, color * limb_tint, edge * 0.55);
+
+    return tinted * limb * (3.35 + hotness * 1.10)
+         + u.sand_color.rgb * faculae * 1.45
+         + chromosphere * active_arc * 1.90
+         + u.snow_color.rgb * pow(edge, 5.0) * (0.22 + hotness * 0.26);
 }
 
 fn asteroid_surface(dir: vec3<f32>) -> vec3<f32> {
