@@ -237,15 +237,14 @@ impl Renderer {
     pub fn set_view_mode(&mut self, mode: ViewMode) {
         let mode_changed = self.view_mode != mode;
         self.view_mode = mode;
-        // Always refit the camera when entering Detail — the JS layer
-        // navigates between worlds without changing the renderer's
-        // view-mode flag, so an early-exit-on-unchanged-mode strands
-        // the camera at the previous world's distance. (Cheap to
-        // recompute; safe to call every entry.)
+        // Snap the camera to the target distance when entering Detail.
+        // camera_fit_distance preserves zoom-out (it's a minimum), but
+        // for cross-world navigation we want to RESET so a small
+        // planet doesn't render as a dot just because the previous
+        // camera was zoomed out for a big planet.
         match mode {
             ViewMode::Detail => {
-                self.camera.distance = detail_scene::camera_fit_distance(
-                    self.camera.distance,
+                self.camera.distance = detail_scene::camera_target_distance(
                     self.params.planet_radius,
                     self.camera.aspect,
                     self.camera.fov_y,

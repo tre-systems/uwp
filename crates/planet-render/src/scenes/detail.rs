@@ -271,6 +271,23 @@ pub fn camera_fit_distance(
     current_distance.max(fit_distance).clamp(min_dist, max_dist)
 }
 
+/// Compute the camera distance that frames the planet correctly,
+/// IGNORING the current camera state. Use when entering Detail view
+/// or switching worlds — we want to *snap to* the fit distance so a
+/// small planet doesn't render as a dot just because the previous
+/// camera was far away. `camera_fit_distance` preserves zoom-out and
+/// is for in-mode updates.
+pub fn camera_target_distance(planet_radius: f32, aspect: f32, fov_y: f32) -> f32 {
+    let radius = planet_radius.max(0.05);
+    let vertical_fov = fov_y.max(0.1);
+    let horizontal_fov = 2.0 * ((vertical_fov * 0.5).tan() * aspect.max(0.1)).atan();
+    let limiting_fov = vertical_fov.min(horizontal_fov).max(0.1);
+    let fit_distance = radius / (limiting_fov * 0.5).sin() * 1.10;
+    let min_dist = (radius * 1.4).max(0.25);
+    let max_dist = (radius * 60.0).max(60.0);
+    fit_distance.clamp(min_dist, max_dist)
+}
+
 /// Recompute the full uniform struct. Use this when params, camera, or
 /// resolution change. For per-frame updates that only advance `time` and
 /// `rotation_t`, prefer `patch_frame_dynamics` to skip the heavy work
