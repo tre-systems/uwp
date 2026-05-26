@@ -67,6 +67,7 @@ export interface SurfaceAtlas {
   hex_radius: number
   net_width: number
   net_height: number
+  sea_level_threshold: number
   cells: SurfaceAtlasCell[]
 }
 

@@ -497,7 +497,7 @@ Phases 1-7 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integ
 
 7. **Globe ↔ surface bridge.** *Shipped → `e3eb716`.* `Camera::point_at` aims the detail-view camera at a (lat, lon); `Renderer::point_at_surface` applies the spin to `rotation_t` and pauses auto-rotate so the target stays still. Wired through `pointAtSurface` and `selectAndFocusSurfaceHex` on `appState`; clicking a hex in the SVG focuses the globe immediately, and the inspector grows a "Show on globe" button that aims + switches to Main World in one click.
 
-8. **Rust-owned atlas-cell identities.** *Shipped in the current surface realism pass.* `domain::surface_atlas` owns the visible icosahedral cells, stable ids, flat boundaries, water depth, slope, moisture, temperature, biome id, and projected terrain. `SurfaceMap` keeps the older 32 x 16 cells only as compatibility metadata while starports, cities, selection, and Region view receive atlas ids.
+8. **Rust-owned atlas-cell identities.** *Shipped in the current surface realism pass.* `domain::surface_atlas` owns the visible icosahedral cells, stable ids, flat boundaries, water depth, slope, moisture, temperature, biome id, projected terrain, and sea-level threshold. `SurfaceMap` keeps the older 32 x 16 cells only as compatibility metadata while starports, cities, selection, and Region view receive atlas ids; Region view now samples the selected atlas neighbourhood for its base local terrain.
 
 9. **Optional WebGPU port.** *Conditional — deferred.* Same shape as subsector phase 8: only worth doing if the SVG version hits a perf or visual-consistency limit.
 

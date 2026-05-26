@@ -60,6 +60,10 @@ pub struct SurfaceAtlas {
     pub hex_radius: f32,
     pub net_width: f32,
     pub net_height: f32,
+    /// Signed height threshold that matches the renderer's waterline.
+    /// Region/detail views use this to keep local shorelines aligned with
+    /// the globe and unfolded world map.
+    pub sea_level_threshold: f32,
     pub cells: Vec<SurfaceAtlasCell>,
 }
 
@@ -161,6 +165,7 @@ pub fn generate(
         hex_radius,
         net_width: NET_WIDTH,
         net_height: NET_HEIGHT,
+        sea_level_threshold: prebake.sea_level,
         cells,
     }
 }
@@ -479,6 +484,7 @@ mod tests {
         assert_eq!(atlas.cells.len(), 20 * 8 * 8);
         assert_eq!(atlas.resolution, 8);
         assert!(atlas.hex_radius > 0.0);
+        assert_eq!(atlas.sea_level_threshold, bake.sea_level);
         assert!(atlas.cells.iter().all(|c| c.id.resolution == 8));
         assert!(atlas.cells.iter().all(|c| (0..20).contains(&c.id.face)));
     }

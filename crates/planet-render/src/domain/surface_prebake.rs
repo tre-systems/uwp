@@ -458,9 +458,12 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
             let boundary_w = (1.0 - edge).powf(2.0);
             h += convergence * 0.55 * boundary_w;
 
-            // Multi-octave value noise for texture on top.
+            // Multi-octave value noise for texture on top. A second,
+            // lower-frequency warped continent signal breaks up plate-shaped
+            // coastlines without destroying the tectonic uplift/rift field.
             let noise = value_noise_3d(p, seed);
-            h += noise * 0.24;
+            let continent = continent_breakup_signal(p, seed);
+            h += noise * 0.20 + continent * 0.18;
 
             // Clamp into a working range so downstream sea-level picking
             // has a consistent distribution.
@@ -484,6 +487,9 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
     // requested water fraction. Done after the heightmap pass so every
     // consumer agrees on where the coastline sits.
     let mut sea_level = quantile_height(&heightmap, water_fraction);
+
+    apply_coastline_breakup(&mut heightmap, lon_cells, lat_cells, sea_level, input);
+    sea_level = quantile_height(&heightmap, water_fraction);
 
     apply_fluvial_erosion_proxy(&mut heightmap, lon_cells, lat_cells, sea_level, input);
     sea_level = quantile_height(&heightmap, water_fraction);
@@ -651,6 +657,45 @@ fn apply_fluvial_erosion_proxy(
     }
 }
 
+fn apply_coastline_breakup(
+    heightmap: &mut [f32],
+    lon_cells: usize,
+    lat_cells: usize,
+    sea_level: f32,
+    input: &BakeInput,
+) {
+    let water = input.water_fraction.clamp(0.0, 1.0);
+    if !(0.04..=0.96).contains(&water) {
+        return;
+    }
+    for i in 0..lat_cells {
+        let lat = -std::f32::consts::FRAC_PI_2
+            + (i as f32 + 0.5) / lat_cells as f32 * std::f32::consts::PI;
+        let (sin_lat, cos_lat) = (lat.sin(), lat.cos());
+        for j in 0..lon_cells {
+            let lon =
+                -std::f32::consts::PI + (j as f32 + 0.5) / lon_cells as f32 * std::f32::consts::TAU;
+            let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
+            let idx = i * lon_cells + j;
+            let coast = 1.0 - smoothstep_range(0.025, 0.18, (heightmap[idx] - sea_level).abs());
+            if coast <= 0.001 {
+                continue;
+            }
+            let shelf = value_noise_3d(
+                [p[0] * 6.0, p[1] * 6.0, p[2] * 6.0],
+                input.seed ^ 0x7A_C0_A5_7E,
+            );
+            let inlets = value_noise_3d(
+                [p[0] * 15.0, p[1] * 15.0, p[2] * 15.0],
+                input.seed ^ 0x1B_A7_48_D3,
+            );
+            let fjord = ridged_value(p, input.seed ^ 0x52_91_E6_3B, 22.0) * 2.0 - 1.0;
+            let delta = (shelf * 0.55 + inlets * 0.30 + fjord * 0.15) * coast * 0.050;
+            heightmap[idx] = (heightmap[idx] + delta).clamp(-1.0, 1.0);
+        }
+    }
+}
+
 fn rainfall_band(abs_lat_norm: f32) -> f32 {
     let equator = (1.0 - abs_lat_norm).max(0.0).powf(1.2);
     let mid = (1.0 - (abs_lat_norm - 0.56).abs() * 2.4).clamp(0.0, 1.0);
@@ -660,6 +705,31 @@ fn rainfall_band(abs_lat_norm: f32) -> f32 {
 
 fn ridged_value(p: [f32; 3], seed: u32, scale: f32) -> f32 {
     1.0 - value_noise_lattice([p[0] * scale, p[1] * scale, p[2] * scale], seed).abs()
+}
+
+fn continent_breakup_signal(p: [f32; 3], seed: u32) -> f32 {
+    let warp = [
+        value_noise_3d(
+            [p[0] * 0.75 + 11.0, p[1] * 0.75, p[2] * 0.75],
+            seed ^ 0xCC_03_21_9D,
+        ),
+        value_noise_3d(
+            [p[0] * 0.75, p[1] * 0.75 - 17.0, p[2] * 0.75],
+            seed ^ 0x71_8E_51_2B,
+        ),
+        value_noise_3d(
+            [p[0] * 0.75, p[1] * 0.75, p[2] * 0.75 + 29.0],
+            seed ^ 0x2D_B3_F0_44,
+        ),
+    ];
+    let q = normalise3([
+        p[0] + warp[0] * 0.28,
+        p[1] + warp[1] * 0.28,
+        p[2] + warp[2] * 0.28,
+    ]);
+    let broad = value_noise_3d([q[0] * 1.7, q[1] * 1.7, q[2] * 1.7], seed ^ 0x9D_2C_3B_41);
+    let island = value_noise_3d([q[0] * 5.5, q[1] * 5.5, q[2] * 5.5], seed ^ 0xE1_77_2A_09);
+    broad * 0.72 + island * 0.28
 }
 
 fn smoothstep_range(edge0: f32, edge1: f32, x: f32) -> f32 {

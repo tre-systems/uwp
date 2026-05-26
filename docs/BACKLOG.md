@@ -257,7 +257,10 @@ Status: in progress. The visible icosahedral net now uses Rust-owned
 centres, flat boundaries, terrain, biome, moisture, temperature, slope, and
 water-depth summaries. Starports and cities store atlas ids and snap to atlas
 cell centres. The pre-bake backdrop remains an adaptive high-resolution raster
-behind the SVG cells.
+behind the SVG cells. Region detail now samples the selected atlas cell plus
+nearby atlas cells and the atlas sea-level threshold for its base terrain, so
+local shorelines and biome transitions are tied to the same physical surface as
+the globe and world map.
 
 - Replace rounded 32 x 16 surface coordinates with stable surface-cell ids from
   the Rust atlas. *(v1 shipped; 32 x 16 remains as compatibility metadata.)*
@@ -266,9 +269,9 @@ behind the SVG cells.
 - Add surface-map export that captures the visible SVG/map, not the hidden
   WebGPU canvas.
 - Add region-level generation for selected hexes: local terrain, settlements,
-  hazards, and adventure hooks. The selected atlas id now reaches Region view;
-  the remaining work is to sample neighbouring atlas cells instead of painting
-  a standalone FBM patch.
+  hazards, and adventure hooks. *(v1 atlas-aligned terrain shipped; remaining
+  work is gameplay content such as hazards/adventure hooks and richer
+  Rust-owned local detail channels.)*
 
 Done when:
 

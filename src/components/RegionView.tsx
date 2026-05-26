@@ -108,6 +108,8 @@ export function RegionView() {
             sand: params.value.sand_color,
             snow: params.value.snow_color,
           },
+          atlas: map.atlas ?? null,
+          selectedCellId,
         },
         quality,
       )

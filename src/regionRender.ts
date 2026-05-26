@@ -20,9 +20,16 @@
 // Caller decides the size. We use a 512×448 internal pixel buffer for
 // per-pixel work, then upscale via drawImage.
 
-import type { SurfaceHex, Terrain } from './domain/surfaceMap'
+import type {
+  SurfaceAtlas,
+  SurfaceAtlasCell,
+  SurfaceCellId,
+  SurfaceHex,
+  Terrain,
+} from './domain/surfaceMap'
 import {
   biomeColorLinear,
+  biomeIsOcean,
   linearToSrgb8,
   TERRAIN_TO_BIOME,
   type PaletteBaseColors,
@@ -47,6 +54,12 @@ export interface RegionRenderInput {
    *  surface map. When absent, the legacy temperate / hot / cold
    *  hard-coded ramps are used. */
   paletteBase?: PaletteBaseColors
+  /** Rust-owned atlas used by the world map. When present, the local
+   *  landscape samples neighbouring atlas cells for its base terrain so
+   *  the region is a zoomed view of the same planet instead of a separate
+   *  procedural patch. */
+  atlas?: SurfaceAtlas | null
+  selectedCellId?: SurfaceCellId | null
 }
 
 export interface RegionLabel {
@@ -96,13 +109,15 @@ export function renderRegion(
   // Per-pixel internal heightmap. The 'final' pass renders at 384
   // wide, which is about a 2x upscale to the modal frame instead of
   // 6x - that single change is the biggest legibility win.
-  const map = buildHeightmap(hex, worldSeed, profile)
+  const map = buildHeightmap(input, profile)
 
   // The terrain-driven sea-level threshold drives both the coastline
   // and the ocean shading. For ocean hexes everything is below water;
   // for ice hexes we use a high threshold so most of the map is "ice
   // plain"; for shoreline ~ half the map is wet.
-  const seaLevel = seaLevelForTerrain(hex.terrain, input.authoredHydroFraction)
+  const seaLevel = map.biome
+    ? input.atlas?.sea_level_threshold ?? seaLevelForTerrain(hex.terrain, input.authoredHydroFraction)
+    : seaLevelForTerrain(hex.terrain, input.authoredHydroFraction)
 
   // Light direction in screen space - matches the planet shader's
   // convention so the hex landscape feels lit from the same direction
@@ -120,8 +135,11 @@ export function renderRegion(
   const data = img.data
 
   const palette = input.paletteBase
-    ? paletteForBiome(hex.terrain, input.paletteBase)
+    ? paletteForBiome(TERRAIN_TO_BIOME[hex.terrain] ?? 3, input.paletteBase)
     : paletteForTerrain(hex.terrain, hex.temperature_k)
+  const biomePalettes = input.paletteBase
+    ? buildBiomePalettes(input.paletteBase)
+    : null
   // Pre-sample elevation + slope on the offscreen grid so the per-pixel
   // loop is just an array lookup + colour math. Five-fold faster than
   // calling sampleHeight from inside the pixel loop.
@@ -165,9 +183,23 @@ export function renderRegion(
       const lamb = Math.max(0, (nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]) / nl)
       const shade = 0.55 + lamb * 0.55
 
+      const biomeId = map.biome?.[idx] ?? TERRAIN_TO_BIOME[hex.terrain] ?? 3
+      const localPalette = biomePalettes?.[biomeId] ?? palette
+      const tempK = map.temperatureK?.[idx] ?? hex.temperature_k
       let [r, g, b] = isWater
-        ? oceanColor(h / seaLevel)
-        : terrainColor(palette, (h - seaLevel) / (1 - seaLevel))
+        ? oceanColor(seaLevel - h, input.paletteBase)
+        : terrainColor(localPalette, (h - seaLevel) / Math.max(0.01, 1 - seaLevel))
+
+      const freeze = 1 - smoothstep(245, 273, tempK)
+      if (freeze > 0) {
+        const ice = input.paletteBase
+          ? toSrgb(biomeColorLinear(isWater ? 13 : 11, input.paletteBase))
+          : [220, 232, 242] as [number, number, number]
+        const k = isWater ? freeze * 0.92 : freeze * 0.82
+        r = r * (1 - k) + ice[0] * k
+        g = g * (1 - k) + ice[1] * k
+        b = b * (1 - k) + ice[2] * k
+      }
 
       // Soft shoreline gradient where water meets land.
       const coastBand = Math.abs(h - seaLevel)
@@ -244,6 +276,13 @@ export function renderRegion(
   return { labels }
 }
 
+export function buildRegionHeightmapForTest(
+  input: RegionRenderInput,
+  quality: RegionQuality = 'preview',
+) {
+  return buildHeightmap(input, QUALITY_PROFILES[quality])
+}
+
 // ---------- noise ----------
 
 interface Heightmap {
@@ -251,9 +290,19 @@ interface Heightmap {
   height: number
   /** Row-major elevation in [-1, 1]. */
   data: Float32Array
+  /** Optional canonical biome id per sample, inherited from the Rust atlas. */
+  biome?: Uint8Array
+  /** Optional local temperature in Kelvin, inherited from the Rust atlas. */
+  temperatureK?: Float32Array
 }
 
-function buildHeightmap(hex: SurfaceHex, worldSeed: number, profile: QualityProfile): Heightmap {
+function buildHeightmap(input: RegionRenderInput, profile: QualityProfile): Heightmap {
+  const atlasMap = buildAtlasHeightmap(input, profile)
+  if (atlasMap) return atlasMap
+  return buildStandaloneHeightmap(input.hex, input.worldSeed, profile)
+}
+
+function buildStandaloneHeightmap(hex: SurfaceHex, worldSeed: number, profile: QualityProfile): Heightmap {
   const w = profile.noiseRes
   const h = profile.noiseRes
   const data = new Float32Array(w * h)
@@ -274,6 +323,194 @@ function buildHeightmap(hex: SurfaceHex, worldSeed: number, profile: QualityProf
     }
   }
   return { width: w, height: h, data }
+}
+
+function buildAtlasHeightmap(input: RegionRenderInput, profile: QualityProfile): Heightmap | null {
+  const atlas = input.atlas
+  if (!atlas?.cells.length) return null
+
+  const selected = selectedAtlasCell(atlas, input.selectedCellId, input.hex)
+  if (!selected) return null
+
+  const w = profile.noiseRes
+  const h = profile.noiseRes
+  const data = new Float32Array(w * h)
+  const biome = new Uint8Array(w * h)
+  const temperatureK = new Float32Array(w * h)
+  const seaLevel = atlas.sea_level_threshold
+  const patch = nearbyAtlasCells(atlas, selected)
+  const seed = mix32(
+    input.worldSeed,
+    (selected.id.face << 24) ^ (selected.id.i << 16) ^ (selected.id.j << 8) ^ (selected.id.up ? 0xA5 : 0x5A),
+  )
+
+  // Map the local detail frame onto roughly one atlas hex plus a little
+  // shoulder from its neighbours. That lets coastlines, slopes, and biome
+  // transitions enter the region from the same direction they do on the
+  // icosahedral map.
+  const spanX = atlas.hex_radius * 2.45
+  const spanY = atlas.hex_radius * 2.12
+  const selectedIsWater = biomeIsOcean(selected.biome_id)
+  const selectedIsShore = selected.terrain === 'Shoreline'
+  const allowInteriorWater =
+    selectedIsWater || selectedIsShore || input.authoredHydroFraction > 0.72
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / Math.max(1, w - 1)
+      const v = y / Math.max(1, h - 1)
+      const atlasX = selected.x + (u - 0.5) * spanX
+      const atlasY = selected.y + (v - 0.5) * spanY
+      const sample = sampleAtlasPatch(patch, atlasX, atlasY, atlas.hex_radius)
+      const idx = y * w + x
+
+      const base = sample.elevation
+      const depth = Math.max(0, seaLevel - base)
+      const above = Math.max(0, base - seaLevel)
+      const nearCoast = 1 - smoothstep(0.012, 0.075, Math.abs(base - seaLevel))
+      const ridge = ridgeMixForTerrain(sample.terrain)
+
+      // High-frequency detail is intentionally local garnish on top of
+      // the atlas field. Its amplitude is small compared with the signed
+      // waterline so it does not move whole coastlines away from the globe.
+      const fbm = fbm2(u * 4.6 + selected.x * 0.003, v * 4.6 + selected.y * 0.003, seed, profile.fbmOctaves)
+      const ridged = 1 - Math.abs(fbm2(u * 8.0 + 17.0, v * 8.0 - 11.0, seed + 1357, profile.ridgeOctaves))
+      const detailAmp = biomeIsOcean(sample.biome)
+        ? 0.004
+        : 0.018 + ridge * 0.050
+      const detail = (fbm * 0.65 + ridged * ridge * 0.35) * detailAmp * (1 - nearCoast * 0.75)
+      let elevation = base + detail
+
+      // Preserve the atlas' categorical promise away from coastlines: open
+      // ocean stays ocean, continental interiors stay land. Shoreline and
+      // high-hydro worlds are allowed to produce bays/lakes inside the
+      // zoomed card.
+      if (biomeIsOcean(sample.biome)) {
+        elevation = Math.min(elevation, seaLevel - Math.max(0.006, depth * 0.15))
+      } else if (!allowInteriorWater && above > 0.025) {
+        elevation = Math.max(elevation, seaLevel + 0.010)
+      }
+
+      data[idx] = clamp(elevation, -1, 1)
+      biome[idx] = sample.biome
+      temperatureK[idx] = sample.temperatureK
+    }
+  }
+
+  // Keep the exact centre snapped close to the selected atlas cell so the
+  // inspector, map highlight, and region detail all describe the same place.
+  const centreIdx = Math.floor(h / 2) * w + Math.floor(w / 2)
+  data[centreIdx] = selected.elevation_signed
+  biome[centreIdx] = selected.biome_id
+  temperatureK[centreIdx] = selected.temperature_k
+
+  return { width: w, height: h, data, biome, temperatureK }
+}
+
+function selectedAtlasCell(
+  atlas: SurfaceAtlas,
+  selectedCellId: SurfaceCellId | null | undefined,
+  fallbackHex: SurfaceHex,
+): SurfaceAtlasCell | null {
+  if (selectedCellId) {
+    const exact = atlas.cells.find((cell) => sameCellId(cell.id, selectedCellId))
+    if (exact) return exact
+  }
+  return atlas.cells.find((cell) => sameCellId(cell.id, fallbackHex.cell_id ?? null)) ??
+    nearestAtlasCellForLegacyCoord(atlas, fallbackHex)
+}
+
+function nearbyAtlasCells(atlas: SurfaceAtlas, selected: SurfaceAtlasCell): SurfaceAtlasCell[] {
+  const radius = atlas.hex_radius * 4.3
+  const cells = atlas.cells.filter((cell) => {
+    const dx = cell.x - selected.x
+    const dy = cell.y - selected.y
+    return dx * dx + dy * dy <= radius * radius
+  })
+  if (cells.length >= 8) return cells
+
+  return [...atlas.cells]
+    .sort((a, b) => distSq(a, selected) - distSq(b, selected))
+    .slice(0, 24)
+}
+
+function sampleAtlasPatch(
+  cells: readonly SurfaceAtlasCell[],
+  x: number,
+  y: number,
+  hexRadius: number,
+): { elevation: number; biome: number; terrain: Terrain; temperatureK: number } {
+  let weightedElevation = 0
+  let weightedTemp = 0
+  let total = 0
+  const biomeWeights = new Float32Array(16)
+  let nearest = cells[0]
+  let nearestD2 = Number.POSITIVE_INFINITY
+  const softness = Math.max(1, hexRadius * 0.55)
+
+  for (const cell of cells) {
+    const dx = x - cell.x
+    const dy = y - cell.y
+    const d2 = dx * dx + dy * dy
+    if (d2 < nearestD2) {
+      nearestD2 = d2
+      nearest = cell
+    }
+    const weight = 1 / (d2 + softness * softness)
+    weightedElevation += cell.elevation_signed * weight
+    weightedTemp += cell.temperature_k * weight
+    total += weight
+    biomeWeights[cell.biome_id] += weight
+  }
+
+  let biome = nearest.biome_id
+  let biomeWeight = -1
+  for (let i = 0; i < biomeWeights.length; i++) {
+    if (biomeWeights[i] > biomeWeight) {
+      biomeWeight = biomeWeights[i]
+      biome = i
+    }
+  }
+
+  return {
+    elevation: total > 0 ? weightedElevation / total : nearest.elevation_signed,
+    biome,
+    terrain: nearest.terrain,
+    temperatureK: total > 0 ? weightedTemp / total : nearest.temperature_k,
+  }
+}
+
+function sameCellId(a: SurfaceCellId | null | undefined, b: SurfaceCellId | null | undefined): boolean {
+  return !!a && !!b &&
+    a.face === b.face &&
+    a.i === b.i &&
+    a.j === b.j &&
+    a.up === b.up &&
+    a.resolution === b.resolution
+}
+
+function nearestAtlasCellForLegacyCoord(atlas: SurfaceAtlas, hex: SurfaceHex): SurfaceAtlasCell | null {
+  let best: SurfaceAtlasCell | null = null
+  let bestScore = Number.POSITIVE_INFINITY
+  for (const cell of atlas.cells) {
+    const coordPenalty =
+      Math.abs(cell.coord.col - hex.coord.col) +
+      Math.abs(cell.coord.row - hex.coord.row)
+    const latPenalty = Math.abs(cell.latitude_deg - hex.latitude_deg) / 90
+    const lonPenalty = Math.abs(cell.longitude_deg - hex.longitude_deg) / 180
+    const score = coordPenalty + latPenalty + lonPenalty
+    if (score < bestScore) {
+      bestScore = score
+      best = cell
+    }
+  }
+  return best
+}
+
+function distSq(a: SurfaceAtlasCell, b: SurfaceAtlasCell): number {
+  const dx = a.x - b.x
+  const dy = a.y - b.y
+  return dx * dx + dy * dy
 }
 
 function sampleHeight(map: Heightmap, u: number, v: number): number {
@@ -345,6 +582,11 @@ function mix32(a: number, b: number): number {
   return h ^ (h >>> 16)
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
 // ---------- terrain styling ----------
 
 interface Palette {
@@ -385,18 +627,21 @@ function paletteForTerrain(t: Terrain, tempK: number): Palette {
 // Used when the caller hands in PaletteBaseColors — keeps the region
 // view's elevation richness while making the COLOUR FAMILY identical
 // to the globe and surface map.
-function paletteForBiome(terrain: Terrain, base: PaletteBaseColors): Palette {
-  const biomeId = TERRAIN_TO_BIOME[terrain] ?? 3
+function buildBiomePalettes(base: PaletteBaseColors): Palette[] {
+  return Array.from({ length: 16 }, (_, id) => paletteForBiome(id, base))
+}
+
+function paletteForBiome(biomeId: number, base: PaletteBaseColors): Palette {
   const main = toSrgb(biomeColorLinear(biomeId, base))
   const mountain = toSrgb(biomeColorLinear(9, base))
   const snow = toSrgb(biomeColorLinear(11, base))
   const ocean = toSrgb(biomeColorLinear(0, base))
-  if (terrain === 'Ocean') {
+  if (biomeIsOcean(biomeId)) {
     const deep = ocean
     const mid = toSrgb(biomeColorLinear(1, base))
     return { low: deep, mid, high: mid, peak: scaleColor(mid, 1.15) }
   }
-  if (terrain === 'Ice' || terrain === 'Tundra') {
+  if (biomeId === 11 || biomeId === 12 || biomeId === 13) {
     return {
       low: scaleColor(main, 0.85),
       mid: main,
@@ -408,7 +653,7 @@ function paletteForBiome(terrain: Terrain, base: PaletteBaseColors): Palette {
     low: scaleColor(main, 0.82),
     mid: main,
     high: mixColor(main, mountain, 0.55),
-    peak: terrain === 'Mountain' ? snow : mixColor(mountain, snow, 0.5),
+    peak: biomeId === 9 || biomeId === 10 ? snow : mixColor(mountain, snow, 0.5),
   }
 }
 
@@ -437,9 +682,14 @@ function terrainColor(p: Palette, t01: number): [number, number, number] {
   return mixColor(p.high, p.peak, k)
 }
 
-function oceanColor(t01: number): [number, number, number] {
-  const t = clamp(t01, 0, 1)
-  return mixColor([12, 30, 70], [40, 90, 150], 1 - Math.abs(0.5 - t) * 1.6)
+function oceanColor(depth: number, base?: PaletteBaseColors): [number, number, number] {
+  if (base) {
+    const deep = toSrgb(biomeColorLinear(0, base))
+    const shallow = toSrgb(biomeColorLinear(1, base))
+    return mixColor(shallow, deep, smoothstep(0.02, 0.35, depth))
+  }
+  const t = 1 - smoothstep(0.02, 0.35, depth)
+  return mixColor([12, 30, 70], [40, 90, 150], t)
 }
 
 function mixColor(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {

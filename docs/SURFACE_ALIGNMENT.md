@@ -4,9 +4,9 @@ The globe, icosahedral world map, and selected-hex region view should all
 describe the same physical surface. The globe and world map now share the
 Rust surface pre-bake for coastlines, major terrain, and biome classification,
 and the visible world-map cells are Rust-owned atlas cells with stable ids.
-The remaining alignment gap is the region view: it receives the selected atlas
-cell today, but still paints its local scene procedurally instead of sampling
-neighbouring atlas cells directly.
+The selected-hex region view now uses the selected atlas cell plus neighbouring
+atlas cells as its low-frequency terrain and biome source, then adds local
+high-frequency detail as visual garnish.
 
 ## Current Performance Correction
 
@@ -76,6 +76,9 @@ References:
   coordinates for compatibility, but clicks from the icosahedral map now carry
   the exact visual cell id, latitude, longitude, terrain, temperature, and
   elevation into the region view.
+- Region view samples the selected atlas neighbourhood and the atlas sea-level
+  threshold for its local height field, so coastlines and neighbouring terrain
+  enter the zoomed card from the same direction as on the world map.
 - Dry hydro-0 worlds use a barren biome path with smaller polar caps and no
   highland snow override, matching Mars/Moon-style references more closely.
 - The SVG background blends neighbouring biome colours and uses gentler
@@ -89,10 +92,10 @@ References:
    samples it through coarser icosahedral cells. Coastlines and major terrain
    agree; very small shader-only cloud, grain, city-light, and normal-detail
    effects can still differ by design.
-2. **Region view versus selected map cell.** The region renderer receives the
-   clicked visual cell's terrain/elevation summary, but it still paints a
-   procedural local landscape rather than a patch sampled from the same
-   authoritative surface buffer.
+2. **Region view versus selected map cell.** The region renderer now samples the
+   selected atlas neighbourhood for its base terrain, but high-frequency detail,
+   rivers, and biome flourishes are still procedural per-card embellishments.
+   They should stay visually subordinate to the atlas field.
 3. **Photorealism at every level.** The globe, atlas, and region view should
    use different rendering techniques, but they should share elevation,
    waterline, biome, climate, settlement, and lighting inputs.
@@ -127,10 +130,11 @@ Every layer should consume this atlas:
   cell identities.
 - **Inspector:** select by `SurfaceCellId` when available, with rounded
   latitude/longitude only as a legacy fallback.
-- **Region view:** receives the selected atlas cell id and exact physical
-  summary today. The remaining mismatch is that the local high-resolution
-  landscape still paints a procedural patch rather than sampling nearby atlas
-  cells directly.
+- **Region view:** receives the selected atlas cell id, samples nearby atlas
+  cells for base elevation/biome, and uses the atlas sea-level threshold for
+  local shoreline decisions. The remaining work is to move more local detail
+  channels (river candidates, hazards, settlement micro-position) into Rust
+  when those become gameplay data.
 - **Exports:** use the same atlas state for globe cards, world-map exports, and
   referee region handouts.
 
@@ -171,8 +175,8 @@ References:
    directly and snap markers to atlas-cell centres.
 5. **Shipped v1.** Upload the Rust pre-bake to the GPU and make `planet.wgsl`
    sample it, so the globe and atlas agree on coastlines and major terrain.
-6. Rework `RegionView` to generate from the selected cell and neighbouring atlas
-   cells rather than a standalone FBM landscape.
+6. **Shipped.** Rework `RegionView` to generate from the selected cell and
+   neighbouring atlas cells rather than a standalone FBM landscape.
 7. Continue contract tests:
    - same seed + water fraction produces deterministic atlas ids and terrain,
    - settlement ids always refer to valid cells,
