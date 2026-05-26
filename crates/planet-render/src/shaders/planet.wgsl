@@ -620,18 +620,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
-    // ---------- Atmospheric haze / dust ----------
-    // Subtle global noise layer for satellite-photo realism: patchy
-    // warm-dust tint, a fine-grain multiplier, and a small global
-    // desaturation. Strength biased toward LAND so oceans stay clean.
+    // ---------- Atmospheric haze / fine grain ----------
+    // Subtle global noise for satellite-photo realism. Strength biased
+    // toward LAND so oceans stay clean. No global desaturation —
+    // ISS / Blue Marble photos show vivid greens / browns / blues.
     let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), 3);
     let dirt_hi  = fbm(dir * 26.0 + u.seed_block.xyz + vec3<f32>(7.0, 53.0, -113.0), 2);
-    let warm_dirt = vec3<f32>(1.08, 0.95, 0.82);
-    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * select(0.10, 0.18, above_water);
+    let warm_dirt = vec3<f32>(1.06, 0.97, 0.86);
+    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * select(0.08, 0.14, above_water);
     surface = mix(surface, surface * warm_dirt, patch_amt);
-    surface = surface * (1.0 + dirt_hi * select(0.05, 0.08, above_water));
-    let luma = dot(surface, vec3<f32>(0.299, 0.587, 0.114));
-    surface = mix(surface, vec3<f32>(luma), 0.05);
+    surface = surface * (1.0 + dirt_hi * select(0.04, 0.07, above_water));
 
     // ---------- Cloud noise (3-layer system) ----------
     // Three distinct layers at different altitudes, each with its own scale,
