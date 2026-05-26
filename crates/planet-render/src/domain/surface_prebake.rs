@@ -242,18 +242,23 @@ pub struct PreBake {
     pub lat_cells: u32,
     pub heightmap: Vec<f32>,
     /// Plate index per cell (0..n_plates). Useful for biome tagging and
-    /// future shader-side highlighting.
+    /// future shader-side highlighting. Skipped over the WASM bridge —
+    /// no JS consumer reads this today and it doubles the payload.
+    #[serde(skip)]
     pub plate_id: Vec<u8>,
     /// Plates resolved during generation — bake time inputs preserved so
     /// callers can debug or render plate boundaries.
+    #[serde(skip)]
     pub plates: Vec<Plate>,
     /// Sea level chosen so `ocean_fraction(sea_level)` matches
     /// `water_fraction` at the requested quantile. Stored on the bake
     /// so every consumer agrees on where the coastline sits.
     pub sea_level: f32,
-    /// Per-cell normalised moisture, 0..1.
+    /// Per-cell normalised moisture, 0..1. Internal-only.
+    #[serde(skip)]
     pub moisture: Vec<f32>,
-    /// Per-cell local mean temperature, Kelvin.
+    /// Per-cell local mean temperature, Kelvin. Internal-only.
+    #[serde(skip)]
     pub temperature_k: Vec<f32>,
     /// Per-cell canonical biome. Sample this in shaders instead of
     /// re-deriving biome from local noise.
