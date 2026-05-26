@@ -1,8 +1,13 @@
 // Build the pickable hex lattice for the icosahedral Surface map:
 // subdivide each of the 20 icosahedron faces N times, sample the Rust
-// pre-bake at each triangular subcell centre, classify terrain using
-// the same elevation / latitude / temperature rules the Rust path
-// uses, and pack those centre points for the SVG hex renderer.
+// pre-bake at each triangular subcell centre, and pack those centre
+// points for the SVG hex renderer.
+//
+// Biome classification is read from the pre-bake's biome_id channel
+// (Rust-owned, single source of truth) when present. The local
+// classifier here only runs as a fallback when the bake doesn't carry
+// the biome channel — e.g. a legacy caller hasn't migrated yet — and
+// implements just enough of the Rust path to keep the picker functional.
 
 import type { PreBake } from './surfaceMapBackground'
 import {
@@ -20,7 +25,9 @@ export interface IcosaHex {
   /** Sphere position in degrees, for tooltips / region drill-down. */
   latDeg: number
   lonDeg: number
-  /** Terrain classification matching the Rust classifier. */
+  /** Canonical biome id from the Rust pre-bake (matches BiomeId enum). */
+  biome: number
+  /** Terrain classification (legacy enum projected from biome). */
   terrain: Terrain
   /** Local temperature in Kelvin (mean - lat gradient). */
   temperatureK: number
@@ -30,6 +37,26 @@ export interface IcosaHex {
   faceIdx: number
   /** True for the up-pointing source sub-triangle, false for down. */
   upPointing: boolean
+}
+
+/** Project the rich BiomeId set to the surface-map Terrain enum. */
+const BIOME_TO_TERRAIN: Record<number, Terrain> = {
+  0: 'Ocean',
+  1: 'Ocean',
+  2: 'Shoreline',
+  3: 'Plain',
+  4: 'Plain',
+  5: 'Forest',
+  6: 'Plain',
+  7: 'Desert',
+  8: 'Hill',
+  9: 'Mountain',
+  10: 'Mountain',
+  11: 'Ice',
+  12: 'Tundra',
+  13: 'Ice',
+  14: 'Volcanic',
+  15: 'Desert',
 }
 
 export interface IcosaSurface {
@@ -64,6 +91,12 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   const heightmap = opts.prebake.heightmap instanceof Float32Array
     ? opts.prebake.heightmap
     : Float32Array.from(opts.prebake.heightmap)
+  const biomeBuf =
+    opts.prebake.biome_id instanceof Uint8Array
+      ? opts.prebake.biome_id
+      : opts.prebake.biome_id
+        ? Uint8Array.from(opts.prebake.biome_id)
+        : undefined
   // First pass: collect every sub-cell with sampled elevation. We
   // need every elevation before we can pick the sea-level quantile,
   // so the actual terrain classification happens in pass 2.
@@ -107,26 +140,42 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   const targetBelow = Math.max(0, Math.min(elevs.length - 1, Math.floor(opts.waterFraction * elevs.length)))
   const seaLevel = elevs[targetBelow] ?? 0
 
-  // Pass 2: classify.
+  // Pass 2: classify. Biome comes from the Rust pre-bake when available
+  // so every view agrees; only fall back to the local classifier when
+  // the bake is biome-less (legacy callers).
   for (const r of raws) {
     const latDeg = r.latRad * 180 / Math.PI
     const lonDeg = r.lonRad * 180 / Math.PI
     const absLat = Math.abs(latDeg) / 90
     const localT = opts.meanTempK - 60 * Math.max(0, absLat - 0.4)
-    const terrain = classify({
-      elevSigned: r.elev,
-      seaLevel,
-      absLat,
-      iceFraction: opts.iceFraction,
-      localT,
-      water: opts.waterFraction,
-      faceIdx: r.faceIdx,
-    })
+    let biome: number
+    if (biomeBuf) {
+      biome = sampleBiomeNearest(
+        biomeBuf,
+        opts.prebake.lon_cells,
+        opts.prebake.lat_cells,
+        r.latRad,
+        r.lonRad,
+      )
+    } else {
+      const fallbackTerrain = classify({
+        elevSigned: r.elev,
+        seaLevel,
+        absLat,
+        iceFraction: opts.iceFraction,
+        localT,
+        water: opts.waterFraction,
+        faceIdx: r.faceIdx,
+      })
+      biome = TERRAIN_TO_BIOME_FALLBACK[fallbackTerrain] ?? 3
+    }
+    const terrain = BIOME_TO_TERRAIN[biome] ?? 'Plain'
     hexes.push({
       x: r.x,
       y: r.y,
       latDeg,
       lonDeg,
+      biome,
       terrain,
       temperatureK: localT,
       elevation: r.elev,
@@ -174,7 +223,35 @@ function samplePrebake(
   return h0 * (1 - fi) + h1 * fi
 }
 
-// ---------- Terrain classifier (ported from Rust) ----------
+/** Nearest-neighbour biome lookup matching the WGSL `biome_id_at`. */
+function sampleBiomeNearest(
+  buf: Uint8Array,
+  lonCells: number,
+  latCells: number,
+  latRad: number,
+  lonRad: number,
+): number {
+  const latNorm = clamp((latRad / Math.PI) + 0.5, 0, 1)
+  const lonNorm = (((lonRad / (2 * Math.PI)) + 0.5) % 1 + 1) % 1
+  const i = Math.min(Math.floor(latNorm * latCells), latCells - 1)
+  const j = Math.min(Math.floor(lonNorm * lonCells), lonCells - 1)
+  return buf[i * lonCells + j]
+}
+
+const TERRAIN_TO_BIOME_FALLBACK: Record<Terrain, number> = {
+  Ocean: 0,
+  Shoreline: 2,
+  Plain: 3,
+  Forest: 5,
+  Hill: 8,
+  Mountain: 9,
+  Desert: 7,
+  Tundra: 12,
+  Ice: 13,
+  Volcanic: 14,
+}
+
+// ---------- Fallback terrain classifier (only when biome_id missing) ----------
 
 interface ClassifyInput {
   elevSigned: number

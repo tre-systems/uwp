@@ -36,6 +36,7 @@ interface SurfacePrebakeSnapshot {
   lon_cells: number
   lat_cells: number
   heightmap: Float32Array
+  biome_id?: Uint8Array
   sea_level_threshold: number
 }
 
@@ -195,15 +196,29 @@ export class RendererClient {
         lon_cells: number
         lat_cells: number
         heightmap: Float32Array | number[]
+        biome_id?: Uint8Array | number[]
+        sea_level?: number
       }
       const heightmap = bake.heightmap instanceof Float32Array
         ? bake.heightmap
         : Float32Array.from(bake.heightmap)
+      const biome_id = bake.biome_id instanceof Uint8Array
+        ? bake.biome_id
+        : bake.biome_id
+          ? Uint8Array.from(bake.biome_id)
+          : undefined
+      // The Rust pre-bake now ships its own sea_level threshold; prefer
+      // that over recomputing the quantile here so the JS map and the
+      // Rust surface_map agree to the bit.
+      const sea_level_threshold = typeof bake.sea_level === 'number'
+        ? bake.sea_level
+        : quantileHeight(heightmap, waterFraction)
       const snapshot: SurfacePrebakeSnapshot = {
         lon_cells: bake.lon_cells,
         lat_cells: bake.lat_cells,
         heightmap,
-        sea_level_threshold: quantileHeight(heightmap, waterFraction),
+        biome_id,
+        sea_level_threshold,
       }
       this.surfacePrebakeCache = { seed, waterFraction, bake: snapshot }
       return snapshot

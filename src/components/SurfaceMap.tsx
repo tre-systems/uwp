@@ -98,6 +98,13 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
         iceLatitudeDeg,
         meanTempK,
         width: surfaceBackgroundWidth(containerRef.current),
+        paletteBase: {
+          ocean: params.value.ocean_color,
+          land: params.value.land_color,
+          mountain: params.value.mountain_color,
+          sand: params.value.sand_color,
+          snow: params.value.snow_color,
+        },
       })
       if (cancelled) return
       setBgUrl(url)
