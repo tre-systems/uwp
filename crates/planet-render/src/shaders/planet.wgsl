@@ -351,27 +351,40 @@ fn asteroid_shape(dir: vec3<f32>) -> f32 {
     let seed = u.seed_block.xyz;
     let lobe = fbm(dir * 2.1 + seed * 0.33, 4) * 0.16;
     let chip = ridged_fbm(dir * 8.0 + seed + vec3<f32>(19.0, -41.0, 73.0), 3) * 0.055;
-    let crater_dent = min(craters(dir) * 0.75, 0.10);
-    return max(0.72, 1.0 + lobe + chip + crater_dent);
+    let rubble = ridged_fbm(dir * 19.0 + seed * 2.1, 3) * 0.035;
+    let basin = (ridged_fbm(dir * 4.5 + seed + vec3<f32>(5.0, 11.0, 17.0), 2) - 0.5) * 0.045;
+    return max(0.70, 1.0 + lobe + chip + rubble + basin);
 }
 
-fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32) -> vec3<f32> {
+fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) -> vec3<f32> {
     let lat = asin(clamp(dir.y, -1.0, 1.0));
     let lon = atan2(dir.z, dir.x);
     let seed = u.seed_block.xyz;
+    let ice_giant = smoothstep(1.08, 1.20, body_kind);
+    let mini_neptune = smoothstep(1.24, 1.36, body_kind);
+    let ice_like = max(ice_giant, mini_neptune);
+    let band_count = mix(10.0 + u.world_features.w * 8.0, 5.0 + u.world_features.w * 2.5, ice_like);
     let shear = fbm(vec3<f32>(lat * 2.0, lon * 0.23 + time * 0.018, 0.0) + seed, 4);
     let fine_shear = fbm(vec3<f32>(lat * 10.0, lon * 0.60 - time * 0.035, 2.0) + seed, 3);
-    let band_coord = lat * (10.0 + u.world_features.w * 8.0) + shear * 1.1 + fine_shear * 0.28;
+    let band_coord = lat * band_count + shear * mix(1.1, 0.32, ice_like) + fine_shear * mix(0.28, 0.10, ice_like);
     let broad = 0.5 + 0.5 * sin(band_coord);
     let narrow = smoothstep(0.52, 0.74, 0.5 + 0.5 * sin(band_coord * 2.7 + fine_shear * 1.4));
-    let belts = smoothstep(0.42, 0.82, broad) * (0.55 + narrow * 0.45);
+    let belts = smoothstep(0.42, 0.82, broad) * (0.55 + narrow * 0.45) * mix(1.0, 0.45, ice_like);
 
     var color = mix(u.sand_color.rgb, u.land_color.rgb, belts);
     color = mix(color, u.mountain_color.rgb, smoothstep(0.76, 0.96, broad) * 0.35);
     color = mix(color, u.snow_color.rgb, (1.0 - smoothstep(0.12, 0.48, broad)) * 0.42);
+    color = mix(color, u.atmosphere_color.rgb * (0.90 + broad * 0.20), ice_like * 0.72);
 
     let turbulence = fbm(dir * 14.0 + seed + vec3<f32>(time * 0.02, 37.0, 0.0), 4);
-    color = color * (0.88 + turbulence * 0.20);
+    color = color * mix(0.88 + turbulence * 0.20, 0.96 + turbulence * 0.06, ice_like);
+
+    let jet_streaks = smoothstep(
+        0.54,
+        0.82,
+        fbm(vec3<f32>(lat * 42.0, lon * 1.35 - time * 0.12, 9.0) + seed, 3) * 0.5 + 0.5
+    ) * smoothstep(0.08, 0.34, abs(sin(band_coord)));
+    color = mix(color, u.snow_color.rgb * 1.03, jet_streaks * mix(0.12, 0.18, mini_neptune));
 
     if (quality > 0.55) {
         // Seeded anticyclonic oval: one large storm embedded in the
@@ -384,12 +397,32 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32) -> vec3<f32> {
         let oval = exp(-(dlat * dlat * 95.0 + dlon * dlon * 17.0));
         let rim = smoothstep(0.18, 0.55, oval) * (1.0 - smoothstep(0.62, 0.92, oval));
         let core = smoothstep(0.48, 0.96, oval);
-        color = mix(color, u.sand_color.rgb * vec3<f32>(1.05, 0.62, 0.38), core * 0.75);
-        color = mix(color, u.snow_color.rgb * 1.05, rim * 0.42);
+        color = mix(color, u.sand_color.rgb * vec3<f32>(1.05, 0.62, 0.38), core * 0.75 * (1.0 - ice_like));
+        color = mix(color, u.snow_color.rgb * 1.05, rim * 0.42 * (1.0 - ice_like * 0.5));
+
+        for (var i: i32 = 0; i < 3; i = i + 1) {
+            let idx = f32(i);
+            let small_lat = (hash3_s(seed + vec3<f32>(71.0 + idx, 13.0, 5.0)) * 0.70 - 0.35);
+            let small_lon = hash3_s(seed + vec3<f32>(17.0, 91.0 + idx, 29.0)) * 6.2831853 - time * (0.018 + idx * 0.004);
+            let local_lat = lat - small_lat;
+            let local_lon = atan2(sin(lon - small_lon), cos(lon - small_lon));
+            let small = exp(-(local_lat * local_lat * 220.0 + local_lon * local_lon * 42.0));
+            let gate = smoothstep(0.36, 0.82, small) * (1.0 - ice_like * 0.65);
+            color = mix(color, mix(u.sand_color.rgb, u.snow_color.rgb, 0.45), gate * 0.34);
+        }
+
+        let dark_lat = hash3_s(seed + vec3<f32>(103.0, 2.0, 19.0)) * 0.48 - 0.24;
+        let dark_lon = hash3_s(seed + vec3<f32>(31.0, 59.0, 83.0)) * 6.2831853 + time * 0.035;
+        let dark_dlat = lat - dark_lat;
+        let dark_dlon = atan2(sin(lon - dark_lon), cos(lon - dark_lon));
+        let dark_spot = exp(-(dark_dlat * dark_dlat * 130.0 + dark_dlon * dark_dlon * 25.0));
+        let methane_wisp = smoothstep(0.30, 0.62, dark_spot) * (1.0 - smoothstep(0.66, 0.92, dark_spot));
+        color = mix(color, u.ocean_color.rgb * 0.65, smoothstep(0.46, 0.90, dark_spot) * ice_like * 0.38);
+        color = mix(color, u.snow_color.rgb * 1.15, methane_wisp * ice_like * 0.34);
     }
 
     let polar_haze = smoothstep(0.62, 0.96, abs(dir.y));
-    color = mix(color, u.atmosphere_color.rgb * 0.95, polar_haze * 0.28);
+    color = mix(color, u.atmosphere_color.rgb * 0.95, polar_haze * mix(0.28, 0.46, ice_like));
     return color;
 }
 
@@ -410,14 +443,36 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
 
     let limb = 0.34 + 0.66 * mu;
     let faculae = pow(1.0 - mu, 2.0) * (0.12 + gran * 0.06);
-    return color * limb * 5.0 + u.sand_color.rgb * faculae * 1.8;
+    let chromosphere = pow(1.0 - mu, 5.0) * 0.30;
+    return color * limb * 5.0 + u.sand_color.rgb * faculae * 1.8 + u.snow_color.rgb * chromosphere;
 }
 
 fn asteroid_surface(dir: vec3<f32>) -> vec3<f32> {
     let base = mix(u.mountain_color.rgb, u.land_color.rgb, fbm(dir * 3.0 + u.seed_block.xyz, 3) * 0.5 + 0.5);
     let dust = mix(base, u.sand_color.rgb, smoothstep(-0.1, 0.5, fbm(dir * 12.0 + u.seed_block.xyz, 3)) * 0.35);
-    let crater = clamp(-craters(dir) * 6.0, 0.0, 1.0);
-    return mix(dust, dust * 0.45, crater);
+    let shallow_basins = smoothstep(
+        0.58,
+        0.86,
+        ridged_fbm(dir * 7.5 + u.seed_block.xyz + vec3<f32>(3.0, 17.0, 23.0), 2)
+    );
+    let boulders = smoothstep(
+        0.62,
+        0.90,
+        ridged_fbm(dir * 38.0 + u.seed_block.xyz * 3.2, 3)
+    );
+    let shadow_pits = smoothstep(
+        0.66,
+        0.92,
+        ridged_fbm(dir * 52.0 + u.seed_block.xyz * 4.1 + vec3<f32>(29.0, 7.0, 13.0), 2)
+    );
+    let vein_a = abs(sin(dot(dir, normalize(vec3<f32>(0.41, 0.73, 0.55))) * 38.0 + u.seed_block.x * 2.0));
+    let vein_b = abs(sin(dot(dir, normalize(vec3<f32>(0.76, -0.22, 0.61))) * 31.0 + u.seed_block.y * 2.7));
+    let veins = smoothstep(0.985, 0.998, max(vein_a, vein_b)) * smoothstep(0.25, 0.70, fbm(dir * 7.0 + u.seed_block.xyz, 2) * 0.5 + 0.5);
+    var color = mix(dust, dust * 0.50, shallow_basins * 0.36);
+    color = mix(color, u.snow_color.rgb * 0.78, boulders * 0.28);
+    color = mix(color, color * 0.58, shadow_pits * 0.18);
+    color = mix(color, u.snow_color.rgb * 0.95, veins * 0.24);
+    return color;
 }
 
 // ---------- Vertex ----------
@@ -502,7 +557,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4(stellar_surface(dir, base_world_normal, base_view_dir, u.misc.y), 1.0);
     }
     if (body_kind > 0.5 && body_kind < 1.5) {
-        let gas = gas_giant_surface(dir, u.misc.y, u.misc.w);
+        let gas = gas_giant_surface(dir, u.misc.y, u.misc.w, body_kind);
         let ambient = u.atmosphere_color.rgb * 0.08 + vec3<f32>(0.018);
         let limb_haze = pow(1.0 - max(dot(base_world_normal, base_view_dir), 0.0), 2.4);
         var lit_gas = gas * (ambient + base_n_dot_l * 1.08);
@@ -512,9 +567,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     if (body_kind > 2.5) {
         let ast = asteroid_surface(dir);
-        let ambient = vec3<f32>(0.018);
+        let ambient = vec3<f32>(0.040);
         let rim = pow(1.0 - max(dot(base_world_normal, base_view_dir), 0.0), 3.0);
-        let lit_ast = ast * (ambient + base_n_dot_l * 0.95) + u.sand_color.rgb * rim * 0.025;
+        let lit_ast = ast * (ambient + base_n_dot_l * 0.95) + u.sand_color.rgb * rim * 0.040;
         return vec4(lit_ast, 1.0);
     }
     let h = terrain_field(dir);

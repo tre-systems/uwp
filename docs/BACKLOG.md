@@ -238,12 +238,13 @@ Improve the main-world render once the pre-bake is authoritative.
 Status: in progress. Body-detail v1 is now in place: system-view picking and
 system-table actions can focus any generated body in the detail renderer.
 Planets map from their physical body type and climate into renderer params;
-gas giants / ice giants / mini-Neptunes use a dedicated banded-fluid shader,
-stars use an emissive photosphere shader, and asteroid belts open a
-representative cratered planetoid shader. Terrain-atlas worlds still use the
-Rust surface pre-bake, while non-terrain bodies skip the expensive terrain
-atlas rebuild. Very cold rocky / super-Earth bodies are intentionally rendered
-as low-atmosphere icy or cratered worlds rather than blue ocean worlds.
+gas giants / ice giants / mini-Neptunes use dedicated fluid submodes, stars use
+an emissive photosphere shader, and asteroid belts open a representative
+cratered planetoid shader. Terrain-atlas worlds still use the Rust surface
+pre-bake, while non-terrain bodies skip the expensive terrain atlas rebuild.
+Very cold rocky / super-Earth bodies are intentionally rendered as
+low-atmosphere icy or cratered worlds rather than blue ocean worlds. The current
+reference comparison and next visual gaps live in `docs/VISUAL_REFERENCE_REVIEW.md`.
 
 Research anchors for the next visual pass:
 

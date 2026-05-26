@@ -36,6 +36,18 @@ describe('paramsPatchForSystemTarget', () => {
     })
   })
 
+  it('uses distinct fluid submodes for gas giants, ice giants, and mini-neptunes', () => {
+    const system = fakeSystem([
+      fakePlanet({ seed: 1, body_type: 'GasGiant', radius_earth: 11, mass_earth: 318, temp: 145 }),
+      fakePlanet({ seed: 2, body_type: 'IceGiant', radius_earth: 4, mass_earth: 15, temp: 75 }),
+      fakePlanet({ seed: 3, body_type: 'MiniNeptune', radius_earth: 3, mass_earth: 12, temp: 130 }),
+    ])
+
+    expect(paramsPatchForSystemTarget(system, { kind: 'planet', index: 0 })?.body_visual_mode).toBe(1)
+    expect(paramsPatchForSystemTarget(system, { kind: 'planet', index: 1 })?.body_visual_mode).toBe(1.16)
+    expect(paramsPatchForSystemTarget(system, { kind: 'planet', index: 2 })?.body_visual_mode).toBe(1.32)
+  })
+
   it('keeps terrestrial worlds in terrain-atlas mode with their own climate', () => {
     const system = fakeSystem([
       fakePlanet({ seed: 42, body_type: 'Terrestrial', radius_earth: 1, mass_earth: 1, temp: 289 }),

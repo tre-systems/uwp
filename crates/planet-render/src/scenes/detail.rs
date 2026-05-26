@@ -27,7 +27,8 @@ pub struct DetailUniforms {
     /// xyz = noise seed offset, w = ice_latitude
     pub seed_block: [f32; 4],
     /// x = water fraction, y = mountain_amp, z = signed sea height,
-    /// w = body visual mode (0 terrain, 1 gas/ice giant, 2 star, 3 asteroid)
+    /// w = body visual mode (0 terrain, 1.0 gas giant, 1.16 ice giant,
+    ///     1.32 mini-Neptune, 2 star, 3 asteroid)
     pub planet_params: [f32; 4],
     /// x = atmosphere_density, y = time, z = cloud_coverage, w = render_quality
     pub misc: [f32; 4],

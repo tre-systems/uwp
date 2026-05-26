@@ -149,6 +149,14 @@ function gasPalette(body: BodyType, seed: number): Pick<Params, 'ocean_color' | 
 function planetPatch(planet: Planet): Partial<Params> {
   const atmo = atmosphereFor(planet)
   const fluid = planet.body_type === 'GasGiant' || planet.body_type === 'IceGiant' || planet.body_type === 'MiniNeptune'
+  const fluidMode =
+    planet.body_type === 'GasGiant'
+      ? 1.0
+      : planet.body_type === 'IceGiant'
+        ? 1.16
+        : planet.body_type === 'MiniNeptune'
+          ? 1.32
+          : 0
   const meanTempK = planet.climate.mean_surface_temp_k > 0 ? planet.climate.mean_surface_temp_k : planet.temperature_k
   const water = fluid ? 0 : waterFractionFor(planet)
   const palette = fluid ? gasPalette(planet.body_type, planet.seed) : paletteForPlanet(planet)
@@ -166,7 +174,7 @@ function planetPatch(planet: Planet): Partial<Params> {
     population_intensity: 0,
     vegetation_richness: fluid ? 0 : clamp(planet.climate.habitability * 1.15, 0, 1),
     atm_banding: atmo.banding,
-    body_visual_mode: fluid ? 1 : 0,
+    body_visual_mode: fluid ? fluidMode : 0,
     surface_temp_k: meanTempK,
     planet_radius: radiusForPlanet(planet),
     ...palette,
