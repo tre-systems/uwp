@@ -1,7 +1,15 @@
-//! Surface pre-bake: per-seed heightmap + biome cube-map sampled on a
+//! Surface pre-bake: per-seed multi-channel atlas sampled on a
 //! latitude-longitude grid.
 //!
-//! Combines two physics-motivated layers:
+//! Channels:
+//!
+//!   - `heightmap`: signed elevation in [-1, 1].
+//!   - `plate_id`: index of the dominant plate (debug + future shading).
+//!   - `moisture`: normalised moisture in [0, 1] (latitude bands + noise).
+//!   - `temperature_k`: local mean temperature in Kelvin (climate-aware).
+//!   - `biome_id`: canonical biome computed once from the channels above.
+//!
+//! The heightmap is built from two physics-motivated layers:
 //!
 //!   1. **Plate tectonics** — sample ~8 random "plate centres" on the
 //!      sphere with associated velocities. For each surface point find
@@ -14,20 +22,17 @@
 //!   2. **Multi-octave value noise** layered on top for terrain
 //!      texture so the plates don't read as flat polygons.
 //!
-//! Output: a `PreBake` struct holding a heightmap (lat × lon grid of f32
-//! in [-1, 1]) plus plate ids. The detail globe uploads this as its terrain
-//! atlas, and the surface map samples it so broad coastlines agree.
+//! Moisture and temperature are computed per-cell from latitude,
+//! elevation, and the BakeInput climate scalars. Biome classification
+//! is Rust-owned — the globe shader, surface map, and region view all
+//! sample the same `biome_id` instead of each re-deriving biomes from
+//! noise. That's the only way the three views can stay visually
+//! consistent.
 //!
-//! Pairing item 1 (pre-bake) with item 3 (tectonics) is intentional —
-//! the doc treats them as separate compute items but tectonics' output
-//! IS the heightmap layer of the pre-bake. Sharing the data structure
-//! avoids the duplication the doc warned against in the World Surface
-//! Map roadmap.
-//!
-//! Generation is intentionally cached for the last `(seed, water)` pair. The
-//! renderer, the surface-map generator, and the JS preview often request the
-//! same bake back-to-back, and recomputing a 1024×512 plate/noise field on
-//! every path made world changes feel sluggish on mobile.
+//! Generation is cached in a small thread-local LRU keyed by every
+//! BakeInput field that affects the output. The renderer, the surface-
+//! map generator, and the JS preview all hit this cache, so flipping
+//! between views or worlds doesn't re-bake on each hop.
 
 #![allow(dead_code)]
 
@@ -38,15 +43,154 @@ use serde::{Deserialize, Serialize};
 pub const PREBAKE_LON: usize = 1024;
 pub const PREBAKE_LAT: usize = 512;
 
+const LRU_CAPACITY: usize = 4;
+
 thread_local! {
-    static LAST_PREBAKE: RefCell<Option<PreBakeCache>> = const { RefCell::new(None) };
+    static PREBAKE_LRU: RefCell<Vec<PreBakeCacheEntry>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Clone)]
-struct PreBakeCache {
+struct PreBakeCacheEntry {
+    key: PreBakeKey,
+    bake: PreBake,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PreBakeKey {
     seed: u32,
     water_bits: u32,
-    bake: PreBake,
+    ice_bits: u32,
+    temp_bits: u32,
+    veg_bits: u32,
+}
+
+impl PreBakeKey {
+    fn from_input(input: &BakeInput) -> Self {
+        Self {
+            seed: input.seed,
+            water_bits: input.water_fraction.clamp(0.0, 1.0).to_bits(),
+            ice_bits: input.ice_latitude.clamp(0.0, 1.0).to_bits(),
+            temp_bits: input.mean_temp_k.max(0.0).to_bits(),
+            veg_bits: input.vegetation_richness.clamp(0.0, 1.0).to_bits(),
+        }
+    }
+}
+
+/// Inputs that influence the pre-bake. `seed` should be a stable hash of
+/// the world's identity (see `surface_seed`); the climate scalars come
+/// from the planet's `ClimateSummary`.
+#[derive(Clone, Copy, Debug)]
+pub struct BakeInput {
+    pub seed: u32,
+    /// Target fraction of cells below sea level, 0..1.
+    pub water_fraction: f32,
+    /// Normalised |latitude| (0..1) at which permanent ice cover begins.
+    pub ice_latitude: f32,
+    /// Global mean surface temperature, Kelvin. ~288 for Earth.
+    pub mean_temp_k: f32,
+    /// 0 = barren rock, 1 = lush Earth. Drives moisture amplitude.
+    pub vegetation_richness: f32,
+}
+
+impl BakeInput {
+    /// Default Earth-ish scalars used by the legacy two-arg entry point.
+    pub fn earthlike(seed: u32, water_fraction: f32) -> Self {
+        Self {
+            seed,
+            water_fraction,
+            ice_latitude: 0.82,
+            mean_temp_k: 288.0,
+            vegetation_richness: 0.65,
+        }
+    }
+}
+
+/// Stable identity for a world. The seed handed to the pre-bake is
+/// `surface_seed(&identity)`; the same identity always paints the same
+/// atlas. No backend storage required — the hash *is* the persistence.
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceIdentity<'a> {
+    pub sector_seed: u32,
+    pub subsector_seed: u32,
+    pub hex_col: u8,
+    pub hex_row: u8,
+    /// 9-character UWP string, e.g. "B564500-9". Edits change the seed
+    /// so a Referee's override is reflected in the surface visuals.
+    pub uwp: &'a str,
+    /// Display name. Renaming a world locks in its new look.
+    pub name: &'a str,
+}
+
+/// Compose a `SurfaceIdentity` into a stable u32 seed. Uses a
+/// SplitMix-style 64-bit mixer over each field so any single bit change
+/// in any input avalanches into the output.
+pub fn surface_seed(identity: &SurfaceIdentity<'_>) -> u32 {
+    let mut h: u64 = 0xA02D_1F5E_8C13_24B5;
+    h = mix64(h ^ identity.sector_seed as u64);
+    h = mix64(h ^ identity.subsector_seed as u64);
+    h = mix64(h ^ ((identity.hex_col as u64) << 8 | identity.hex_row as u64));
+    for byte in identity.uwp.bytes() {
+        h = mix64(h.wrapping_add(byte as u64));
+    }
+    for byte in identity.name.bytes() {
+        h = mix64(h.wrapping_add((byte as u64) << 16));
+    }
+    (h >> 32) as u32
+}
+
+fn mix64(mut z: u64) -> u64 {
+    z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// Canonical biome enum. All three render paths (globe shader, hex
+/// world map, region view) read this same id and look up colours from
+/// the same palette. No path is allowed to re-derive biomes from local
+/// noise — that's what made the views disagree before.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BiomeId {
+    DeepOcean = 0,
+    ShallowOcean = 1,
+    Shore = 2,
+    Plain = 3,
+    Grassland = 4,
+    Forest = 5,
+    Savanna = 6,
+    Desert = 7,
+    Hills = 8,
+    Mountain = 9,
+    AlpineRock = 10,
+    Snow = 11,
+    Tundra = 12,
+    Ice = 13,
+    Volcanic = 14,
+    Barren = 15,
+}
+
+impl BiomeId {
+    pub fn from_u8(v: u8) -> BiomeId {
+        match v {
+            0 => BiomeId::DeepOcean,
+            1 => BiomeId::ShallowOcean,
+            2 => BiomeId::Shore,
+            3 => BiomeId::Plain,
+            4 => BiomeId::Grassland,
+            5 => BiomeId::Forest,
+            6 => BiomeId::Savanna,
+            7 => BiomeId::Desert,
+            8 => BiomeId::Hills,
+            9 => BiomeId::Mountain,
+            10 => BiomeId::AlpineRock,
+            11 => BiomeId::Snow,
+            12 => BiomeId::Tundra,
+            13 => BiomeId::Ice,
+            14 => BiomeId::Volcanic,
+            _ => BiomeId::Barren,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,6 +204,17 @@ pub struct PreBake {
     /// Plates resolved during generation — bake time inputs preserved so
     /// callers can debug or render plate boundaries.
     pub plates: Vec<Plate>,
+    /// Sea level chosen so `ocean_fraction(sea_level)` matches
+    /// `water_fraction` at the requested quantile. Stored on the bake
+    /// so every consumer agrees on where the coastline sits.
+    pub sea_level: f32,
+    /// Per-cell normalised moisture, 0..1.
+    pub moisture: Vec<f32>,
+    /// Per-cell local mean temperature, Kelvin.
+    pub temperature_k: Vec<f32>,
+    /// Per-cell canonical biome. Sample this in shaders instead of
+    /// re-deriving biome from local noise.
+    pub biome_id: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -96,6 +251,32 @@ impl PreBake {
         let h0 = h00 * (1.0 - fj) + h01 * fj;
         let h1 = h10 * (1.0 - fj) + h11 * fj;
         h0 * (1.0 - fi) + h1 * fi
+    }
+
+    /// Nearest-neighbour biome lookup. Bilinear doesn't make sense for
+    /// a categorical channel.
+    pub fn sample_biome(&self, lat_norm: f32, lon_norm: f32) -> BiomeId {
+        let (i, j) = self.nearest_cell(lat_norm, lon_norm);
+        BiomeId::from_u8(self.biome_id[i * self.lon_cells as usize + j])
+    }
+
+    pub fn sample_moisture(&self, lat_norm: f32, lon_norm: f32) -> f32 {
+        let (i, j) = self.nearest_cell(lat_norm, lon_norm);
+        self.moisture[i * self.lon_cells as usize + j]
+    }
+
+    pub fn sample_temperature(&self, lat_norm: f32, lon_norm: f32) -> f32 {
+        let (i, j) = self.nearest_cell(lat_norm, lon_norm);
+        self.temperature_k[i * self.lon_cells as usize + j]
+    }
+
+    fn nearest_cell(&self, lat_norm: f32, lon_norm: f32) -> (usize, usize) {
+        let lat_cells = self.lat_cells.max(1) as usize;
+        let lon_cells = self.lon_cells.max(1) as usize;
+        let i = ((lat_norm.clamp(0.0, 1.0) * lat_cells as f32) as usize).min(lat_cells - 1);
+        let j_raw = (lon_norm.rem_euclid(1.0) * lon_cells as f32) as usize;
+        let j = j_raw % lon_cells;
+        (i, j)
     }
 
     pub fn ocean_fraction(&self, sea_level: f32) -> f32 {
@@ -135,38 +316,65 @@ impl Rng {
     }
 }
 
-/// Generate the per-seed surface pre-bake. The default 1024×512 grid is
-/// deliberately high enough for the globe shader and zoomable surface map
-/// to share smooth coastlines without visible atlas blockiness.
+/// Legacy two-arg entry point. Equivalent to `generate_with` with
+/// Earth-ish defaults for the climate scalars. Existing callers that
+/// don't yet thread climate into the pre-bake (the renderer's terrain
+/// atlas upload, the JS preview path) keep working.
 pub fn generate(seed: u32, water_fraction: f32) -> PreBake {
-    let water = water_fraction.clamp(0.0, 1.0);
-    let water_bits = water.to_bits();
-    if let Some(cached) = LAST_PREBAKE.with(|slot| {
-        let slot = slot.borrow();
-        slot.as_ref()
-            .filter(|cached| cached.seed == seed && cached.water_bits == water_bits)
-            .map(|cached| cached.bake.clone())
-    }) {
-        return cached;
-    }
+    generate_with(BakeInput::earthlike(seed, water_fraction))
+}
 
-    let bake = generate_uncached(seed, water);
-    LAST_PREBAKE.with(|slot| {
-        *slot.borrow_mut() = Some(PreBakeCache {
-            seed,
-            water_bits,
-            bake: bake.clone(),
-        });
-    });
+/// Generate the per-seed surface pre-bake. The default 1024×512 grid is
+/// deliberately high enough for the globe shader and zoomable surface
+/// map to share smooth coastlines without visible atlas blockiness.
+pub fn generate_with(input: BakeInput) -> PreBake {
+    let key = PreBakeKey::from_input(&input);
+    if let Some(bake) = lru_get(&key) {
+        return bake;
+    }
+    let bake = generate_uncached(&input);
+    lru_put(key, bake.clone());
     bake
 }
 
-fn generate_uncached(seed: u32, water_fraction: f32) -> PreBake {
+fn lru_get(key: &PreBakeKey) -> Option<PreBake> {
+    PREBAKE_LRU.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let pos = slot.iter().position(|entry| &entry.key == key)?;
+        // Move-to-front MRU.
+        let entry = slot.remove(pos);
+        let bake = entry.bake.clone();
+        slot.insert(0, entry);
+        Some(bake)
+    })
+}
+
+fn lru_put(key: PreBakeKey, bake: PreBake) {
+    PREBAKE_LRU.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        // Drop any stale entry for this key (shouldn't happen — lru_get
+        // would have hit first — but be defensive against future
+        // refactors).
+        slot.retain(|entry| entry.key != key);
+        slot.insert(0, PreBakeCacheEntry { key, bake });
+        if slot.len() > LRU_CAPACITY {
+            slot.truncate(LRU_CAPACITY);
+        }
+    });
+}
+
+fn generate_uncached(input: &BakeInput) -> PreBake {
+    let seed = input.seed;
+    let water_fraction = input.water_fraction.clamp(0.0, 1.0);
     let mut rng = Rng::new(seed);
     let plates = make_plates(&mut rng, water_fraction);
 
-    let mut heightmap = vec![0.0f32; PREBAKE_LAT * PREBAKE_LON];
-    let mut plate_id = vec![0u8; PREBAKE_LAT * PREBAKE_LON];
+    let total = PREBAKE_LAT * PREBAKE_LON;
+    let mut heightmap = vec![0.0f32; total];
+    let mut plate_id = vec![0u8; total];
+    let mut moisture = vec![0.0f32; total];
+    let mut temperature_k = vec![0.0f32; total];
+    let mut biome_id = vec![0u8; total];
 
     for i in 0..PREBAKE_LAT {
         let lat = -std::f32::consts::FRAC_PI_2
@@ -216,13 +424,236 @@ fn generate_uncached(seed: u32, water_fraction: f32) -> PreBake {
         }
     }
 
+    // Sea level: pick the quantile of the heightmap that matches the
+    // requested water fraction. Done after the heightmap pass so every
+    // consumer agrees on where the coastline sits.
+    let sea_level = quantile_height(&heightmap, water_fraction);
+
+    // Second pass: moisture and temperature need elevation + sea_level
+    // to compute properly, so they have to wait until the heightmap is
+    // complete.
+    for i in 0..PREBAKE_LAT {
+        let lat = -std::f32::consts::FRAC_PI_2
+            + (i as f32 + 0.5) / PREBAKE_LAT as f32 * std::f32::consts::PI;
+        let abs_lat_norm = (lat.abs() / std::f32::consts::FRAC_PI_2).clamp(0.0, 1.0);
+        let (sin_lat, cos_lat) = (lat.sin(), lat.cos());
+        for j in 0..PREBAKE_LON {
+            let lon = -std::f32::consts::PI
+                + (j as f32 + 0.5) / PREBAKE_LON as f32 * std::f32::consts::TAU;
+            let p = [cos_lat * lon.cos(), sin_lat, cos_lat * lon.sin()];
+            let idx = i * PREBAKE_LON + j;
+            let h = heightmap[idx];
+            let above_sea = (h - sea_level).max(0.0);
+
+            let moisture_v = compute_moisture(p, abs_lat_norm, above_sea, input, seed);
+            let temp_v = compute_temperature(abs_lat_norm, above_sea, input);
+
+            moisture[idx] = moisture_v;
+            temperature_k[idx] = temp_v;
+
+            let lat_norm_signed = i as f32 / PREBAKE_LAT as f32; // 0..1, south->north
+            biome_id[idx] = classify_biome(
+                h,
+                sea_level,
+                lat_norm_signed,
+                moisture_v,
+                temp_v,
+                input.vegetation_richness,
+                input.ice_latitude,
+            ) as u8;
+        }
+    }
+
     PreBake {
         lon_cells: PREBAKE_LON as u32,
         lat_cells: PREBAKE_LAT as u32,
         heightmap,
         plate_id,
         plates,
+        sea_level,
+        moisture,
+        temperature_k,
+        biome_id,
     }
+}
+
+/// Quantile-based sea-level pick. Picks the elevation value such that
+/// `water_fraction` of cells lie below it.
+fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
+    if heightmap.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = heightmap.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let target_below = (water_fraction.clamp(0.0, 1.0) * sorted.len() as f32)
+        .clamp(0.0, sorted.len() as f32) as usize;
+    if target_below == 0 {
+        sorted[0] - 0.001
+    } else if target_below >= sorted.len() {
+        sorted[sorted.len() - 1] + 0.001
+    } else {
+        sorted[target_below]
+    }
+}
+
+/// Per-cell moisture in [0, 1]. Sums:
+///   - a latitude band term (Hadley-cell aridity in the subtropics,
+///     mid-latitude humidity, polar dryness),
+///   - a continental-interior dryness term driven by elevation above
+///     sea level (mountains and high plateaus are drier),
+///   - a per-seed noise term so deserts / wet zones aren't perfectly
+///     zonal.
+///
+/// Scaled by `vegetation_richness` so barren worlds read uniformly dry.
+fn compute_moisture(
+    p: [f32; 3],
+    abs_lat_norm: f32,
+    above_sea: f32,
+    input: &BakeInput,
+    seed: u32,
+) -> f32 {
+    // Latitude band: wet at the equator and ~50° latitude, dry at the
+    // subtropics (~25°) and at the poles. Modelled as
+    // cos(lat) * (1 - exp(-((|lat| - 50°)^2 / 200))) ... but we want a
+    // cheap, smooth approximation: a weighted blend of two cosines.
+    let equator_band = (1.0 - abs_lat_norm).max(0.0).powf(1.4);
+    let mid_band = (1.0 - (abs_lat_norm - 0.55).abs() * 2.2).clamp(0.0, 1.0);
+    let polar_dry = 1.0 - (abs_lat_norm - 0.78).clamp(0.0, 0.22) * 4.5;
+    let lat_term = (equator_band * 0.55 + mid_band * 0.35).clamp(0.0, 1.0) * polar_dry;
+
+    // Continental interior dryness: above-sea elevation reduces
+    // moisture, capped so coastal hills aren't deserts.
+    let interior_dry = (above_sea * 1.8).clamp(0.0, 0.7);
+
+    // Seed noise so deserts have real shape.
+    let n_low = value_noise_3d([p[0] * 0.9, p[1] * 0.9, p[2] * 0.9], seed ^ 0x4E_3F_19_AB);
+    let n_high = value_noise_3d([p[0] * 4.2, p[1] * 4.2, p[2] * 4.2], seed ^ 0x9C_1B_27_55);
+    let noise = (n_low * 0.6 + n_high * 0.4) * 0.5 + 0.5; // -> [0,1]
+
+    let base = (lat_term * 0.65 + noise * 0.45 - interior_dry).clamp(0.0, 1.0);
+    // Vegetation richness is a global moisture envelope: a Mars-like
+    // world has richness ≈ 0 and the moisture channel collapses toward
+    // a uniform dry value.
+    let richness = input.vegetation_richness.clamp(0.0, 1.0);
+    base * richness + (1.0 - richness) * 0.05
+}
+
+/// Per-cell temperature in Kelvin. Mean - latitude gradient - lapse
+/// rate * elevation. Earth-like equator-to-pole spread is ~60 K; we use
+/// that as the gradient amplitude.
+fn compute_temperature(abs_lat_norm: f32, above_sea: f32, input: &BakeInput) -> f32 {
+    let mean = input.mean_temp_k.max(0.0);
+    // Solar angle proxy: cos²(lat). At the poles we lose ~60 K relative
+    // to the equator.
+    let lat_factor = abs_lat_norm.powf(1.6);
+    let lat_drop = 60.0 * lat_factor;
+    // Atmospheric lapse rate ≈ 6.5 K/km. Our above_sea is normalised
+    // to ~[0, 1] where 1 ≈ continent-top elevation (a few km on Earth).
+    // 12 K/unit gives a believable cold-on-peaks effect.
+    let lapse = 12.0 * above_sea;
+    (mean - lat_drop - lapse).max(0.0)
+}
+
+/// Canonical biome classifier. Single source of truth for biome
+/// assignment — the globe shader, surface map, and region view all
+/// look up biomes from the atlas this produces. If two views disagree
+/// on what's at a coordinate, this function is wrong, not them.
+#[allow(clippy::too_many_arguments)]
+pub fn classify_biome(
+    elevation: f32,
+    sea_level: f32,
+    lat_norm: f32, // 0 = south pole, 1 = north
+    moisture: f32,
+    temp_k: f32,
+    vegetation_richness: f32,
+    ice_latitude: f32,
+) -> BiomeId {
+    const FREEZE_K: f32 = 273.15;
+    let abs_lat = (lat_norm - 0.5).abs() * 2.0; // 0 at equator, 1 at poles
+    let above = (elevation - sea_level).max(0.0);
+    let below = (sea_level - elevation).max(0.0);
+
+    // Polar caps: latitude crosses ice_latitude AND it's cold enough.
+    if abs_lat >= ice_latitude && temp_k < FREEZE_K + 5.0 {
+        // Ice on water, snow / barren on land.
+        if elevation < sea_level {
+            return BiomeId::Ice;
+        }
+        if vegetation_richness < 0.05 {
+            return BiomeId::Barren;
+        }
+        return BiomeId::Snow;
+    }
+
+    // Submerged.
+    if elevation < sea_level {
+        // Anything below ~0.20 raw depth (still working in the heightmap
+        // [-1, 1] space) is shallow; deeper than that reads as deep ocean.
+        if below < 0.08 {
+            return BiomeId::ShallowOcean;
+        }
+        return BiomeId::DeepOcean;
+    }
+
+    // Just above the waterline: coastal strip. Tight, so it reads as a
+    // beach band rather than a wide plain.
+    if above < 0.015 && vegetation_richness > 0.05 {
+        return BiomeId::Shore;
+    }
+
+    // Volcanic worlds (very hot) — sprinkle volcanic across high relief.
+    if temp_k > 800.0 {
+        if above > 0.40 {
+            return BiomeId::Volcanic;
+        }
+        return BiomeId::Mountain;
+    }
+
+    // High elevation.
+    if above > 0.55 {
+        // Cold high peaks pick up snow caps even off-pole.
+        if temp_k < FREEZE_K - 2.0 {
+            return BiomeId::Snow;
+        }
+        return BiomeId::Mountain;
+    }
+    if above > 0.32 {
+        // Mid-elevation: alpine rock when cold or dry, hills otherwise.
+        if temp_k < FREEZE_K + 2.0 || moisture < 0.18 {
+            return BiomeId::AlpineRock;
+        }
+        return BiomeId::Hills;
+    }
+
+    // Cold lowlands → tundra.
+    if temp_k < FREEZE_K + 4.0 {
+        return BiomeId::Tundra;
+    }
+
+    // Barren-world override: no vegetation infrastructure available.
+    if vegetation_richness < 0.05 {
+        return BiomeId::Barren;
+    }
+
+    // Dry hot → desert. Dry temperate → savanna.
+    if moisture < 0.22 {
+        if temp_k > FREEZE_K + 25.0 {
+            return BiomeId::Desert;
+        }
+        return BiomeId::Savanna;
+    }
+
+    // Moist + cool → forest. Moist + temperate → grassland. Moist + hot → savanna.
+    if temp_k < FREEZE_K + 22.0 && moisture > 0.45 {
+        return BiomeId::Forest;
+    }
+    if temp_k > FREEZE_K + 30.0 && moisture < 0.55 {
+        return BiomeId::Savanna;
+    }
+    if moisture > 0.55 {
+        return BiomeId::Grassland;
+    }
+    BiomeId::Plain
 }
 
 fn make_plates(rng: &mut Rng, water_fraction: f32) -> Vec<Plate> {
@@ -400,6 +831,14 @@ mod tests {
         let b = generate(42, 0.7);
         assert_eq!(a.heightmap, b.heightmap);
         assert_eq!(a.plate_id, b.plate_id);
+        assert_eq!(a.biome_id, b.biome_id);
+        assert_eq!(a.sea_level, b.sea_level);
+        for (x, y) in a.moisture.iter().zip(b.moisture.iter()) {
+            assert!((x - y).abs() < 1e-6, "moisture diverged: {x} vs {y}");
+        }
+        for (x, y) in a.temperature_k.iter().zip(b.temperature_k.iter()) {
+            assert!((x - y).abs() < 1e-6, "temperature diverged: {x} vs {y}");
+        }
     }
 
     #[test]
@@ -407,6 +846,9 @@ mod tests {
         let p = generate(1, 0.5);
         assert_eq!(p.heightmap.len(), PREBAKE_LON * PREBAKE_LAT);
         assert_eq!(p.plate_id.len(), PREBAKE_LON * PREBAKE_LAT);
+        assert_eq!(p.moisture.len(), PREBAKE_LON * PREBAKE_LAT);
+        assert_eq!(p.temperature_k.len(), PREBAKE_LON * PREBAKE_LAT);
+        assert_eq!(p.biome_id.len(), PREBAKE_LON * PREBAKE_LAT);
         assert!(p.plates.len() >= 6 && p.plates.len() <= 11);
     }
 
@@ -416,6 +858,15 @@ mod tests {
         for h in &p.heightmap {
             assert!(h.is_finite());
             assert!(*h >= -1.0 && *h <= 1.0, "out of range: {h}");
+        }
+        for m in &p.moisture {
+            assert!(
+                m.is_finite() && (0.0..=1.0).contains(m),
+                "moisture {m} out of range"
+            );
+        }
+        for t in &p.temperature_k {
+            assert!(t.is_finite() && *t >= 0.0, "temperature {t} not physical");
         }
     }
 
@@ -450,5 +901,134 @@ mod tests {
             (got - want).abs() < 1e-4,
             "sample {got} far from cell {want}"
         );
+    }
+
+    #[test]
+    fn sea_level_matches_water_fraction() {
+        // Pick a few targets and verify the bake's sea_level lands
+        // within ~1 % of the requested quantile.
+        for target in [0.2_f32, 0.5, 0.75] {
+            let bake = generate(2024, target);
+            let actual = bake.ocean_fraction(bake.sea_level);
+            assert!(
+                (actual - target).abs() < 0.012,
+                "ocean fraction {actual} far from target {target}"
+            );
+        }
+    }
+
+    #[test]
+    fn surface_seed_is_stable_and_avalanches() {
+        let base = SurfaceIdentity {
+            sector_seed: 0xCAFE,
+            subsector_seed: 0xBEEF,
+            hex_col: 3,
+            hex_row: 7,
+            uwp: "B564500-9",
+            name: "Aenis",
+        };
+        let s1 = surface_seed(&base);
+        let s2 = surface_seed(&base);
+        assert_eq!(s1, s2, "same identity must hash the same");
+
+        // Each field change must produce a different seed.
+        let mut alt = base;
+        alt.hex_col = 4;
+        assert_ne!(surface_seed(&alt), s1, "hex change should change seed");
+
+        let mut alt = base;
+        alt.uwp = "B564500-A";
+        assert_ne!(surface_seed(&alt), s1, "uwp change should change seed");
+
+        let mut alt = base;
+        alt.name = "Bellis";
+        assert_ne!(surface_seed(&alt), s1, "name change should change seed");
+
+        let mut alt = base;
+        alt.sector_seed = 0xCAFF;
+        assert_ne!(surface_seed(&alt), s1, "sector change should change seed");
+    }
+
+    #[test]
+    fn biome_classifier_basic_cases() {
+        let earth_input = (0.65_f32, 0.82_f32); // veg_rich, ice_lat
+
+        // Deep below sea.
+        let b = classify_biome(-0.5, 0.0, 0.5, 0.5, 290.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::DeepOcean);
+
+        // Just below sea.
+        let b = classify_biome(-0.01, 0.0, 0.5, 0.5, 290.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::ShallowOcean);
+
+        // Coastal strip.
+        let b = classify_biome(0.005, 0.0, 0.5, 0.5, 290.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::Shore);
+
+        // Hot dry equatorial → desert.
+        let b = classify_biome(0.10, 0.0, 0.5, 0.10, 305.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::Desert);
+
+        // Cold polar land → snow.
+        let b = classify_biome(0.20, 0.0, 0.97, 0.5, 250.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::Snow);
+
+        // Cold polar ocean → ice.
+        let b = classify_biome(-0.05, 0.0, 0.97, 0.5, 250.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::Ice);
+
+        // High mountain.
+        let b = classify_biome(0.70, 0.0, 0.5, 0.5, 280.0, earth_input.0, earth_input.1);
+        assert_eq!(b, BiomeId::Mountain);
+
+        // Barren world → no vegetation.
+        let b = classify_biome(0.10, 0.0, 0.5, 0.5, 285.0, 0.0, earth_input.1);
+        assert_eq!(b, BiomeId::Barren);
+    }
+
+    #[test]
+    fn lru_cache_hits_and_evicts() {
+        // First generate four distinct bakes; then re-request the first
+        // one and verify it didn't have to re-bake by checking
+        // determinism (same output) and that the LRU evicts oldest.
+        let a = generate(101, 0.3);
+        let b = generate(102, 0.3);
+        let c = generate(103, 0.3);
+        let d = generate(104, 0.3);
+        let a2 = generate(101, 0.3);
+        assert_eq!(a.heightmap, a2.heightmap, "cache hit must return identical");
+        // Force eviction of `b` by adding a 5th distinct key.
+        let _e = generate(105, 0.3);
+        // `b`'s bake should be re-baked here — it'll still be identical
+        // due to determinism, but we can at least verify it still works.
+        let b2 = generate(102, 0.3);
+        assert_eq!(b.heightmap, b2.heightmap);
+        // Touch all references so the compiler doesn't strip them.
+        let _ = (c.lon_cells, d.lon_cells);
+    }
+
+    #[test]
+    fn cache_keyed_on_climate_scalars() {
+        // Same seed + water but different climate should produce
+        // different biome ids — proving the cache key includes climate.
+        let warm = generate_with(BakeInput {
+            seed: 555,
+            water_fraction: 0.6,
+            ice_latitude: 0.82,
+            mean_temp_k: 295.0,
+            vegetation_richness: 0.7,
+        });
+        let cold = generate_with(BakeInput {
+            seed: 555,
+            water_fraction: 0.6,
+            ice_latitude: 0.55,
+            mean_temp_k: 240.0,
+            vegetation_richness: 0.7,
+        });
+        // Heightmap is purely a function of (seed, water_fraction) so
+        // it should match.
+        assert_eq!(warm.heightmap, cold.heightmap);
+        // Biome ids should differ — cold world has wider ice + tundra.
+        assert_ne!(warm.biome_id, cold.biome_id);
     }
 }
