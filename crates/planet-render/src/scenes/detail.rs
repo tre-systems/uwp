@@ -3,7 +3,7 @@ use glam::{Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
-use crate::domain::surface_prebake;
+use crate::domain::surface_prebake::{self, BakeInput};
 use crate::mesh::cubesphere;
 use crate::params::PlanetParams;
 
@@ -43,7 +43,9 @@ pub struct DetailMesh {
 }
 
 pub struct TerrainAtlas {
-    _texture: wgpu::Texture,
+    // Texture handles must outlive their views; held here for resource lifetime.
+    _height_texture: wgpu::Texture,
+    _biome_texture: wgpu::Texture,
     pub bind_group: wgpu::BindGroup,
     pub sea_level_threshold: f32,
 }
@@ -51,16 +53,31 @@ pub struct TerrainAtlas {
 pub fn create_terrain_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("terrain_atlas_layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                view_dimension: wgpu::TextureViewDimension::D2,
-                multisampled: false,
+        entries: &[
+            // Height: R32Float for vertex displacement + per-pixel relief.
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            // Biome: R8Uint, sampled per-fragment for the palette lookup
+            // that replaced the in-shader biome derivation stack.
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Uint,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
     })
 }
 
@@ -70,10 +87,21 @@ pub fn create_terrain_atlas(
     layout: &wgpu::BindGroupLayout,
     params: &PlanetParams,
 ) -> TerrainAtlas {
-    let bake = surface_prebake::generate(params.seed, params.sea_level);
-    let sea_level_threshold = quantile_height(&bake.heightmap, params.sea_level);
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("terrain_atlas"),
+    let bake = surface_prebake::generate_with(BakeInput {
+        seed: params.seed,
+        water_fraction: params.sea_level,
+        ice_latitude: params.ice_latitude,
+        // Climate threading lands in Phase C — for now we use the Earth-
+        // ish default so biome IDs are populated. Once the renderer
+        // owns climate state we'll pass climate.mean_surface_temp_k here.
+        mean_temp_k: 288.0,
+        vegetation_richness: params.vegetation_richness,
+    });
+    let sea_level_threshold = bake.sea_level;
+
+    // Height texture (R32Float).
+    let height_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("terrain_atlas_height"),
         size: wgpu::Extent3d {
             width: bake.lon_cells,
             height: bake.lat_cells,
@@ -86,20 +114,10 @@ pub fn create_terrain_atlas(
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("terrain_atlas_bind_group"),
-        layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&view),
-        }],
-    });
-    // `write_texture` only needs the view during bind-group creation; the
-    // texture handle keeps the underlying resource alive after `view` drops.
+    let height_view = height_texture.create_view(&wgpu::TextureViewDescriptor::default());
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
-            texture: &texture,
+            texture: &height_texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
@@ -117,13 +135,68 @@ pub fn create_terrain_atlas(
         },
     );
 
+    // Biome texture (R8Uint).
+    let biome_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("terrain_atlas_biome"),
+        size: wgpu::Extent3d {
+            width: bake.lon_cells,
+            height: bake.lat_cells,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Uint,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let biome_view = biome_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &biome_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &bake.biome_id,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(bake.lon_cells),
+            rows_per_image: Some(bake.lat_cells),
+        },
+        wgpu::Extent3d {
+            width: bake.lon_cells,
+            height: bake.lat_cells,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("terrain_atlas_bind_group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&height_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&biome_view),
+            },
+        ],
+    });
+
     TerrainAtlas {
-        _texture: texture,
+        _height_texture: height_texture,
+        _biome_texture: biome_texture,
         bind_group,
         sea_level_threshold,
     }
 }
 
+/// Retained for the regression test below — the live atlas path uses the
+/// quantile already stored on `PreBake::sea_level`.
+#[cfg(test)]
 fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
     if heightmap.is_empty() {
         return 0.0;
