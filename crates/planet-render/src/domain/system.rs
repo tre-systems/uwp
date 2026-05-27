@@ -807,6 +807,16 @@ fn generate_with_profile(seed: u32, profile: GenerateProfile) -> SolarSystem {
         }
     }
 
+    // Subsector map generation still needs HZ climate before main-world
+    // pick so starport / population rolls match the full-system path.
+    if subsector_map {
+        for planet in planets.iter_mut() {
+            if planet.in_habitable_zone {
+                recompute_planet_climate(planet);
+            }
+        }
+    }
+
     // Identify the main world. Preference order:
     //   1. Highest climate habitability score.
     //   2. Largest rocky / terrestrial / super-Earth class (settler fallback
@@ -818,7 +828,9 @@ fn generate_with_profile(seed: u32, profile: GenerateProfile) -> SolarSystem {
 
     if subsector_map {
         if let Some(planet) = planets.get_mut(main_world.max(0) as usize) {
-            recompute_planet_climate(planet);
+            if !planet.in_habitable_zone {
+                recompute_planet_climate(planet);
+            }
         }
     }
 
