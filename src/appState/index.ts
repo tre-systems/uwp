@@ -186,10 +186,14 @@ export function resolveViewMode(requested: ViewMode): ViewMode {
 
 export function setViewMode(mode: ViewMode) {
   const resolved = resolveViewMode(mode)
+  const leavingSurface = viewMode.value === 'surface' && resolved !== 'surface'
   if (resolved === 'surface') {
     refreshSurfaceMap()
   } else if (mode === 'surface') {
     currentSurfaceMap.value = null
+  }
+  if (leavingSurface) {
+    closeRegionView()
   }
   viewMode.value = resolved
 }
@@ -450,10 +454,13 @@ export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null, cell: Surfa
  *  doing it on Surface-view entry or when the Surface view is already visible. */
 export function refreshSurfaceMap(): void {
   const planetIndex = selectedSurfacePlanetIndex()
+  const previous = currentSurfaceMap.value
   const map = planetIndex == null ? null : rendererControls?.getSurfaceMap(planetIndex) ?? null
   currentSurfaceMap.value = map
-  selectedSurfaceHex.value = null
-  selectedSurfaceCell.value = null
+  if (!map || previous?.seed !== map.seed) {
+    selectedSurfaceHex.value = null
+    selectedSurfaceCell.value = null
+  }
 }
 
 /** Fetch the Rust pre-bake heightmap for the selected planet (used

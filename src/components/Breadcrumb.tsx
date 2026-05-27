@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks'
 import {
   currentSubsector,
   currentSystem,
+  regionHex,
   selectedHex,
   selectedSurfacePlanetIndex,
   setViewMode,
@@ -28,12 +29,19 @@ export function Breadcrumb() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      // Only pop if no modal is open. Modals already consume Escape
-      // before bubbling up, so reaching this handler means the user
-      // means to pop a view level.
-      if (mode === 'surface') setViewMode('detail')
-      else if (mode === 'detail') setViewMode('system')
-      else if (mode === 'system') setViewMode('subsector')
+      if (regionHex.value) return
+      const pop = (): void => {
+        if (mode === 'surface') setViewMode('detail')
+        else if (mode === 'detail') setViewMode('system')
+        else if (mode === 'system') setViewMode('subsector')
+        requestAnimationFrame(() => {
+          const active = document.querySelector(
+            '.view-mode-toggle .view-mode-segment.active',
+          ) as HTMLButtonElement | null
+          active?.focus({ preventScroll: true })
+        })
+      }
+      pop()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -61,7 +69,7 @@ export function Breadcrumb() {
     crumbs.push({
       label: `${hexNameText} · ${hexLabelText}`,
       active: false,
-      onClick: () => setViewMode('subsector'),
+      onClick: () => setViewMode(mode === 'detail' || mode === 'surface' ? 'system' : 'subsector'),
       muted: true,
     })
   }

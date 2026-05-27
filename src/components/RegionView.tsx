@@ -37,7 +37,10 @@ export function RegionView() {
     if (!hex) return
     closeRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeRegionView()
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        closeRegionView()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

@@ -1268,6 +1268,18 @@ label.color input[type="color"]::-webkit-color-swatch {
 .region-canvas-wrap {
   position: relative;
   flex: 0 0 auto;
+  width: min(760px, calc(100vw - 48px));
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  .region-canvas-wrap {
+    width: calc(100vw - 32px);
+  }
+  .region-canvas-wrap .region-canvas {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 760 / 600;
+  }
 }
 .region-canvas {
   display: block;

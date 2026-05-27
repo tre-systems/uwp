@@ -2,13 +2,16 @@ import { effect } from '@preact/signals'
 import type { SystemBodyTarget } from '../domain/system'
 import { resolvedDetailTarget } from '../navigation/bodyView'
 import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
+import type { SurfaceHexCoord } from '../domain/surfaceMap'
 import {
   currentSubsector,
+  currentSurfaceMap,
   currentSystem,
   detailTarget,
   focusMainWorldDetail,
   focusSystemTarget,
   regionHex,
+  selectAndFocusSurfaceHex,
   selectedHex,
   selectedSurfaceHex,
   selectedSurfacePlanetIndex,
@@ -28,7 +31,7 @@ import type { ViewMode } from '.'
 // Encodes the user's current chart selection in `location.hash` so a
 // shared link recreates the same view:
 //
-//   #sub=<subsectorSeed>&hex=<col>,<row>&sys=<systemSeed>&body=<target>&view=<mode>
+//   #sub=…&hex=…&sys=…&body=…&surface=…&view=<mode>
 //
 // All fields are optional; missing keys fall back to defaults. We
 // hydrate at boot, then mirror future signal writes back into the
@@ -39,6 +42,7 @@ interface ParsedState {
   systemSeed?: number
   hex?: { col: number; row: number }
   body?: SystemBodyTarget
+  surfaceHex?: SurfaceHexCoord
   view?: ViewMode
 }
 
@@ -46,6 +50,8 @@ const VALID_VIEWS: readonly ViewMode[] = ['subsector', 'system', 'detail', 'surf
 
 /** Detail body from the URL hash, applied once the solar system snapshot loads. */
 let pendingDetailBody: SystemBodyTarget | null = null
+/** Surface hex from the URL hash, applied once the surface map is available. */
+let pendingSurfaceHex: SurfaceHexCoord | null = null
 
 function parseHash(hash: string): ParsedState {
   const out: ParsedState = {}
@@ -71,6 +77,11 @@ function parseHash(hash: string): ParsedState {
   if (body) {
     const target = decodeDetailBody(body)
     if (target) out.body = target
+  }
+  const surface = params.get('surface')
+  if (surface) {
+    const m = surface.match(/^(\d+),(\d+)$/)
+    if (m) out.surfaceHex = { col: parseInt(m[1], 10), row: parseInt(m[2], 10) }
   }
   const view = params.get('view')
   if (view && (VALID_VIEWS as readonly string[]).includes(view)) {
@@ -115,6 +126,10 @@ function buildHash(): string {
     const encoded = encodeDetailBody(target)
     if (encoded) params.set('body', encoded)
   }
+  if (viewMode.value === 'surface') {
+    const surface = selectedSurfaceHex.value
+    if (surface) params.set('surface', `${surface.col},${surface.row}`)
+  }
   params.set('view', viewMode.value)
   return params.toString()
 }
@@ -124,11 +139,22 @@ export function loadUrlState(): void {
   if (typeof window === 'undefined') return
   const parsed = parseHash(window.location.hash)
   pendingDetailBody = null
+  pendingSurfaceHex = null
   if (parsed.subsectorSeed != null) setSubsectorSeed(parsed.subsectorSeed)
   if (parsed.systemSeed != null) setSystemSeed(parsed.systemSeed)
   if (parsed.hex) setSelectedHex(parsed.hex)
   if (parsed.body) pendingDetailBody = parsed.body
+  if (parsed.surfaceHex) pendingSurfaceHex = parsed.surfaceHex
   if (parsed.view) setViewMode(parsed.view)
+}
+
+function applyPendingSurfaceHex(): void {
+  const map = currentSurfaceMap.value
+  const coord = pendingSurfaceHex
+  if (!map || !coord) return
+  pendingSurfaceHex = null
+  const cell = map.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row) ?? null
+  selectAndFocusSurfaceHex(coord, cell)
 }
 
 function applyPendingDetailBody(): void {
@@ -161,6 +187,12 @@ export function installUrlStateMirror(): void {
   })
 
   effect(() => {
+    currentSurfaceMap.value
+    viewMode.value
+    applyPendingSurfaceHex()
+  })
+
+  effect(() => {
     if (viewMode.value === 'surface' && selectedSurfacePlanetIndex() == null) {
       setViewMode('detail')
     }
@@ -177,11 +209,8 @@ export function installUrlStateMirror(): void {
     selectedHex.value
     detailTarget.value
     currentSystem.value
-    // Don't mirror region modal state (regionHex / selectedSurfaceHex)
-    // - they're transient view state, not part of the persistent chart
-    // address.
     void regionHex.value
-    void selectedSurfaceHex.value
+    selectedSurfaceHex.value
 
     if (pending != null) window.clearTimeout(pending)
     pending = window.setTimeout(() => {
