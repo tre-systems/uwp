@@ -101,7 +101,9 @@ pub fn generate(
     resolution: u8,
 ) -> SurfaceAtlas {
     let n = resolution.clamp(2, 32);
-    let hex_radius = TRI_SIDE / (n as f32 * 3.0_f32.sqrt());
+    // Circumradius for a pointy-top hex that tessellates the triangular
+    // sub-cell centres without overlapping its neighbours.
+    let hex_radius = TRI_SIDE / (2.0 * n as f32 * 3.0_f32.sqrt());
     let mut cells = Vec::with_capacity(20 * n as usize * n as usize);
     let faces = faces();
     let verts = vertices_3d();
@@ -445,7 +447,7 @@ fn normalise(v: Vec3) -> Vec3 {
 fn hex_boundary(center: Vec2, radius: f32) -> [[f32; 2]; 6] {
     let mut out = [[0.0_f32; 2]; 6];
     for (i, pt) in out.iter_mut().enumerate() {
-        let a = (-90.0 + 60.0 * i as f32).to_radians();
+        let a = (90.0 + 60.0 * i as f32).to_radians();
         *pt = [center.x + radius * a.cos(), center.y + radius * a.sin()];
     }
     out

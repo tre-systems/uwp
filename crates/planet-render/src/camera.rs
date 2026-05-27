@@ -66,9 +66,9 @@ impl Camera {
         // longitude 0 sits at +Z, camera-default yaw is 0.6 so we offset.
         self.yaw = 0.0;
         // Return the spin angle that puts the requested longitude on the
-        // +Z meridian (which is where yaw=0 looks). Negate so eastward
-        // longitudes spin the planet right-to-left as the user expects.
-        -lon_deg.to_radians()
+        // +Z meridian (where the default camera looks). Longitude 0 sits
+        // on +X, so we rotate by π/2 − lon to bring that meridian to +Z.
+        std::f32::consts::FRAC_PI_2 - lon_deg.to_radians()
     }
 
     pub fn dolly(&mut self, delta: f32, planet_radius: f32) {

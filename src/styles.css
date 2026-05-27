@@ -1511,6 +1511,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   width: 100%;
   max-width: 1320px;
   color: var(--color-text);
+  touch-action: none;
 }
 .subsector-map svg {
   width: 100%;
@@ -1738,6 +1739,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   width: min(100%, calc((100dvh - var(--safe-top) - var(--safe-bottom) - 140px) * 2.117));
   max-width: 1120px;
   color: var(--color-text);
+  touch-action: none;
 }
 .surface-map svg {
   width: 100%;
@@ -1764,11 +1766,11 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
-  fill-opacity: 0.055;
+  fill-opacity: 0.04;
   shape-rendering: geometricPrecision;
-  stroke: rgba(235, 248, 255, 0.11);
+  stroke: rgba(235, 248, 255, 0.28);
   stroke-linejoin: round;
-  stroke-width: 0.36;
+  stroke-width: 0.55;
   transition: stroke var(--motion-fast), filter var(--motion-fast), fill-opacity var(--motion-fast);
   vector-effect: non-scaling-stroke;
 }
@@ -2125,7 +2127,39 @@ label.color input[type="color"]::-webkit-color-swatch {
     padding-right: calc(var(--safe-right) + var(--space-6));
   }
   .surface-map { width: 100%; }
-  .surface-map svg { max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 120px); }
+  .surface-map svg { max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 220px); }
+}
+
+.surface-hex-magnifier {
+  display: none;
+}
+@media (pointer: coarse) {
+  .surface-hex-magnifier {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    margin-top: var(--space-5);
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--panel-border);
+    background: rgba(8, 12, 20, 0.92);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+  .surface-hex-magnifier svg {
+    flex: 0 0 auto;
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+  }
+  .surface-hex-magnifier-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: var(--type-sm);
+    color: var(--text-dim);
+  }
+  .surface-hex-magnifier-meta strong {
+    font-size: var(--type-body);
+    color: var(--color-text-strong);
+  }
 }
 
 /* View transition ----------------------------------------------------*/

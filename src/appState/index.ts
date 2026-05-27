@@ -25,6 +25,7 @@ import {
 } from '../domain/subsector'
 import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
+import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
 import {
   isMainWorldTarget,
   paramsPatchForSystemTarget,
@@ -177,7 +178,7 @@ export function setViewMode(mode: ViewMode) {
 
 export function selectedSurfacePlanetIndex(
   system: SolarSystem | null = currentSystem.value,
-  target: SystemBodyTarget | null = detailTarget.value,
+  target: SystemBodyTarget | null = resolvedDetailTarget(system, detailTarget.value),
 ): number | null {
   if (!system || system.planets.length === 0) return null
   if (target) {
@@ -196,9 +197,9 @@ export function selectedSurfacePlanet(): Planet | null {
 
 export function selectedSurfaceTargetLabel(): string {
   const system = currentSystem.value
-  const index = selectedSurfacePlanetIndex(system)
-  if (index == null) return 'No planet selected'
-  return system?.main_world === index ? 'Main World' : `Planet ${index + 1}`
+  const target = resolvedDetailTarget(system)
+  if (!system || !target) return 'No planet selected'
+  return formatBodyViewLabel(system, target)
 }
 
 export function setSystemTimeSpeed(speed: number) {

@@ -1,12 +1,12 @@
 import { useEffect } from 'preact/hooks'
 import {
   currentSystem,
-  detailTarget,
   selectedSurfacePlanetIndex,
   setViewMode,
   viewMode,
   type ViewMode,
 } from '../appState'
+import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
 
 // Four-state segmented control. Detail and Surface stay disabled until a
 // system loads (and Surface additionally requires a selected planet) so
@@ -28,8 +28,9 @@ const OPTIONS: readonly ModeOption[] = [
 export function ViewModeToggle() {
   const mode = viewMode.value
   const sys = currentSystem.value
-  const target = detailTarget.value
-  const canShowSurface = selectedSurfacePlanetIndex() != null
+  const target = resolvedDetailTarget(sys)
+  const canShowSurface = selectedSurfacePlanetIndex(sys, target) != null
+  const detailLabel = formatBodyViewLabel(sys, target)
 
   useEffect(() => {
     // 1 / 2 / 3 / 4 keys jump straight to a view. We intentionally
@@ -81,7 +82,7 @@ export function ViewModeToggle() {
             disabled={disabled}
             onClick={() => setViewMode(opt.mode)}
           >
-            {opt.mode === 'detail' && !target ? 'Main World' : opt.label}
+            {opt.mode === 'detail' ? detailLabel : opt.label}
           </button>
         )
       })}

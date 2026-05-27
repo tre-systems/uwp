@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { useMapGestures } from './useMapGestures'
 import { renderSurfaceBackground } from './surfaceMapBackground'
 import { buildIcosahedralSurface, type IcosaHex, type IcosaSurface } from './icosahedralSurface'
+// IcosaSurface re-used by the mobile magnifier clip path.
 import {
   FACES,
   faceFlatVertices,
@@ -154,6 +155,9 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   }
 
   const sel = selectedSurfaceHex.value
+  const selectedCell = selectedSurfaceCell.value
+  const coarsePointer = typeof window !== 'undefined' &&
+    (window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0)
   // Project the Rust DTO's settlements + starport through the
   // icosahedron so they land on the new net. coord (col, row) maps
   // back to (lat, lon) via the same convention surface_map.rs uses.
@@ -210,6 +214,12 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
           <CityMarker key={i} x={p.x} y={p.y} tier={p.tier} name={p.name} />
         ))}
       </svg>
+      {coarsePointer && sel && (
+        <SurfaceHexMagnifier
+          hex={selectedCell ?? map.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null}
+          surface={surface}
+        />
+      )}
     </div>
   )
 }
@@ -336,6 +346,34 @@ function FoldLines() {
 
 // ---------- markers ----------
 
+function SurfaceHexMagnifier({
+  hex,
+  surface,
+}: {
+  hex: SurfaceHex | null
+  surface: IcosaSurface | null
+}) {
+  if (!hex) return null
+  const atlasHex = hex.cell_id && surface
+    ? surface.hexes.find((h) => sameCellId(h.cellId, hex.cell_id!))
+    : null
+  const r = 52
+  const path = atlasHex?.flatBoundary?.length === 6
+    ? `M${atlasHex.flatBoundary.map(([x, y]) => `${((x - atlasHex.x) * 4.2 + r).toFixed(1)},${((y - atlasHex.y) * 4.2 + r).toFixed(1)}`).join(' L')}Z`
+    : hexPath(r, r, r * 0.92)
+  return (
+    <div class="surface-hex-magnifier" aria-live="polite">
+      <svg viewBox={`0 0 ${r * 2} ${r * 2}`} width={r * 2} height={r * 2} aria-hidden="true">
+        <path d={path} class={`surface-hex-shape surface-${hex.terrain.toLowerCase()}`} fill={terrainFill(hex.terrain)} />
+      </svg>
+      <div class="surface-hex-magnifier-meta">
+        <strong>{terrainLabel(hex.terrain)}</strong>
+        <span>{hex.latitude_deg.toFixed(1)}° lat · {hex.longitude_deg.toFixed(1)}° lon</span>
+      </div>
+    </div>
+  )
+}
+
 function StarportMarker({ x, y }: { x: number; y: number }) {
   return (
     <g class="surface-starport-group" aria-hidden="true">
@@ -405,10 +443,10 @@ function facePoints(v: readonly { x: number; y: number }[]): string {
 }
 
 function hexPath(cx: number, cy: number, r: number): string {
-  // Pointy-top hex, matching the classic icosahedral world-map examples.
+  // Pointy-top hex with the apex aimed at the north pole of the net.
   const pts: string[] = []
   for (let i = 0; i < 6; i++) {
-    const a = Math.PI / 180 * (-90 + 60 * i)
+    const a = Math.PI / 180 * (90 + 60 * i)
     pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`)
   }
   return `M${pts.join(' L')}Z`

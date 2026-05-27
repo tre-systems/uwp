@@ -112,7 +112,7 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   // A classic classic 2d6 icosahedral world map uses pointy-top
   // hexes clipped by the unfolded d20 faces. `N` is the approximate
   // number of hex columns across a face edge.
-  const hexRadius = TRI_SIDE / (N * Math.sqrt(3))
+  const hexRadius = TRI_SIDE / (2 * N * Math.sqrt(3))
   const xStep = Math.sqrt(3) * hexRadius
   const yStep = 1.5 * hexRadius
   let row = 0

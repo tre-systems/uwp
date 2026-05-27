@@ -13,7 +13,7 @@ describe('icosahedral surface cells', () => {
       subdivisions,
     })
 
-    expect(surface.hexRadius).toBeCloseTo(TRI_SIDE / (subdivisions * Math.sqrt(3)), 6)
+    expect(surface.hexRadius).toBeCloseTo(TRI_SIDE / (2 * subdivisions * Math.sqrt(3)), 6)
     expect(surface.hexes.length).toBeGreaterThan(20 * subdivisions)
     for (const hex of surface.hexes) {
       expect(hex.x).toBeGreaterThanOrEqual(0)
