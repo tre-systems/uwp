@@ -7,7 +7,11 @@ use crate::domain::surface_prebake::{self, BakeInput};
 use crate::mesh::cubesphere;
 use crate::params::PlanetParams;
 
-pub const PLANET_RES: u32 = 384;
+pub const PLANET_RES: u32 = 512;
+/// Extra subdivisions when the camera is fully zoomed in on a terrestrial body.
+pub const PLANET_RES_CLOSE: u32 = 768;
+pub const PLANET_RES_NEAR: u32 = 640;
+pub const PLANET_RES_MID: u32 = 576;
 pub const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 #[repr(C)]
@@ -227,16 +231,55 @@ fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
 
 pub fn mesh_resolution(quality: f32) -> u32 {
     if quality < 0.55 {
-        128
+        160
     } else if quality < 0.85 {
-        256
+        320
     } else {
         PLANET_RES
     }
 }
 
+/// Normalised 0 = fully zoomed out, 1 = minimum camera distance for the body.
+pub fn zoom_closeness(camera_distance: f32, planet_radius: f32) -> f32 {
+    let min_dist = (planet_radius * 1.4).max(0.25);
+    let max_dist = (planet_radius * 60.0).max(60.0);
+    if max_dist <= min_dist {
+        return 1.0;
+    }
+    1.0 - ((camera_distance - min_dist) / (max_dist - min_dist)).clamp(0.0, 1.0)
+}
+
+/// Pick a cubesphere subdivision count from render profile and camera distance.
+/// Close-up views need denser geometry so the limb and coast silhouettes do not
+/// reveal mesh facets at extreme zoom.
+pub fn mesh_resolution_for_view(quality: f32, camera_distance: f32, planet_radius: f32) -> u32 {
+    let base = mesh_resolution(quality);
+    let closeness = zoom_closeness(camera_distance, planet_radius);
+    let max_boost = if quality < 0.55 {
+        PLANET_RES_MID
+    } else if quality < 0.85 {
+        PLANET_RES_NEAR
+    } else {
+        PLANET_RES_CLOSE
+    };
+    let boosted = if closeness >= 0.90 {
+        max_boost
+    } else if closeness >= 0.78 {
+        max_boost.saturating_sub(128).max(base)
+    } else if closeness >= 0.62 {
+        PLANET_RES_MID.max(base)
+    } else {
+        base
+    };
+    boosted.max(base)
+}
+
 pub fn create_mesh_buffers(device: &wgpu::Device, quality: f32) -> DetailMesh {
-    let mesh = cubesphere(mesh_resolution(quality));
+    create_mesh_buffers_with_resolution(device, mesh_resolution(quality))
+}
+
+pub fn create_mesh_buffers_with_resolution(device: &wgpu::Device, resolution: u32) -> DetailMesh {
+    let mesh = cubesphere(resolution);
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("vertex_buffer"),
         contents: bytemuck::cast_slice(&mesh.vertices),
@@ -627,13 +670,21 @@ pub fn encode_render(
 
 #[cfg(test)]
 mod tests {
-    use super::{quantile_height, DetailUniforms};
+    use super::{mesh_resolution_for_view, quantile_height, DetailUniforms, PLANET_RES_CLOSE};
 
     #[test]
     fn detail_uniform_contract_stays_shader_aligned() {
         assert_eq!(std::mem::size_of::<DetailUniforms>(), 400);
         assert_eq!(std::mem::align_of::<DetailUniforms>(), 4);
         assert_eq!(std::mem::size_of::<DetailUniforms>() % 16, 0);
+    }
+
+    #[test]
+    fn mesh_resolution_boosts_when_zoomed_in() {
+        let far = mesh_resolution_for_view(1.0, 40.0, 1.0);
+        let close = mesh_resolution_for_view(1.0, 1.5, 1.0);
+        assert!(close > far);
+        assert_eq!(close, PLANET_RES_CLOSE);
     }
 
     #[test]

@@ -800,11 +800,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let surface_radius = base_radius + relief_above_sea(h, sea_h) * mountain_amp * base_radius;
     let surface_world_pos = (u.model * vec4<f32>(dir * surface_radius, 1.0)).xyz;
-    // Soft terminator penumbra — real sun discs subtend ~0.5°; a narrow
-    // smoothstep band avoids the hard binary day/night cut that reads as
-    // aliased stair-steps on coastlines and cloud shadows.
+    // Soft terminator penumbra — real sun discs subtend ~0.5°; widen the band
+    // when the camera is close so mesh facets do not read as a jagged cut.
     let n_dot_l_raw = dot(world_normal, sun_dir);
-    let n_dot_l = smoothstep(-0.05, 0.08, n_dot_l_raw);
+    let view_dist = length(u.camera_pos.xyz) / max(u.resolution.w, 0.001);
+    let close_zoom = smoothstep(2.8, 1.35, view_dist);
+    let term_low = -0.05 - close_zoom * 0.08;
+    let term_high = 0.08 + close_zoom * 0.06;
+    let n_dot_l = smoothstep(term_low, term_high, n_dot_l_raw);
     let view_dir = normalize(u.camera_pos.xyz - surface_world_pos);
 
     // Latitude proxy: |y| component of unrotated direction (poles at top/bottom).

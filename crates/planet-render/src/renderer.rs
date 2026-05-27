@@ -27,6 +27,8 @@ pub struct Renderer {
     system_pipeline: wgpu::RenderPipeline,
 
     detail_mesh: detail_scene::DetailMesh,
+    mesh_quality: f32,
+    active_mesh_resolution: u32,
     terrain_bind_group_layout: wgpu::BindGroupLayout,
     terrain_atlas: detail_scene::TerrainAtlas,
 
@@ -78,6 +80,7 @@ impl Renderer {
         let format = config.format;
 
         let detail_mesh = detail_scene::create_mesh_buffers(&device, mesh_quality);
+        let active_mesh_resolution = detail_scene::mesh_resolution(mesh_quality);
 
         // Uniforms
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -169,6 +172,8 @@ impl Renderer {
             atmosphere_pipeline: pipelines.atmosphere,
             system_pipeline: pipelines.system,
             detail_mesh,
+            mesh_quality,
+            active_mesh_resolution,
             terrain_bind_group_layout: pipelines.terrain_bind_group_layout,
             terrain_atlas,
             uniform_buffer,
@@ -248,7 +253,26 @@ impl Renderer {
     }
 
     pub fn set_mesh_quality(&mut self, mesh_quality: f32) {
-        self.detail_mesh = detail_scene::create_mesh_buffers(&self.device, mesh_quality);
+        self.mesh_quality = mesh_quality;
+        self.active_mesh_resolution = 0;
+        self.ensure_detail_mesh();
+    }
+
+    fn ensure_detail_mesh(&mut self) {
+        if self.view_mode != ViewMode::Detail || self.params.body_visual_mode >= 0.5 {
+            return;
+        }
+        let resolution = detail_scene::mesh_resolution_for_view(
+            self.mesh_quality,
+            self.camera.distance,
+            self.params.planet_radius,
+        );
+        if resolution == self.active_mesh_resolution {
+            return;
+        }
+        self.active_mesh_resolution = resolution;
+        self.detail_mesh =
+            detail_scene::create_mesh_buffers_with_resolution(&self.device, resolution);
     }
 
     pub fn set_view_mode(&mut self, mode: ViewMode) {
@@ -267,6 +291,7 @@ impl Renderer {
                     self.camera.aspect,
                     self.camera.fov_y,
                 );
+                self.ensure_detail_mesh();
             }
             ViewMode::System => {
                 if mode_changed {
@@ -387,6 +412,7 @@ impl Renderer {
                 self.camera.aspect,
                 self.camera.fov_y,
             );
+            self.ensure_detail_mesh();
         }
         self.detail_uniforms_dirty = true;
     }
@@ -409,7 +435,10 @@ impl Renderer {
 
     pub fn zoom(&mut self, delta: f32) {
         match self.view_mode {
-            ViewMode::Detail => self.camera.dolly(delta, self.params.planet_radius),
+            ViewMode::Detail => {
+                self.camera.dolly(delta, self.params.planet_radius);
+                self.ensure_detail_mesh();
+            }
             ViewMode::System => {
                 // In system view we want a much larger zoom range — the camera
                 // must accommodate seeing a single planet up close (~0.1 scene
@@ -430,6 +459,10 @@ impl Renderer {
         };
         self.last_time = time;
         self.rotation_t += dt * self.params.auto_rotate;
+
+        if self.view_mode == ViewMode::Detail {
+            self.ensure_detail_mesh();
+        }
 
         if self.detail_uniforms_dirty {
             self.detail_uniforms_cache = detail_scene::uniforms_for(

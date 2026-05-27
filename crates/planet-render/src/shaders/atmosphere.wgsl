@@ -133,13 +133,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let t_start = max(t_atmo.x, 0.0);
     var t_end = select(t_atmo.y, t_planet.x, hit_planet);
-    // Planet pixels should use the same analytic sphere endpoint as the
-    // scattering ray. The depth texture contains the tessellated cubesphere,
-    // and at close zoom its face/depth quantisation can otherwise tint oceans
-    // as large rectangular patches. Still respect genuinely closer scene
-    // geometry, such as moons or rings in front of the atmosphere shell.
-    let foreground_scene = scene_dist < (t_end - r_planet * 0.05);
-    if (!hit_planet || foreground_scene) {
+    // Prefer the analytic sphere endpoint on planet pixels. The depth buffer
+    // stores the tessellated cubesphere, and at close zoom its face quantisation
+    // otherwise tints oceans as rectangular patches and stair-steps the limb.
+    // Only clip to the depth buffer when something clearly sits in front of the
+    // planet body (moons, rings, satellites).
+    if (hit_planet) {
+        let occluder = scene_dist < (t_planet.x - r_planet * 0.30);
+        if (occluder) {
+            t_end = min(t_end, scene_dist);
+        }
+    } else {
         t_end = min(t_end, scene_dist);
     }
     if (t_end <= t_start) {
