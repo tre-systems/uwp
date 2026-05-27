@@ -514,12 +514,12 @@ export function selectHex(coord: HexCoord): void {
   if (!hex) return
   setSelectedHex(coord)
   detailTarget.value = null
-  applySubsectorUwp(hex.uwp, hex.system_seed)
+  applySubsectorUwp(hex.uwp)
   setSystemSeed(hex.system_seed)
   setViewMode('system')
 }
 
-function applySubsectorUwp(hexUwp: SubsectorUwp, seed: number): void {
+function applySubsectorUwp(hexUwp: SubsectorUwp): void {
   const nextUwp = reconcileUwpDigits({
     starport: hexUwp.starport,
     size: hexUwp.size,
@@ -542,7 +542,7 @@ export function syncUwpFromSelectedHex(): void {
   const hex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
   if (!hex) return
   if ((systemSeed.value >>> 0) !== (hex.system_seed >>> 0)) return
-  applySubsectorUwp(hex.uwp, hex.system_seed)
+  applySubsectorUwp(hex.uwp)
 }
 
 export function updateParams(patch: Partial<Params>) {
