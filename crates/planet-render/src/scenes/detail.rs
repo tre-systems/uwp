@@ -261,7 +261,30 @@ pub fn camera_fit_distance(
     aspect: f32,
     fov_y: f32,
 ) -> f32 {
-    let radius = planet_radius.max(0.05);
+    camera_fit_distance_for_subject(current_distance, planet_radius.max(0.05), aspect, fov_y)
+}
+
+pub fn camera_fit_distance_for_body(
+    current_distance: f32,
+    planet_radius: f32,
+    body_kind: f32,
+    aspect: f32,
+    fov_y: f32,
+) -> f32 {
+    camera_fit_distance_for_subject(
+        current_distance,
+        camera_subject_radius(planet_radius, body_kind),
+        aspect,
+        fov_y,
+    )
+}
+
+fn camera_fit_distance_for_subject(
+    current_distance: f32,
+    radius: f32,
+    aspect: f32,
+    fov_y: f32,
+) -> f32 {
     let vertical_fov = fov_y.max(0.1);
     let horizontal_fov = 2.0 * ((vertical_fov * 0.5).tan() * aspect.max(0.1)).atan();
     let limiting_fov = vertical_fov.min(horizontal_fov).max(0.1);
@@ -279,8 +302,20 @@ pub fn camera_fit_distance(
 /// small planet doesn't render as a dot just because the previous
 /// camera was far away. `camera_fit_distance` preserves zoom-out and
 /// is for in-mode updates.
-pub fn camera_target_distance(planet_radius: f32, aspect: f32, fov_y: f32) -> f32 {
-    let radius = planet_radius.max(0.05);
+pub fn camera_target_distance_for_body(
+    planet_radius: f32,
+    body_kind: f32,
+    aspect: f32,
+    fov_y: f32,
+) -> f32 {
+    camera_target_distance_for_subject(
+        camera_subject_radius(planet_radius, body_kind),
+        aspect,
+        fov_y,
+    )
+}
+
+fn camera_target_distance_for_subject(radius: f32, aspect: f32, fov_y: f32) -> f32 {
     let vertical_fov = fov_y.max(0.1);
     let horizontal_fov = 2.0 * ((vertical_fov * 0.5).tan() * aspect.max(0.1)).atan();
     let limiting_fov = vertical_fov.min(horizontal_fov).max(0.1);
@@ -288,6 +323,20 @@ pub fn camera_target_distance(planet_radius: f32, aspect: f32, fov_y: f32) -> f3
     let min_dist = (radius * 1.4).max(0.25);
     let max_dist = (radius * 60.0).max(60.0);
     fit_distance.clamp(min_dist, max_dist)
+}
+
+fn camera_subject_radius(planet_radius: f32, body_kind: f32) -> f32 {
+    let radius = planet_radius.max(0.05);
+    if body_kind > 0.5 && body_kind < 1.5 {
+        // Leave room for visible ring arcs and atmospheric glow around giant
+        // planets. The user can still pinch/scroll in for cloud-top detail.
+        radius * 1.72
+    } else if body_kind > 1.5 && body_kind < 2.5 {
+        // Stars need a little breathing room for limb prominences/corona.
+        radius * 1.24
+    } else {
+        radius
+    }
 }
 
 /// Recompute the full uniform struct. Use this when params, camera, or
@@ -362,7 +411,7 @@ pub fn uniforms_for(
 
 #[cfg(test)]
 mod camera_tests {
-    use super::camera_fit_distance;
+    use super::{camera_fit_distance, camera_target_distance_for_body};
 
     #[test]
     fn portrait_viewports_fit_the_planet_horizontally() {
@@ -371,6 +420,16 @@ mod camera_tests {
 
         assert!(desktop > 3.0);
         assert!(phone > desktop * 2.0);
+    }
+
+    #[test]
+    fn giant_planets_leave_room_for_rings() {
+        let terrestrial = camera_target_distance_for_body(1.0, 0.0, 16.0 / 9.0, 35f32.to_radians());
+        let gas_giant = camera_target_distance_for_body(1.0, 1.0, 16.0 / 9.0, 35f32.to_radians());
+        let star = camera_target_distance_for_body(1.0, 2.0, 16.0 / 9.0, 35f32.to_radians());
+
+        assert!(gas_giant > terrestrial * 1.65);
+        assert!(star > terrestrial * 1.15);
     }
 }
 

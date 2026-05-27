@@ -357,7 +357,7 @@ fn fs_main(in: VsOut) -> BgOut {
     }
 
     var best_t = 1e9;
-    var best_color = vec3<f32>(0.0);
+    var best_color = bg_color;
     var has_hit = false;
 
     // ---------- Moons ----------
@@ -416,10 +416,12 @@ fn fs_main(in: VsOut) -> BgOut {
     }
 
     // ---------- Rings ----------
-    // ~28% of planets get a ring system, lying in the planet's equatorial plane
-    // (rotates with axial tilt via u.model).
+    // Giant planets usually carry at least faint particle rings. Keep the
+    // plane equatorial, but make the optical depth translucent and feathered
+    // so the result reads like dusty ice bands instead of a solid plate.
     let ring_h = hash31(u.seed_block.xyz * 0.27 + vec3<f32>(31.0, -17.0, 53.0));
-    if (ring_h > 0.72 && body_kind > 0.5 && body_kind < 1.5) {
+    let ring_strength = mix(0.38, 1.0, smoothstep(0.12, 0.98, ring_h));
+    if (ring_strength > 0.035 && body_kind > 0.5 && body_kind < 1.5) {
         let ring_normal = normalize((u.model * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz);
         let denom = dot(ray_dir, ring_normal);
         if (abs(denom) > 1e-4) {
@@ -427,26 +429,41 @@ fn fs_main(in: VsOut) -> BgOut {
             if (t > 0.0 && t < best_t) {
                 let hit_pos = ray_origin + ray_dir * t;
                 let radial = length(hit_pos);
-                let inner = planet_radius * 1.35;
-                let outer = planet_radius * (2.1 + hash11(ring_h * 11.0) * 0.6);
+                let inner = planet_radius * mix(1.28, 1.48, hash11(ring_h * 7.0));
+                let outer = planet_radius * (2.05 + hash11(ring_h * 11.0) * 0.72);
                 if (radial > inner && radial < outer) {
                     let r_norm = (radial - inner) / (outer - inner);
-                    // Multiple noise bands stacked for Cassini-division feel.
-                    let band1 = 0.5 + 0.5 * sin(r_norm * 28.0 + hash11(ring_h) * TAU);
-                    let band2 = 0.5 + 0.5 * sin(r_norm * 9.7 + hash11(ring_h * 3.0) * TAU);
-                    let band3 = 0.5 + 0.5 * sin(r_norm * 73.0);
-                    let edge_in = smoothstep(0.0, 0.05, r_norm);
-                    let edge_out = 1.0 - smoothstep(0.92, 1.0, r_norm);
-                    let density = band1 * (0.4 + band2 * 0.6) * (0.6 + band3 * 0.4) * edge_in * edge_out;
-                    if (density > 0.18) {
-                        // Sun lighting: lit on whichever side the sun is on.
-                        let lit = abs(dot(ring_normal, sun_dir)) * 0.7 + 0.15;
-                        let ice_tint  = vec3<f32>(0.88, 0.84, 0.74);
-                        let dust_tint = vec3<f32>(0.45, 0.38, 0.28);
-                        let ring_color = mix(dust_tint, ice_tint, smoothstep(0.2, 0.8, density));
-                        best_color = ring_color * lit * (0.4 + density * 0.9);
-                        best_t = t;
-                        has_hit = true;
+                    let az = atan2(hit_pos.z, hit_pos.x);
+                    let soft_edges = smoothstep(0.00, 0.10, r_norm)
+                                   * (1.0 - smoothstep(0.88, 1.0, r_norm));
+                    let broad = 0.48 + 0.52 * sin(r_norm * 23.0 + hash11(ring_h) * TAU);
+                    let ringlets = 0.50 + 0.50 * sin(r_norm * 96.0 + hash11(ring_h * 3.0) * TAU);
+                    let dust = fbm3(vec3<f32>(r_norm * 34.0, az * 1.8, ring_h * 9.0), 3);
+                    // Broad divisions plus a thin Cassini-like trough. These
+                    // reduce opacity rather than cutting hard black gaps.
+                    let cassini = 1.0 - 0.88 * exp(-pow((r_norm - 0.67) / 0.020, 2.0));
+                    let inner_gap = 1.0 - 0.46 * exp(-pow((r_norm - 0.31) / 0.032, 2.0));
+                    let outer_gap = 1.0 - 0.34 * exp(-pow((r_norm - 0.82) / 0.024, 2.0));
+                    let radial_density = (0.22 + broad * 0.42 + ringlets * 0.18 + dust * 0.24)
+                                       * cassini * inner_gap * outer_gap * soft_edges;
+                    let spoke = 1.0 + 0.08 * sin(az * (7.0 + floor(ring_h * 8.0)) + r_norm * 18.0 + time * 0.035)
+                                      * smoothstep(0.24, 0.82, r_norm);
+                    let optical_depth = clamp(radial_density * spoke * ring_strength, 0.0, 1.0);
+                    let view_open = smoothstep(0.10, 0.85, abs(denom));
+                    let alpha = clamp(optical_depth * mix(0.20, 0.58, ring_strength) * (0.50 + view_open * 0.72), 0.0, 0.68);
+                    if (alpha > 0.010) {
+                        // Sun lighting: lit on whichever side the sun is on,
+                        // with a little forward scatter through dusty material.
+                        let lit = abs(dot(ring_normal, sun_dir)) * 0.72 + 0.12;
+                        let forward = pow(max(dot(ray_dir, sun_dir), 0.0), 10.0) * 0.24;
+                        let ice_tint  = vec3<f32>(0.92, 0.88, 0.77);
+                        let dust_tint = vec3<f32>(0.44, 0.37, 0.27);
+                        let ring_color = mix(dust_tint, ice_tint, smoothstep(0.18, 0.78, optical_depth + ring_h * 0.25));
+                        let ring_lit = ring_color * (lit * (0.48 + optical_depth * 1.15) + forward);
+                        best_color = mix(best_color, ring_lit, alpha);
+                        // Do not write depth for translucent rings. The
+                        // planet pass should cover the parts that cross in
+                        // front of the disc instead of cutting a hard chord.
                     }
                 }
             }
@@ -516,7 +533,7 @@ fn fs_main(in: VsOut) -> BgOut {
         let clip = u.view_proj * vec4<f32>(world_hit, 1.0);
         out.depth = clip.z / clip.w;
     } else {
-        out.color = vec4<f32>(bg_color, 1.0);
+        out.color = vec4<f32>(best_color, 1.0);
         out.depth = 0.9999;
     }
     return out;

@@ -261,8 +261,9 @@ impl Renderer {
         // camera was zoomed out for a big planet.
         match mode {
             ViewMode::Detail => {
-                self.camera.distance = detail_scene::camera_target_distance(
+                self.camera.distance = detail_scene::camera_target_distance_for_body(
                     self.params.planet_radius,
+                    self.params.body_visual_mode,
                     self.camera.aspect,
                     self.camera.fov_y,
                 );
@@ -379,9 +380,10 @@ impl Renderer {
         );
         self.camera.aspect = width as f32 / height as f32;
         if self.view_mode == ViewMode::Detail {
-            self.camera.distance = detail_scene::camera_fit_distance(
+            self.camera.distance = detail_scene::camera_fit_distance_for_body(
                 self.camera.distance,
                 self.params.planet_radius,
+                self.params.body_visual_mode,
                 self.camera.aspect,
                 self.camera.fov_y,
             );

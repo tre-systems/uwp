@@ -379,67 +379,109 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
     let ice_giant = smoothstep(1.08, 1.20, body_kind);
     let mini_neptune = smoothstep(1.24, 1.36, body_kind);
     let ice_like = max(ice_giant, mini_neptune);
-    let band_count = mix(10.0 + u.world_features.w * 8.0, 5.0 + u.world_features.w * 2.5, ice_like);
-    let shear = fbm(vec3<f32>(lat * 2.0, lon * 0.23 + time * 0.018, 0.0) + seed, 4);
-    let fine_shear = fbm(vec3<f32>(lat * 10.0, lon * 0.60 - time * 0.035, 2.0) + seed, 3);
-    let band_coord = lat * band_count + shear * mix(1.1, 0.32, ice_like) + fine_shear * mix(0.28, 0.10, ice_like);
+    let band_count = mix(12.0 + u.world_features.w * 9.0, 5.5 + u.world_features.w * 2.8, ice_like);
+    let deep_shear = fbm(vec3<f32>(lat * 2.1, lon * 0.18 + time * 0.014, 0.0) + seed, 4);
+    let jet_shear = fbm(vec3<f32>(lat * 12.0, lon * 0.72 - time * 0.040, 2.0) + seed, 3);
+    let folded_shear = ridged_fbm(vec3<f32>(lat * 18.0, lon * 1.05 + deep_shear * 1.6 - time * 0.055, 5.0) + seed, 3);
+    let band_coord = lat * band_count
+                   + deep_shear * mix(1.35, 0.38, ice_like)
+                   + jet_shear * mix(0.42, 0.14, ice_like)
+                   + folded_shear * mix(0.18, 0.07, ice_like);
     let broad = 0.5 + 0.5 * sin(band_coord);
-    let narrow = smoothstep(0.52, 0.74, 0.5 + 0.5 * sin(band_coord * 2.7 + fine_shear * 1.4));
-    let belts = smoothstep(0.42, 0.82, broad) * (0.55 + narrow * 0.45) * mix(1.0, 0.45, ice_like);
+    let narrow = smoothstep(0.50, 0.78, 0.5 + 0.5 * sin(band_coord * 2.8 + jet_shear * 1.8));
+    let belts = smoothstep(0.40, 0.84, broad) * (0.48 + narrow * 0.52) * mix(1.0, 0.40, ice_like);
 
-    var color = mix(u.sand_color.rgb, u.land_color.rgb, belts);
-    color = mix(color, u.mountain_color.rgb, smoothstep(0.76, 0.96, broad) * 0.35);
-    color = mix(color, u.snow_color.rgb, (1.0 - smoothstep(0.12, 0.48, broad)) * 0.42);
-    color = mix(color, u.atmosphere_color.rgb * (0.90 + broad * 0.20), ice_like * 0.72);
+    let warm_belt = mix(u.sand_color.rgb * vec3<f32>(1.00, 0.78, 0.56), u.land_color.rgb * 0.96, 0.48);
+    let ochre_belt = mix(warm_belt, u.mountain_color.rgb * vec3<f32>(1.06, 0.78, 0.58), smoothstep(0.66, 0.96, broad));
+    let pale_zone = mix(u.snow_color.rgb * vec3<f32>(1.02, 0.94, 0.82), u.sand_color.rgb * vec3<f32>(1.08, 0.98, 0.84), 0.38);
+    var color = mix(pale_zone, ochre_belt, belts);
+    color = mix(color, u.atmosphere_color.rgb * (0.86 + broad * 0.26), ice_like * 0.76);
 
-    let turbulence = fbm(dir * 14.0 + seed + vec3<f32>(time * 0.02, 37.0, 0.0), 4);
-    color = color * mix(0.88 + turbulence * 0.20, 0.96 + turbulence * 0.06, ice_like);
+    let turbulence = fbm(dir * 18.0 + seed + vec3<f32>(time * 0.025, 37.0, -11.0), 4);
+    let billows = ridged_fbm(vec3<f32>(lat * 32.0, lon * 1.85 - time * 0.12, 9.0) + seed, 3);
+    color = color * mix(0.84 + turbulence * 0.28, 0.95 + turbulence * 0.08, ice_like);
 
-    let jet_streaks = smoothstep(
-        0.54,
-        0.82,
-        fbm(vec3<f32>(lat * 42.0, lon * 1.35 - time * 0.12, 9.0) + seed, 3) * 0.5 + 0.5
-    ) * smoothstep(0.08, 0.34, abs(sin(band_coord)));
-    color = mix(color, u.snow_color.rgb * 1.03, jet_streaks * mix(0.12, 0.18, mini_neptune));
+    let jet_edge = smoothstep(0.68, 0.98, abs(cos(band_coord)));
+    let high_clouds = smoothstep(0.56, 0.90, billows) * jet_edge;
+    color = mix(color, u.snow_color.rgb * vec3<f32>(1.08, 1.04, 0.96), high_clouds * mix(0.26, 0.17, ice_like));
 
-    if (quality > 0.55) {
-        // Seeded anticyclonic oval: one large storm embedded in the
-        // temperate belts, with a reddish core and pale rim.
-        let storm_lat = (hash3_s(seed + vec3<f32>(11.0, 3.0, -7.0)) * 0.46 + 0.14)
+    let folded_filaments = smoothstep(0.52, 0.86, folded_shear)
+                         * smoothstep(0.10, 0.40, abs(sin(band_coord)));
+    let filament_tint = mix(vec3<f32>(1.12, 0.93, 0.74), vec3<f32>(0.82, 1.02, 1.18), ice_like);
+    color = mix(color, color * filament_tint, folded_filaments * mix(0.26, 0.16, ice_like));
+
+    if (quality > 0.48) {
+        // A large anticyclonic oval plus smaller vortices, with bands curling
+        // around them rather than sitting as flat stripes.
+        let storm_lat = (hash3_s(seed + vec3<f32>(11.0, 3.0, -7.0)) * 0.48 + 0.12)
                       * select(-1.0, 1.0, hash3_s(seed + vec3<f32>(5.0, 9.0, 2.0)) > 0.5);
-        let storm_lon = hash3_s(seed + vec3<f32>(23.0, 41.0, 7.0)) * 6.2831853 + time * 0.025;
+        let storm_lon = hash3_s(seed + vec3<f32>(23.0, 41.0, 7.0)) * 6.2831853 + time * 0.026;
         let dlat = lat - storm_lat;
         let dlon = atan2(sin(lon - storm_lon), cos(lon - storm_lon));
-        let oval = exp(-(dlat * dlat * 95.0 + dlon * dlon * 17.0));
-        let rim = smoothstep(0.18, 0.55, oval) * (1.0 - smoothstep(0.62, 0.92, oval));
-        let core = smoothstep(0.48, 0.96, oval);
-        color = mix(color, u.sand_color.rgb * vec3<f32>(1.05, 0.62, 0.38), core * 0.75 * (1.0 - ice_like));
-        color = mix(color, u.snow_color.rgb * 1.05, rim * 0.42 * (1.0 - ice_like * 0.5));
+        let oval_shape = dlat * dlat * 58.0 + dlon * dlon * 9.5;
+        let oval = exp(-oval_shape);
+        let swirl = 0.5 + 0.5 * sin(atan2(dlat * 5.2, dlon * 1.35) * 3.0 + oval * 7.5 + jet_shear * 2.2);
+        let rim = smoothstep(0.16, 0.54, oval) * (1.0 - smoothstep(0.58, 0.90, oval));
+        let core = smoothstep(0.46, 0.96, oval);
+        let storm_core = mix(vec3<f32>(0.94, 0.43, 0.25), vec3<f32>(0.98, 0.76, 0.46), swirl);
+        color = mix(color, storm_core, core * 0.92 * (1.0 - ice_like));
+        color = mix(color, u.snow_color.rgb * vec3<f32>(1.10, 1.05, 0.92), rim * 0.58 * (1.0 - ice_like * 0.45));
 
-        for (var i: i32 = 0; i < 3; i = i + 1) {
+        let mirror_dlon = atan2(sin(lon - (storm_lon + 3.14159265)), cos(lon - (storm_lon + 3.14159265)));
+        let mirror_oval = exp(-(dlat * dlat * 52.0 + mirror_dlon * mirror_dlon * 8.5));
+        let mirror_swirl = 0.5 + 0.5 * sin(atan2(dlat * 4.4, mirror_dlon * 1.25) * 3.0 + mirror_oval * 6.0);
+        let mirror_rim = smoothstep(0.16, 0.52, mirror_oval) * (1.0 - smoothstep(0.60, 0.90, mirror_oval));
+        color = mix(color, mix(vec3<f32>(0.90, 0.34, 0.22), u.snow_color.rgb, mirror_swirl * 0.42), smoothstep(0.46, 0.94, mirror_oval) * 0.62 * (1.0 - ice_like));
+        color = mix(color, u.snow_color.rgb * vec3<f32>(1.07, 1.03, 0.94), mirror_rim * 0.42 * (1.0 - ice_like * 0.45));
+
+        for (var j: i32 = 0; j < 3; j = j + 1) {
+            let fj = f32(j);
+            let chain_lat = (hash3_s(seed + vec3<f32>(29.0 + fj, 61.0, -17.0)) * 0.62 - 0.31)
+                          * select(-1.0, 1.0, fj > 0.5);
+            let chain_lon = storm_lon + fj * 2.0943951 + hash3_s(seed + vec3<f32>(fj, 83.0, 37.0)) * 0.42;
+            let chain_dlat = lat - chain_lat;
+            let chain_dlon = atan2(sin(lon - chain_lon), cos(lon - chain_lon));
+            let chain_oval = exp(-(chain_dlat * chain_dlat * 42.0 + chain_dlon * chain_dlon * 7.2));
+            let chain_swirl = 0.5 + 0.5 * sin(atan2(chain_dlat * 4.0, chain_dlon * 1.2) * 3.0 + chain_oval * 6.5);
+            let chain_core = smoothstep(0.52, 0.96, chain_oval);
+            let chain_rim = smoothstep(0.20, 0.56, chain_oval) * (1.0 - smoothstep(0.62, 0.92, chain_oval));
+            let chain_color = mix(vec3<f32>(0.88, 0.34, 0.18), vec3<f32>(1.0, 0.78, 0.48), chain_swirl);
+            color = mix(color, chain_color, chain_core * 0.66 * (1.0 - ice_like));
+            color = mix(color, u.snow_color.rgb * vec3<f32>(1.08, 1.03, 0.92), chain_rim * 0.48 * (1.0 - ice_like * 0.45));
+        }
+
+        for (var i: i32 = 0; i < 8; i = i + 1) {
             let idx = f32(i);
-            let small_lat = (hash3_s(seed + vec3<f32>(71.0 + idx, 13.0, 5.0)) * 0.70 - 0.35);
+            let small_lat = hash3_s(seed + vec3<f32>(71.0 + idx, 13.0, 5.0)) * 0.82 - 0.41;
             let small_lon = hash3_s(seed + vec3<f32>(17.0, 91.0 + idx, 29.0)) * 6.2831853 - time * (0.018 + idx * 0.004);
             let local_lat = lat - small_lat;
             let local_lon = atan2(sin(lon - small_lon), cos(lon - small_lon));
-            let small = exp(-(local_lat * local_lat * 220.0 + local_lon * local_lon * 42.0));
-            let gate = smoothstep(0.36, 0.82, small) * (1.0 - ice_like * 0.65);
-            color = mix(color, mix(u.sand_color.rgb, u.snow_color.rgb, 0.45), gate * 0.34);
+            let local = exp(-(local_lat * local_lat * 96.0 + local_lon * local_lon * 19.0));
+            let local_ring = smoothstep(0.22, 0.56, local) * (1.0 - smoothstep(0.64, 0.92, local));
+            let bright_head = smoothstep(0.48, 0.92, local);
+            let gate = smoothstep(0.28, 0.86, hash3_s(seed + vec3<f32>(idx * 9.0, 47.0, -13.0)));
+            let small_swirl = 0.5 + 0.5 * sin(atan2(local_lat * 5.0, local_lon * 1.6) * 2.5 + local * 5.0);
+            let local_tint = mix(mix(u.sand_color.rgb, u.snow_color.rgb, 0.58), vec3<f32>(0.90, 0.46, 0.30), small_swirl * 0.38);
+            color = mix(color, local_tint, local_ring * gate * 0.44 * (1.0 - ice_like * 0.45));
+            color = mix(color, u.snow_color.rgb * 1.12, bright_head * gate * 0.22 * (1.0 - ice_like));
         }
 
-        let dark_lat = hash3_s(seed + vec3<f32>(103.0, 2.0, 19.0)) * 0.48 - 0.24;
-        let dark_lon = hash3_s(seed + vec3<f32>(31.0, 59.0, 83.0)) * 6.2831853 + time * 0.035;
+        let dark_lat = hash3_s(seed + vec3<f32>(103.0, 2.0, 19.0)) * 0.52 - 0.26;
+        let dark_lon = hash3_s(seed + vec3<f32>(31.0, 59.0, 83.0)) * 6.2831853 + time * 0.034;
         let dark_dlat = lat - dark_lat;
         let dark_dlon = atan2(sin(lon - dark_lon), cos(lon - dark_lon));
-        let dark_spot = exp(-(dark_dlat * dark_dlat * 130.0 + dark_dlon * dark_dlon * 25.0));
-        let methane_wisp = smoothstep(0.30, 0.62, dark_spot) * (1.0 - smoothstep(0.66, 0.92, dark_spot));
-        color = mix(color, u.ocean_color.rgb * 0.65, smoothstep(0.46, 0.90, dark_spot) * ice_like * 0.38);
-        color = mix(color, u.snow_color.rgb * 1.15, methane_wisp * ice_like * 0.34);
+        let dark_spot = exp(-(dark_dlat * dark_dlat * 138.0 + dark_dlon * dark_dlon * 28.0));
+        let methane_wisp = smoothstep(0.28, 0.62, dark_spot) * (1.0 - smoothstep(0.64, 0.92, dark_spot));
+        color = mix(color, u.ocean_color.rgb * 0.58, smoothstep(0.44, 0.90, dark_spot) * ice_like * 0.44);
+        color = mix(color, u.snow_color.rgb * 1.18, methane_wisp * ice_like * 0.36);
     }
 
-    let polar_haze = smoothstep(0.62, 0.96, abs(dir.y));
-    color = mix(color, u.atmosphere_color.rgb * 0.95, polar_haze * mix(0.28, 0.46, ice_like));
-    return color;
+    let polar_haze = smoothstep(0.60, 0.96, abs(dir.y));
+    let polar_storms = smoothstep(0.74, 0.95, abs(dir.y))
+                     * smoothstep(0.58, 0.90, ridged_fbm(dir * 22.0 + seed * 2.0, 3));
+    color = mix(color, u.atmosphere_color.rgb * 0.95, polar_haze * mix(0.22, 0.50, ice_like));
+    color = mix(color, u.snow_color.rgb * vec3<f32>(1.06, 1.02, 0.92), polar_storms * mix(0.20, 0.10, ice_like));
+    return max(color, vec3<f32>(0.0));
 }
 
 fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>, time: f32) -> vec3<f32> {
@@ -495,6 +537,27 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
     color = mix(color, color * spot_tint, clamp(starspots, 0.0, 0.94));
     color = max(vec3<f32>(0.0), base + (color - base) * 1.65);
 
+    // Extra resolved photosphere detail: bright granule walls, magnetic plage,
+    // and thread-like dark filaments. These are procedural stand-ins for the
+    // texture contrast visible in SDO/HMI and AIA imagery.
+    let granule_wall = smoothstep(
+        0.58,
+        0.92,
+        ridged_fbm(dir * mix(46.0, 9.5, warmth) + seed * 2.6 + slow_time.zxy, 4)
+    );
+    let plage_field = smoothstep(
+        0.64,
+        0.94,
+        fbm(dir * mix(15.0, 5.2, warmth) + seed * 3.1 - slow_time.xyz, 3)
+    ) * spot_lat * (solar_like * 0.72 + warmth * 0.36) * (1.0 - hotness * 0.55);
+    let filament_field = smoothstep(
+        0.78,
+        0.96,
+        ridged_fbm(vec3<f32>(lat * 17.0, lon * 2.5 + time * 0.018, 4.0) + seed * 1.3, 3)
+    ) * spot_lat * (solar_like * 0.42 + warmth * 0.54) * (1.0 - hotness * 0.75);
+    color = color * (1.0 + granule_wall * mix(0.08, 0.22, warmth) + plage_field * 0.34);
+    color = mix(color, color * vec3<f32>(0.56, 0.34, 0.22), filament_field * 0.26);
+
     let edge = 1.0 - mu;
     let limb = mix(0.72 + 0.28 * mu, 0.30 + 1.72 * mu - 0.18 * mu * mu, warmth);
     let faculae = pow(edge, 2.1)
@@ -506,14 +569,20 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
         0.995,
         sin(az * (3.0 + floor(fract(u.seed_block.x * 1.7) * 5.0)) + u.seed_block.y * 5.0) * 0.5 + 0.5
     ) * pow(edge, 7.0) * (warmth * 0.38 + solar_like * 0.14);
+    let prominence = smoothstep(
+        0.935,
+        0.995,
+        sin(az * (5.0 + floor(fract(u.seed_block.z * 2.3) * 4.0)) + lat * 8.0 + time * 0.055) * 0.5 + 0.5
+    ) * pow(edge, 10.0) * (warmth * 0.48 + solar_like * 0.22) * (1.0 - hotness * 0.38);
     let chromosphere = mix(vec3<f32>(0.75, 0.88, 1.45), vec3<f32>(1.35, 0.34, 0.18), warmth);
     let limb_tint = mix(vec3<f32>(0.90, 0.96, 1.12), vec3<f32>(1.12, 0.72, 0.45), warmth);
     let tinted = mix(color, color * limb_tint, edge * 0.55);
 
-    return tinted * limb * (3.35 + hotness * 1.10)
-         + u.sand_color.rgb * faculae * 1.45
-         + chromosphere * active_arc * 1.90
-         + u.snow_color.rgb * pow(edge, 5.0) * (0.22 + hotness * 0.26);
+    return tinted * limb * (1.48 + hotness * 0.56)
+         + u.sand_color.rgb * faculae * 0.92
+         + chromosphere * active_arc * 1.95
+         + chromosphere * prominence * 3.10
+         + u.snow_color.rgb * pow(edge, 5.0) * (0.10 + hotness * 0.14);
 }
 
 fn asteroid_surface(dir: vec3<f32>) -> vec3<f32> {
@@ -639,9 +708,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     if (body_kind > 0.5 && body_kind < 1.5) {
         let gas = gas_giant_surface(dir, u.misc.y, u.misc.w, body_kind);
-        let ambient = u.atmosphere_color.rgb * 0.08 + vec3<f32>(0.018);
+        let ambient = u.atmosphere_color.rgb * 0.11 + vec3<f32>(0.030);
         let limb_haze = pow(1.0 - max(dot(base_world_normal, base_view_dir), 0.0), 2.4);
-        var lit_gas = gas * (ambient + base_n_dot_l * 1.08);
+        var lit_gas = gas * (ambient + base_n_dot_l * 1.14);
         lit_gas = mix(lit_gas, u.atmosphere_color.rgb * (0.50 + base_n_dot_l * 0.55), limb_haze * 0.34);
         lit_gas = lit_gas + vec3<f32>(1.0, 0.56, 0.24) * smoothstep(0.0, 0.18, base_n_dot_l) * (1.0 - smoothstep(0.18, 0.42, base_n_dot_l)) * 0.10;
         return vec4(lit_gas, 1.0);

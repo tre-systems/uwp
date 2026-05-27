@@ -120,6 +120,21 @@ fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
     return sum / norm;
 }
 
+fn ridged_fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
+    var p = p_in;
+    var sum = 0.0;
+    var amp = 0.55;
+    var norm = 0.0;
+    for (var i: i32 = 0; i < octaves; i = i + 1) {
+        let n = value_noise3(p);
+        sum = sum + amp * (1.0 - abs(n * 2.0 - 1.0));
+        norm = norm + amp;
+        amp = amp * 0.5;
+        p = p * 2.11 + vec3<f32>(17.0, -23.0, 11.0);
+    }
+    return sum / norm;
+}
+
 fn star_color_temp(t: f32) -> vec3<f32> {
     let red  = vec3<f32>(1.0, 0.55, 0.32);
     let sun  = vec3<f32>(1.0, 0.93, 0.85);
@@ -173,31 +188,40 @@ fn ray_sphere(orig: vec3<f32>, dir: vec3<f32>, centre: vec3<f32>, radius: f32) -
 
 fn gas_giant_surface(n: vec3<f32>, base: vec3<f32>, seed: f32) -> vec3<f32> {
     let lat = n.y;
-    // Latitudinal bands — combine low-freq dominant bands with higher-freq
-    // turbulence and a thin jet stream pattern.
-    let major = sin(lat * (8.0 + seed * 5.0) + seed * 6.28) * 0.5 + 0.5;
-    let minor = sin(lat * 28.0 + seed * 3.7) * 0.5 + 0.5;
-    let zone = mix(major, minor, 0.3);
-    // Domain-warp the band noise with longitude turbulence so the bands swirl
-    // rather than reading as clean parallels.
     let lon = atan2(n.z, n.x) / TAU;
-    let warp = fbm3(vec3<f32>(lon * 6.0, lat * 4.0, seed) + seed, 3);
-    let band = clamp(zone + (warp - 0.5) * 0.18, 0.0, 1.0);
-    // Dark belts vs light zones — alternating colour temperature.
-    let dark  = base * vec3<f32>(0.72, 0.66, 0.55);
-    let light = base * vec3<f32>(1.12, 1.05, 0.92);
-    var c = mix(dark, light, band);
-    // Storm spot — single great-red-spot-style oval at a mid-latitude.
-    let s_lat = (hash11(seed * 7.1) - 0.5) * 0.7;
+    let seed_vec = vec3<f32>(seed * 0.13 + 7.0, seed * 0.21 - 19.0, seed * 0.37 + 43.0);
+    let band_count = 10.0 + hash11(seed * 5.7) * 8.0;
+    let shear = fbm3(vec3<f32>(lat * 2.4, lon * 0.8, seed * 0.11) + seed_vec, 4);
+    let folds = ridged_fbm3(vec3<f32>(lat * 21.0, lon * 2.2 + shear * 1.6, seed * 0.17) + seed_vec, 3);
+    let band_coord = lat * band_count + shear * 1.15 + folds * 0.22;
+    let broad = 0.5 + 0.5 * sin(band_coord);
+    let narrow = 0.5 + 0.5 * sin(band_coord * 2.9 + shear * 2.0);
+    let belt = smoothstep(0.42, 0.82, broad) * (0.55 + smoothstep(0.52, 0.78, narrow) * 0.45);
+    let dark  = base * mix(vec3<f32>(0.70, 0.62, 0.48), vec3<f32>(0.88, 0.74, 0.56), hash11(seed * 9.1));
+    let light = base * vec3<f32>(1.18, 1.08, 0.90);
+    var c = mix(light, dark, belt);
+    let jet = smoothstep(0.70, 0.98, abs(cos(band_coord))) * smoothstep(0.52, 0.88, folds);
+    c = mix(c, vec3<f32>(1.00, 0.92, 0.78), jet * 0.24);
+
+    let s_lat = (hash11(seed * 7.1) - 0.5) * 0.72;
     let s_lon = hash11(seed * 11.3);
     let d_lat = lat - s_lat;
     let d_lon = fract(lon - s_lon + 0.5) - 0.5;
-    let d2 = d_lat * d_lat * 8.0 + d_lon * d_lon * 5.0;
-    let storm = exp(-d2 * 12.0);
-    let storm_col = mix(vec3<f32>(0.92, 0.42, 0.30),
-                        vec3<f32>(0.85, 0.85, 0.92),
-                        step(0.5, hash11(seed * 19.7)));
-    c = mix(c, storm_col, storm * 0.55);
+    let storm = exp(-(d_lat * d_lat * 115.0 + d_lon * d_lon * 38.0));
+    let swirl = 0.5 + 0.5 * sin(atan2(d_lat * 4.8, d_lon * 1.35) * 3.0 + storm * 7.0);
+    let rim = smoothstep(0.18, 0.56, storm) * (1.0 - smoothstep(0.64, 0.92, storm));
+    let storm_col = mix(vec3<f32>(0.92, 0.42, 0.28), vec3<f32>(0.98, 0.78, 0.48), swirl);
+    c = mix(c, storm_col, smoothstep(0.46, 0.94, storm) * 0.62);
+    c = mix(c, vec3<f32>(0.96, 0.90, 0.80), rim * 0.36);
+    for (var i: i32 = 0; i < 3; i = i + 1) {
+        let fi = f32(i);
+        let v_lat = hash11(seed * (21.0 + fi) + 3.0) * 0.82 - 0.41;
+        let v_lon = hash11(seed * (37.0 + fi) + 11.0);
+        let vd_lat = lat - v_lat;
+        let vd_lon = fract(lon - v_lon + 0.5) - 0.5;
+        let vortex = exp(-(vd_lat * vd_lat * 220.0 + vd_lon * vd_lon * 80.0));
+        c = mix(c, mix(base, vec3<f32>(0.98, 0.92, 0.82), 0.62), smoothstep(0.42, 0.90, vortex) * 0.22);
+    }
     return c;
 }
 
@@ -403,6 +427,23 @@ fn render_star(
         // Final surface multiplier — darker where spots fall.
         let spot_tint = mix(vec3<f32>(0.36, 0.32, 0.27), vec3<f32>(0.18, 0.11, 0.08), cool);
         let surface = grain * mix(vec3<f32>(1.0), spot_tint, clamp(starspots, 0.0, 0.88));
+        let granule_wall = smoothstep(
+            0.58,
+            0.92,
+            ridged_fbm3(n * mix(46.0, 9.5, cool) + seed_vec * 2.2, 4)
+        );
+        let plage = smoothstep(
+            0.66,
+            0.94,
+            fbm3(n * mix(16.0, 5.0, cool) + seed_vec * 3.0, 3)
+        ) * spot_lat * (solar * 0.64 + cool * 0.34) * (1.0 - hot * 0.55);
+        let filament = smoothstep(
+            0.80,
+            0.96,
+            ridged_fbm3(vec3<f32>(lat * 17.0, lon * 2.4, seed * 0.31) + seed_vec * 1.3, 3)
+        ) * spot_lat * (solar * 0.34 + cool * 0.45) * (1.0 - hot * 0.72);
+        let active_surface = surface * (1.0 + granule_wall * mix(0.06, 0.18, cool) + plage * 0.28);
+        let resolved_surface = mix(active_surface, active_surface * vec3<f32>(0.58, 0.34, 0.22), filament * 0.22);
 
         // Warmth-tint shift on the limb — bias toward red/orange at the edge
         // for K/M, toward blue for hot stars (Doppler-like illusion).
@@ -421,11 +462,17 @@ fn render_star(
             0.995,
             sin(az * (3.0 + floor(fract(seed * 0.2) * 5.0)) + seed * 0.071) * 0.5 + 0.5
         ) * pow(edge, 7.0) * (cool * 0.34 + solar * 0.12);
+        let prominence = smoothstep(
+            0.935,
+            0.995,
+            sin(az * (5.0 + floor(fract(seed * 0.17) * 4.0)) + lat * 8.0 + seed * 0.029) * 0.5 + 0.5
+        ) * pow(edge, 10.0) * (cool * 0.44 + solar * 0.20) * (1.0 - hot * 0.38);
         let chromosphere = mix(vec3<f32>(0.75, 0.88, 1.45), vec3<f32>(1.35, 0.34, 0.18), cool_strength + cool * 0.35);
 
-        h.color = tinted * limb * surface * intensity
+        h.color = tinted * limb * resolved_surface * intensity
                 + base * faculae * intensity * 0.70
-                + chromosphere * active_arc * intensity * 0.55;
+                + chromosphere * active_arc * intensity * 0.55
+                + chromosphere * prominence * intensity * 0.72;
         h.t = t;
         h.hit = true;
     }
