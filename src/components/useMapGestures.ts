@@ -5,23 +5,11 @@ import type { RefObject } from 'preact'
 // to support touch + wheel gestures.
 //
 // The hook returns a `viewBox` string the caller hands to its <svg>
-// element, plus pointer + wheel handlers it spreads onto the parent
-// container. Internal state tracks an offset (in viewBox units) and a
-// zoom factor (1 = fit).
-//
-// Geometry: the canonical content fits a `[0, 0, srcW, srcH]` viewBox.
-// On zoom we shrink that box around the cursor; on pan we shift its
-// origin. The SVG element itself does the rest.
+// element. Listeners attach with { passive: false } so pinch/drag can
+// call preventDefault and win over browser page zoom on mobile.
 
 export interface MapGestures {
   viewBox: string
-  handlers: {
-    onWheel: (e: WheelEvent) => void
-    onPointerDown: (e: PointerEvent) => void
-    onPointerMove: (e: PointerEvent) => void
-    onPointerUp: (e: PointerEvent) => void
-    onPointerCancel: (e: PointerEvent) => void
-  }
   reset: () => void
 }
 
@@ -30,89 +18,87 @@ export function useMapGestures(
   srcW: number,
   srcH: number,
 ): MapGestures {
-  // `zoom > 1` = zoomed-in; clamp so the user can't shrink the content
-  // below the visible bounds or push it ten parsecs sideways.
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const zoomRef = useRef(1)
+  const offsetRef = useRef({ x: 0, y: 0 })
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinchDist = useRef<number | null>(null)
   const dragging = useRef(false)
   const lastDrag = useRef({ x: 0, y: 0 })
 
-  // Reset whenever the container dimensions change (e.g. tab swap that
-  // affects layout). Without this an old zoom would carry over to the
-  // next map.
+  zoomRef.current = zoom
+  offsetRef.current = offset
+
   useEffect(() => {
-    const reset = () => {
-      setZoom(1)
-      setOffset({ x: 0, y: 0 })
-    }
-    reset()
+    setZoom(1)
+    setOffset({ x: 0, y: 0 })
   }, [srcW, srcH])
 
-  function clampOffset(next: { x: number; y: number }, currentZoom: number): { x: number; y: number } {
-    const visibleW = srcW / currentZoom
-    const visibleH = srcH / currentZoom
-    const maxX = srcW - visibleW
-    const maxY = srcH - visibleH
-    return {
-      x: clamp(next.x, 0, Math.max(0, maxX)),
-      y: clamp(next.y, 0, Math.max(0, maxY)),
-    }
-  }
-
-  function applyZoom(rawZoom: number, anchorX: number, anchorY: number) {
-    const next = clamp(rawZoom, 1, 6)
-    if (next === zoom) return
-    // Keep the point under the cursor stable: world point at the
-    // anchor stays at the same anchor after the zoom.
-    const worldX = offset.x + anchorX / zoom
-    const worldY = offset.y + anchorY / zoom
-    const nextOffset = clampOffset({
-      x: worldX - anchorX / next,
-      y: worldY - anchorY / next,
-    }, next)
-    setZoom(next)
-    setOffset(nextOffset)
-  }
-
-  function screenToViewbox(clientX: number, clientY: number): { x: number; y: number } {
+  useEffect(() => {
     const el = containerRef.current
-    if (!el) return { x: 0, y: 0 }
-    const rect = el.getBoundingClientRect()
-    const ux = (clientX - rect.left) / rect.width
-    const uy = (clientY - rect.top) / rect.height
-    return { x: ux * srcW, y: uy * srcH }
-  }
+    if (!el) return
 
-  const handlers = {
-    onWheel: (e: WheelEvent) => {
+    function clampOffset(next: { x: number; y: number }, currentZoom: number): { x: number; y: number } {
+      const visibleW = srcW / currentZoom
+      const visibleH = srcH / currentZoom
+      const maxX = srcW - visibleW
+      const maxY = srcH - visibleH
+      return {
+        x: clamp(next.x, 0, Math.max(0, maxX)),
+        y: clamp(next.y, 0, Math.max(0, maxY)),
+      }
+    }
+
+    function applyZoom(rawZoom: number, anchorX: number, anchorY: number) {
+      const next = clamp(rawZoom, 1, 6)
+      if (next === zoomRef.current) return
+      const off = offsetRef.current
+      const z = zoomRef.current
+      const worldX = off.x + anchorX / z
+      const worldY = off.y + anchorY / z
+      const nextOffset = clampOffset({
+        x: worldX - anchorX / next,
+        y: worldY - anchorY / next,
+      }, next)
+      zoomRef.current = next
+      offsetRef.current = nextOffset
+      setZoom(next)
+      setOffset(nextOffset)
+    }
+
+    function screenToViewbox(clientX: number, clientY: number): { x: number; y: number } {
+      const rect = el!.getBoundingClientRect()
+      const ux = (clientX - rect.left) / rect.width
+      const uy = (clientY - rect.top) / rect.height
+      return { x: ux * srcW, y: uy * srcH }
+    }
+
+    function onWheel(e: WheelEvent) {
       e.preventDefault()
       const anchor = screenToViewbox(e.clientX, e.clientY)
       const factor = Math.exp(-e.deltaY * 0.0015)
-      applyZoom(zoom * factor, anchor.x, anchor.y)
-    },
-    onPointerDown: (e: PointerEvent) => {
+      applyZoom(zoomRef.current * factor, anchor.x, anchor.y)
+    }
+
+    function onPointerDown(e: PointerEvent) {
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      // Note: we deliberately do NOT setPointerCapture here. Capturing
-      // would steal subsequent click events from inner SVG hex cells,
-      // breaking selection. The trade-off is that fast drags that
-      // leave the container lose tracking; for our small map sizes
-      // that's fine.
       if (pointers.current.size === 2) {
         const [a, b] = [...pointers.current.values()]
         pinchDist.current = Math.hypot(a.x - b.x, a.y - b.y)
         dragging.current = false
+        if (e.cancelable) e.preventDefault()
       } else if (pointers.current.size === 1) {
-        dragging.current = false  // Promoted to true only after the first move > threshold.
+        dragging.current = false
         lastDrag.current = { x: e.clientX, y: e.clientY }
       }
-    },
-    onPointerMove: (e: PointerEvent) => {
+    }
+
+    function onPointerMove(e: PointerEvent) {
       if (!pointers.current.has(e.pointerId)) return
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       if (pointers.current.size === 2 && pinchDist.current != null) {
-        if (e.pointerType === 'touch') e.preventDefault()
+        if (e.cancelable) e.preventDefault()
         const [a, b] = [...pointers.current.values()]
         const d = Math.hypot(a.x - b.x, a.y - b.y)
         const ratio = d / pinchDist.current
@@ -120,36 +106,47 @@ export function useMapGestures(
         const cx = (a.x + b.x) / 2
         const cy = (a.y + b.y) / 2
         const anchor = screenToViewbox(cx, cy)
-        applyZoom(zoom * ratio, anchor.x, anchor.y)
+        applyZoom(zoomRef.current * ratio, anchor.x, anchor.y)
       } else if (pointers.current.size === 1) {
-        // Promote to drag only after the pointer has moved a few pixels
-        // - prevents tiny finger / mouse jitter on click from being
-        // interpreted as a pan, which would then suppress the click.
         const moveX = Math.abs(e.clientX - lastDrag.current.x)
         const moveY = Math.abs(e.clientY - lastDrag.current.y)
         if (!dragging.current && moveX + moveY < 4) return
         if (e.pointerType === 'touch') e.preventDefault()
         dragging.current = true
-        const el = containerRef.current
-        if (!el) return
-        const rect = el.getBoundingClientRect()
-        const dx = (e.clientX - lastDrag.current.x) * (srcW / rect.width) / zoom
-        const dy = (e.clientY - lastDrag.current.y) * (srcH / rect.height) / zoom
+        if (e.cancelable) e.preventDefault()
+        const rect = el!.getBoundingClientRect()
+        const dx = (e.clientX - lastDrag.current.x) * (srcW / rect.width) / zoomRef.current
+        const dy = (e.clientY - lastDrag.current.y) * (srcH / rect.height) / zoomRef.current
         lastDrag.current = { x: e.clientX, y: e.clientY }
-        setOffset((prev) => clampOffset({ x: prev.x - dx, y: prev.y - dy }, zoom))
+        const next = clampOffset({
+          x: offsetRef.current.x - dx,
+          y: offsetRef.current.y - dy,
+        }, zoomRef.current)
+        offsetRef.current = next
+        setOffset(next)
       }
-    },
-    onPointerUp: (e: PointerEvent) => {
+    }
+
+    function onPointerUp(e: PointerEvent) {
       pointers.current.delete(e.pointerId)
       if (pointers.current.size < 2) pinchDist.current = null
       if (pointers.current.size === 0) dragging.current = false
-    },
-    onPointerCancel: (e: PointerEvent) => {
-      pointers.current.delete(e.pointerId)
-      if (pointers.current.size < 2) pinchDist.current = null
-      if (pointers.current.size === 0) dragging.current = false
-    },
-  }
+    }
+
+    const opts = { passive: false } as const
+    el.addEventListener('wheel', onWheel, opts)
+    el.addEventListener('pointerdown', onPointerDown, opts)
+    el.addEventListener('pointermove', onPointerMove, opts)
+    el.addEventListener('pointerup', onPointerUp, opts)
+    el.addEventListener('pointercancel', onPointerUp, opts)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('pointerdown', onPointerDown)
+      el.removeEventListener('pointermove', onPointerMove)
+      el.removeEventListener('pointerup', onPointerUp)
+      el.removeEventListener('pointercancel', onPointerUp)
+    }
+  }, [containerRef, srcW, srcH])
 
   const visibleW = srcW / zoom
   const visibleH = srcH / zoom
@@ -157,8 +154,9 @@ export function useMapGestures(
 
   return {
     viewBox,
-    handlers,
     reset: () => {
+      zoomRef.current = 1
+      offsetRef.current = { x: 0, y: 0 }
       setZoom(1)
       setOffset({ x: 0, y: 0 })
     },
@@ -169,6 +167,4 @@ function clamp(x: number, lo: number, hi: number): number {
   return x < lo ? lo : x > hi ? hi : x
 }
 
-// Re-export the StateUpdater type so files that import this hook
-// don't need to pull from preact/hooks separately.
 export type { StateUpdater }

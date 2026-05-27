@@ -29,6 +29,7 @@ import { PerformanceControls } from './PerformanceControls'
 import { UwpCodeEditor } from './UwpCodeEditor'
 import { ViewControls } from './ViewControls'
 import { WorldProfileEditor } from './WorldProfileEditor'
+import { formatBodyViewLabel, formatSurfaceCrumbLabel, resolvedDetailTarget } from '../navigation/bodyView'
 
 export function ControlPanel() {
   // Accessing .value inside JSX subscribes the component to changes.
@@ -37,7 +38,9 @@ export function ControlPanel() {
   const open = panelOpen.value
   const mode = viewMode.value
   const sys = currentSystem.value
-  const target = detailTarget.value
+  const target = resolvedDetailTarget(sys)
+  const bodyLabel = formatBodyViewLabel(sys, target)
+  const surfaceLabel = formatSurfaceCrumbLabel(sys, target)
   const _ = systemSeed.value  // subscribe so the panel re-renders on seed change
   void _
   const codeText = uwpToCode(u)
@@ -61,7 +64,7 @@ export function ControlPanel() {
 
       <aside id={panelId} class={`panel ${open ? '' : 'panel-closed'}`} aria-hidden={!open} inert={!open}>
         <header class="panel-header">
-          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : mode === 'surface' ? 'Surface' : target ? 'Body Detail' : 'Main World'}</h1>
+          <h1>{mode === 'subsector' ? 'Subsector' : mode === 'system' ? 'System' : mode === 'surface' ? surfaceLabel : bodyLabel}</h1>
           <div class="panel-actions">
             {mode === 'detail' && !target && (
               <>

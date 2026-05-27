@@ -172,11 +172,6 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       role="region"
       aria-label={`Surface map, ${(map.ocean_fraction * 100).toFixed(0)}% ocean`}
       ref={containerRef}
-      onWheel={gestures.handlers.onWheel as unknown as preact.JSX.WheelEventHandler<HTMLDivElement>}
-      onPointerDown={gestures.handlers.onPointerDown as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
-      onPointerMove={gestures.handlers.onPointerMove as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
-      onPointerUp={gestures.handlers.onPointerUp as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
-      onPointerCancel={gestures.handlers.onPointerCancel as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
     >
       <svg viewBox={gestures.viewBox} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Surface hex grid (icosahedral net)">
         <FaceClipPaths />
@@ -296,16 +291,18 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
   const label = `${hex.terrain} · ${hex.latDeg.toFixed(1)}°`
   const coord = coordForHex(hex)
   const cell = surfaceCellForHex(hex, coord)
+  const pathD = hexPathForCell(hex, r)
+  const select = () => {
+    onSelectCell(cellKey)
+    selectAndFocusSurfaceHex(coord, cell)
+  }
   return (
     <g
       class={`surface-hex surface-${terrainClass}${selected ? ' surface-selected' : ''}`}
       role="button"
       tabIndex={0}
       aria-label={label}
-      onClick={() => {
-        onSelectCell(cellKey)
-        selectAndFocusSurfaceHex(coord, cell)
-      }}
+      onClick={select}
       onDblClick={() => {
         onSelectCell(cellKey)
         openRegionView(coord, cell)
@@ -313,12 +310,11 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          onSelectCell(cellKey)
-          selectAndFocusSurfaceHex(coord, cell)
+          select()
         }
       }}
     >
-      <path d={hexPathForCell(hex, r)} class="surface-hex-shape" fill={terrainFill(hex.terrain)} />
+      <path d={pathD} class="surface-hex-shape" />
     </g>
   )
 }

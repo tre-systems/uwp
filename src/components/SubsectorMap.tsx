@@ -134,11 +134,6 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
       role="region"
       aria-label={`Subsector ${subsector.allegiance}, seed ${subsector.seed}`}
       ref={containerRef}
-      onWheel={gestures.handlers.onWheel as unknown as preact.JSX.WheelEventHandler<HTMLDivElement>}
-      onPointerDown={gestures.handlers.onPointerDown as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
-      onPointerMove={gestures.handlers.onPointerMove as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
-      onPointerUp={gestures.handlers.onPointerUp as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
-      onPointerCancel={gestures.handlers.onPointerCancel as unknown as preact.JSX.PointerEventHandler<HTMLDivElement>}
     >
       <svg
         viewBox={gestures.viewBox}

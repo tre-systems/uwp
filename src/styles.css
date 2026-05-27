@@ -1494,7 +1494,8 @@ label.color input[type="color"]::-webkit-color-swatch {
   background: #000000;
   padding: calc(var(--safe-top) + 72px) calc(var(--safe-right) + var(--space-7)) calc(var(--safe-bottom) + var(--space-7)) calc(var(--safe-left) + var(--space-7));
   z-index: 5;
-  overflow: auto;
+  overflow: hidden;
+  touch-action: none;
 }
 /* When the control panel is open, reserve the same width on the right so
    the map doesn't centre underneath the panel chrome. */
@@ -1736,6 +1737,7 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 /* Surface map ------------------------------------------------------*/
 .surface-map {
+  position: relative;
   width: min(100%, calc((100dvh - var(--safe-top) - var(--safe-bottom) - 140px) * 2.117));
   max-width: 1120px;
   color: var(--color-text);
@@ -1766,22 +1768,21 @@ label.color input[type="color"]::-webkit-color-swatch {
 }
 .surface-hex { cursor: pointer; }
 .surface-hex-shape {
-  fill-opacity: 0.04;
+  fill: none;
   shape-rendering: geometricPrecision;
   stroke: rgba(235, 248, 255, 0.28);
   stroke-linejoin: round;
   stroke-width: 0.55;
-  transition: stroke var(--motion-fast), filter var(--motion-fast), fill-opacity var(--motion-fast);
+  transition: stroke var(--motion-fast), filter var(--motion-fast);
   vector-effect: non-scaling-stroke;
 }
-.surface-ocean .surface-hex-shape { fill-opacity: 0.018; }
-.surface-shoreline .surface-hex-shape { fill-opacity: 0.12; stroke: rgba(240, 235, 190, 0.2); }
-.surface-ice .surface-hex-shape,
-.surface-mountain .surface-hex-shape,
-.surface-volcanic .surface-hex-shape { fill-opacity: 0.09; }
-.surface-hex:hover .surface-hex-shape { fill-opacity: 0.26; stroke: rgba(255, 255, 255, 0.68); }
-.surface-selected .surface-hex-shape { fill-opacity: 0.32; stroke: var(--color-accent); stroke-width: 1.25; }
-
+.surface-shoreline .surface-hex-shape { stroke: rgba(240, 235, 190, 0.38); }
+.surface-hex:hover .surface-hex-shape { stroke: rgba(255, 255, 255, 0.78); }
+.surface-selected .surface-hex-shape {
+  fill: rgba(120, 200, 255, 0.14);
+  stroke: var(--color-accent);
+  stroke-width: 1.35;
+}
 /* Fold lines: enough to show the d20 net, quiet enough that coastlines
    and settlements remain the first read. */
 .surface-fold-lines polygon {

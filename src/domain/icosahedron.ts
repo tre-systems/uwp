@@ -65,8 +65,9 @@ function sphericalToCart(latRad: number, lonRad: number): Vec3 {
  *  around the planet by 72°. */
 export const VERTICES_3D: readonly Vec3[] = (() => {
   const out: Vec3[] = []
-  out.push({ x: 0, y: 0, z: 1 })  // north pole
-  out.push({ x: 0, y: 0, z: -1 }) // south pole
+  // Poles on +/-Y so lat = asin(y) matches the globe shader and pre-bake.
+  out.push({ x: 0, y: 1, z: 0 })  // north pole
+  out.push({ x: 0, y: -1, z: 0 }) // south pole
   for (let i = 0; i < 5; i++) {
     const lon = (i * 72) * Math.PI / 180
     out.push(sphericalToCart(NORTH_LAT, lon))

@@ -289,18 +289,16 @@ fn vertices_3d() -> [Vec3; 12] {
         y: 0.0,
         z: 0.0,
     }; 12];
-    // Match `src/domain/icosahedron.ts` exactly. The historical comments call
-    // these "north/south poles", but the app's globe convention derives
-    // latitude from the Y axis, so the cap vertices live on +/-Z.
+    // Match `src/domain/icosahedron.ts`: poles on +/-Y for lat = asin(y).
     out[0] = Vec3 {
         x: 0.0,
-        y: 0.0,
-        z: 1.0,
+        y: 1.0,
+        z: 0.0,
     };
     out[1] = Vec3 {
         x: 0.0,
-        y: 0.0,
-        z: -1.0,
+        y: -1.0,
+        z: 0.0,
     };
     for i in 0..5 {
         out[2 + i] = spherical_to_cart(NORTH_LAT, (i as f32 * 72.0).to_radians());
