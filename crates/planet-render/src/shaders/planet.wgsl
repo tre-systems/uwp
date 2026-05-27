@@ -380,9 +380,9 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
     let mini_neptune = smoothstep(1.24, 1.36, body_kind);
     let ice_like = max(ice_giant, mini_neptune);
     let band_count = mix(12.0 + u.world_features.w * 9.0, 5.5 + u.world_features.w * 2.8, ice_like);
-    let deep_shear = fbm(vec3<f32>(lat * 2.1, lon * 0.18 + time * 0.014, 0.0) + seed, 4);
-    let jet_shear = fbm(vec3<f32>(lat * 12.0, lon * 0.72 - time * 0.040, 2.0) + seed, 3);
-    let folded_shear = ridged_fbm(vec3<f32>(lat * 18.0, lon * 1.05 + deep_shear * 1.6 - time * 0.055, 5.0) + seed, 3);
+    let deep_shear = fbm(vec3<f32>(lat * 2.1, lon * 0.18 + time * 0.014, 0.0) + seed, 3);
+    let jet_shear = fbm(vec3<f32>(lat * 12.0, lon * 0.72 - time * 0.040, 2.0) + seed, 2);
+    let folded_shear = ridged_fbm(vec3<f32>(lat * 18.0, lon * 1.05 + deep_shear * 1.6 - time * 0.075, 5.0) + seed, 2);
     let band_coord = lat * band_count
                    + deep_shear * mix(1.35, 0.38, ice_like)
                    + jet_shear * mix(0.42, 0.14, ice_like)
@@ -397,13 +397,13 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
     var color = mix(pale_zone, ochre_belt, belts);
     color = mix(color, u.atmosphere_color.rgb * (0.86 + broad * 0.26), ice_like * 0.76);
 
-    let turbulence = fbm(dir * 18.0 + seed + vec3<f32>(time * 0.025, 37.0, -11.0), 4);
-    let billows = ridged_fbm(vec3<f32>(lat * 32.0, lon * 1.85 - time * 0.12, 9.0) + seed, 3);
+    let turbulence = fbm(dir * 18.0 + seed + vec3<f32>(time * 0.045, 37.0, -11.0), 3);
+    let billows = ridged_fbm(vec3<f32>(lat * 32.0, lon * 1.85 - time * 0.18, 9.0) + seed, 2);
     color = color * mix(0.84 + turbulence * 0.28, 0.95 + turbulence * 0.08, ice_like);
 
     let jet_edge = smoothstep(0.68, 0.98, abs(cos(band_coord)));
     let high_clouds = smoothstep(0.56, 0.90, billows) * jet_edge;
-    color = mix(color, u.snow_color.rgb * vec3<f32>(1.08, 1.04, 0.96), high_clouds * mix(0.26, 0.17, ice_like));
+    color = mix(color, u.snow_color.rgb * vec3<f32>(1.08, 1.04, 0.96), high_clouds * mix(0.30, 0.18, ice_like));
 
     let folded_filaments = smoothstep(0.52, 0.86, folded_shear)
                          * smoothstep(0.10, 0.40, abs(sin(band_coord)));
@@ -423,9 +423,15 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
         let swirl = 0.5 + 0.5 * sin(atan2(dlat * 5.2, dlon * 1.35) * 3.0 + oval * 7.5 + jet_shear * 2.2);
         let rim = smoothstep(0.16, 0.54, oval) * (1.0 - smoothstep(0.58, 0.90, oval));
         let core = smoothstep(0.46, 0.96, oval);
+        let eyewall_cloud = rim * (0.55 + swirl * 0.45);
+        let trailing_wisp = (0.42 + folded_shear * 0.58)
+                          * smoothstep(0.08, 0.44, oval)
+                          * (1.0 - smoothstep(0.72, 0.96, oval));
         let storm_core = mix(vec3<f32>(0.94, 0.43, 0.25), vec3<f32>(0.98, 0.76, 0.46), swirl);
         color = mix(color, storm_core, core * 0.92 * (1.0 - ice_like));
         color = mix(color, u.snow_color.rgb * vec3<f32>(1.10, 1.05, 0.92), rim * 0.58 * (1.0 - ice_like * 0.45));
+        color = mix(color, u.snow_color.rgb * vec3<f32>(1.12, 1.06, 0.92), eyewall_cloud * 0.42 * (1.0 - ice_like * 0.35));
+        color = mix(color, color * vec3<f32>(1.14, 0.88, 0.72), trailing_wisp * 0.24 * (1.0 - ice_like));
 
         let mirror_dlon = atan2(sin(lon - (storm_lon + 3.14159265)), cos(lon - (storm_lon + 3.14159265)));
         let mirror_oval = exp(-(dlat * dlat * 52.0 + mirror_dlon * mirror_dlon * 8.5));
@@ -434,7 +440,7 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
         color = mix(color, mix(vec3<f32>(0.90, 0.34, 0.22), u.snow_color.rgb, mirror_swirl * 0.42), smoothstep(0.46, 0.94, mirror_oval) * 0.62 * (1.0 - ice_like));
         color = mix(color, u.snow_color.rgb * vec3<f32>(1.07, 1.03, 0.94), mirror_rim * 0.42 * (1.0 - ice_like * 0.45));
 
-        for (var j: i32 = 0; j < 3; j = j + 1) {
+        for (var j: i32 = 0; j < 2; j = j + 1) {
             let fj = f32(j);
             let chain_lat = (hash3_s(seed + vec3<f32>(29.0 + fj, 61.0, -17.0)) * 0.62 - 0.31)
                           * select(-1.0, 1.0, fj > 0.5);
@@ -450,20 +456,22 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
             color = mix(color, u.snow_color.rgb * vec3<f32>(1.08, 1.03, 0.92), chain_rim * 0.48 * (1.0 - ice_like * 0.45));
         }
 
-        for (var i: i32 = 0; i < 8; i = i + 1) {
-            let idx = f32(i);
-            let small_lat = hash3_s(seed + vec3<f32>(71.0 + idx, 13.0, 5.0)) * 0.82 - 0.41;
-            let small_lon = hash3_s(seed + vec3<f32>(17.0, 91.0 + idx, 29.0)) * 6.2831853 - time * (0.018 + idx * 0.004);
-            let local_lat = lat - small_lat;
-            let local_lon = atan2(sin(lon - small_lon), cos(lon - small_lon));
-            let local = exp(-(local_lat * local_lat * 96.0 + local_lon * local_lon * 19.0));
-            let local_ring = smoothstep(0.22, 0.56, local) * (1.0 - smoothstep(0.64, 0.92, local));
-            let bright_head = smoothstep(0.48, 0.92, local);
-            let gate = smoothstep(0.28, 0.86, hash3_s(seed + vec3<f32>(idx * 9.0, 47.0, -13.0)));
-            let small_swirl = 0.5 + 0.5 * sin(atan2(local_lat * 5.0, local_lon * 1.6) * 2.5 + local * 5.0);
-            let local_tint = mix(mix(u.sand_color.rgb, u.snow_color.rgb, 0.58), vec3<f32>(0.90, 0.46, 0.30), small_swirl * 0.38);
-            color = mix(color, local_tint, local_ring * gate * 0.44 * (1.0 - ice_like * 0.45));
-            color = mix(color, u.snow_color.rgb * 1.12, bright_head * gate * 0.22 * (1.0 - ice_like));
+        if (quality > 0.72) {
+            for (var i: i32 = 0; i < 4; i = i + 1) {
+                let idx = f32(i);
+                let small_lat = hash3_s(seed + vec3<f32>(71.0 + idx, 13.0, 5.0)) * 0.82 - 0.41;
+                let small_lon = hash3_s(seed + vec3<f32>(17.0, 91.0 + idx, 29.0)) * 6.2831853 - time * (0.018 + idx * 0.004);
+                let local_lat = lat - small_lat;
+                let local_lon = atan2(sin(lon - small_lon), cos(lon - small_lon));
+                let local = exp(-(local_lat * local_lat * 96.0 + local_lon * local_lon * 19.0));
+                let local_ring = smoothstep(0.22, 0.56, local) * (1.0 - smoothstep(0.64, 0.92, local));
+                let bright_head = smoothstep(0.48, 0.92, local);
+                let gate = smoothstep(0.28, 0.86, hash3_s(seed + vec3<f32>(idx * 9.0, 47.0, -13.0)));
+                let small_swirl = 0.5 + 0.5 * sin(atan2(local_lat * 5.0, local_lon * 1.6) * 2.5 + local * 5.0);
+                let local_tint = mix(mix(u.sand_color.rgb, u.snow_color.rgb, 0.58), vec3<f32>(0.90, 0.46, 0.30), small_swirl * 0.38);
+                color = mix(color, local_tint, local_ring * gate * 0.44 * (1.0 - ice_like * 0.45));
+                color = mix(color, u.snow_color.rgb * 1.12, bright_head * gate * 0.22 * (1.0 - ice_like));
+            }
         }
 
         let dark_lat = hash3_s(seed + vec3<f32>(103.0, 2.0, 19.0)) * 0.52 - 0.26;
@@ -478,10 +486,21 @@ fn gas_giant_surface(dir: vec3<f32>, time: f32, quality: f32, body_kind: f32) ->
 
     let polar_haze = smoothstep(0.60, 0.96, abs(dir.y));
     let polar_storms = smoothstep(0.74, 0.95, abs(dir.y))
-                     * smoothstep(0.58, 0.90, ridged_fbm(dir * 22.0 + seed * 2.0, 3));
+                     * smoothstep(0.58, 0.90, ridged_fbm(dir * 22.0 + seed * 2.0, 2));
     color = mix(color, u.atmosphere_color.rgb * 0.95, polar_haze * mix(0.22, 0.50, ice_like));
     color = mix(color, u.snow_color.rgb * vec3<f32>(1.06, 1.02, 0.92), polar_storms * mix(0.20, 0.10, ice_like));
     return max(color, vec3<f32>(0.0));
+}
+
+fn dir_from_lat_lon(lat: f32, lon: f32) -> vec3<f32> {
+    let c = cos(lat);
+    return normalize(vec3<f32>(c * cos(lon), sin(lat), c * sin(lon)));
+}
+
+fn stellar_layer_dir(lat: f32, lon: f32, time: f32, rate: f32, differential: f32) -> vec3<f32> {
+    let s2 = sin(lat) * sin(lat);
+    let phase = time * rate * (1.0 - differential * s2);
+    return dir_from_lat_lon(lat, lon + phase);
 }
 
 fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>, time: f32) -> vec3<f32> {
@@ -491,6 +510,12 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
     let hotness = clamp((base.b - base.r) * 2.2, 0.0, 1.0);
     let solar_like = exp(-pow((base.g - 0.92) / 0.18, 2.0)) * (1.0 - hotness * 0.6);
     let seed = u.seed_block.xyz;
+    let lat = asin(clamp(dir.y, -1.0, 1.0));
+    let lon = atan2(dir.z, dir.x);
+    let rotation_bias = 1.0 + hotness * 0.70 - warmth * 0.22;
+    let fine_layer = stellar_layer_dir(lat, lon, time, 0.055 * rotation_bias, 0.34);
+    let deep_layer = stellar_layer_dir(lat, lon, time, -0.015 * rotation_bias, 0.18);
+    let magnetic_layer = stellar_layer_dir(lat, lon, time, 0.020 * rotation_bias, 0.42);
     let slow_time = vec3<f32>(time * 0.08, time * -0.035, time * 0.02);
 
     // Temperature-sensitive convection: blue-white stars stay comparatively
@@ -498,27 +523,25 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
     // grow large mottled cells.
     let fine_scale = mix(62.0, 12.0, warmth);
     let large_scale = mix(11.0, 3.0, warmth);
-    let fine = fbm(dir * fine_scale + seed + slow_time, 4) - 0.5;
-    let cells = ridged_fbm(dir * large_scale + seed * 1.7 - slow_time.yzx, 4) - 0.45;
-    let hot_mottle = (fbm(dir * 24.0 + seed * 2.4, 3) - 0.5) * hotness * 0.10;
+    let fine = fbm(fine_layer * fine_scale + seed + slow_time, 3) - 0.5;
+    let cells = ridged_fbm(deep_layer * large_scale + seed * 1.7 - slow_time.yzx, 2) - 0.45;
+    let hot_mottle = fine * hotness * 0.08;
     var color = base * (1.0 + fine * mix(0.18, 0.52, warmth) + cells * (0.16 + warmth * 0.22) + hot_mottle);
 
     // Cool-star spots: not a physically simulated magnetic field, but
     // latitude-gated dark active regions make G/K/M detail views read as
     // stellar photospheres instead of flat emissive discs.
-    let spot_field = fbm(dir * mix(8.0, 3.8, warmth) + seed + vec3<f32>(0.0, time * 0.018, 51.0), 4);
+    let spot_field = fbm(magnetic_layer * mix(8.0, 3.8, warmth) + seed + vec3<f32>(0.0, time * 0.018, 51.0), 2);
     let solar_band = exp(-pow((abs(dir.y) - 0.34), 2.0) * 17.0);
-    let cool_gate = 0.72 + 0.28 * fbm(dir * 2.2 + seed * 0.4, 2);
+    let cool_gate = 0.72 + 0.28 * fbm(deep_layer * 2.2 + seed * 0.4, 1);
     let spot_lat = mix(solar_band, cool_gate, warmth);
     let spot_threshold = mix(0.58, 0.40, warmth) - solar_like * 0.10;
     let spots = smoothstep(spot_threshold, spot_threshold + 0.18, spot_field)
               * spot_lat
               * (solar_like * 0.78 + warmth * 1.05)
               * (1.0 - hotness * 0.92);
-    let lat = asin(clamp(dir.y, -1.0, 1.0));
-    let lon = atan2(dir.z, dir.x);
     var active_spots = 0.0;
-    for (var i: i32 = 0; i < 4; i = i + 1) {
+    for (var i: i32 = 0; i < 2; i = i + 1) {
         let fi = f32(i);
         let h0 = hash3_s(seed + vec3<f32>(17.0 + fi, 41.0, 9.0));
         let h1 = hash3_s(seed + vec3<f32>(71.0, 13.0 + fi, 29.0));
@@ -533,41 +556,36 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
         active_spots = max(active_spots, oval * gate);
     }
     let starspots = max(spots, active_spots);
-    let spot_tint = mix(vec3<f32>(0.34, 0.30, 0.26), vec3<f32>(0.18, 0.11, 0.08), warmth);
-    color = mix(color, color * spot_tint, clamp(starspots, 0.0, 0.94));
+    let spot_tint = mix(vec3<f32>(0.42, 0.35, 0.28), vec3<f32>(0.30, 0.15, 0.09), warmth);
+    color = mix(color, color * spot_tint, clamp(starspots, 0.0, 0.84));
     color = max(vec3<f32>(0.0), base + (color - base) * 1.65);
 
     // Extra resolved photosphere detail: bright granule walls, magnetic plage,
     // and thread-like dark filaments. These are procedural stand-ins for the
     // texture contrast visible in SDO/HMI and AIA imagery.
-    let granule_wall = smoothstep(
-        0.58,
-        0.92,
-        ridged_fbm(dir * mix(46.0, 9.5, warmth) + seed * 2.6 + slow_time.zxy, 4)
-    );
-    let plage_field = smoothstep(
-        0.64,
-        0.94,
-        fbm(dir * mix(15.0, 5.2, warmth) + seed * 3.1 - slow_time.xyz, 3)
-    ) * spot_lat * (solar_like * 0.72 + warmth * 0.36) * (1.0 - hotness * 0.55);
+    let granule_wall = smoothstep(0.02, 0.34, cells + fine * 0.32 + 0.18);
+    let plage_field = smoothstep(0.48, 0.82, spot_field + fine * 0.22)
+                    * spot_lat * (solar_like * 0.72 + warmth * 0.36) * (1.0 - hotness * 0.55);
     let filament_field = smoothstep(
         0.78,
         0.96,
-        ridged_fbm(vec3<f32>(lat * 17.0, lon * 2.5 + time * 0.018, 4.0) + seed * 1.3, 3)
+        ridged_fbm(vec3<f32>(lat * 17.0, lon * 2.5 + time * 0.036, 4.0) + seed * 1.3, 2)
     ) * spot_lat * (solar_like * 0.42 + warmth * 0.54) * (1.0 - hotness * 0.75);
-    color = color * (1.0 + granule_wall * mix(0.08, 0.22, warmth) + plage_field * 0.34);
+    let chromo_network = smoothstep(0.08, 0.36, cells + hot_mottle + 0.20)
+                       * spot_lat * (solar_like * 0.26 + warmth * 0.24) * (1.0 - hotness * 0.55);
+    color = color * (1.0 + granule_wall * mix(0.08, 0.22, warmth) + plage_field * 0.34 + chromo_network * 0.20);
     color = mix(color, color * vec3<f32>(0.56, 0.34, 0.22), filament_field * 0.26);
 
     let edge = 1.0 - mu;
     let limb = mix(0.72 + 0.28 * mu, 0.30 + 1.72 * mu - 0.18 * mu * mu, warmth);
     let faculae = pow(edge, 2.1)
                 * (solar_like * 0.32 + warmth * 0.18)
-                * (0.65 + fbm(dir * 20.0 + seed * 2.1, 3) * 0.70);
+                * (0.74 + granule_wall * 0.46);
     let az = atan2(dir.z, dir.x);
     let active_arc = smoothstep(
         0.91,
         0.995,
-        sin(az * (3.0 + floor(fract(u.seed_block.x * 1.7) * 5.0)) + u.seed_block.y * 5.0) * 0.5 + 0.5
+        sin(az * (3.0 + floor(fract(u.seed_block.x * 1.7) * 5.0)) + u.seed_block.y * 5.0 + time * 0.045) * 0.5 + 0.5
     ) * pow(edge, 7.0) * (warmth * 0.38 + solar_like * 0.14);
     let prominence = smoothstep(
         0.935,
