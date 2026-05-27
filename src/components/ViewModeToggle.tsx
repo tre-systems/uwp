@@ -33,6 +33,13 @@ export function ViewModeToggle() {
   const detailLabel = formatBodyViewLabel(sys, target)
 
   useEffect(() => {
+    const active = document.querySelector(
+      '.view-mode-toggle .view-mode-segment.active',
+    ) as HTMLButtonElement | null
+    active?.focus({ preventScroll: true })
+  }, [mode])
+
+  useEffect(() => {
     // 1 / 2 / 3 / 4 keys jump straight to a view. We intentionally
     // ignore the press when the user is typing into an input or has a
     // modal open (the focused element will not be `body` then), so

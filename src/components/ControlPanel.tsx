@@ -29,6 +29,8 @@ import { UwpCodeEditor } from './UwpCodeEditor'
 import { ViewControls } from './ViewControls'
 import { WorldProfileEditor } from './WorldProfileEditor'
 import { formatBodyViewLabel, formatSurfaceCrumbLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { isMainWorldTarget } from '../systemVisualMapping'
+import { systemName } from '../domain/names'
 
 export function ControlPanel() {
   // Accessing .value inside JSX subscribes the component to changes.
@@ -96,16 +98,16 @@ export function ControlPanel() {
           <SystemEditor system={sys} disabled={controlsDisabled} />
         )}
 
-        {mode === 'detail' && target && sys && (
+        {mode === 'detail' && sys && (
           <>
-            <DetailTargetPanel system={sys} target={target} disabled={controlsDisabled} />
-            <ViewControls params={p} disabled={controlsDisabled} onParamsChange={updateParams} />
-            <PerformanceControls disabled={controlsDisabled} />
-          </>
-        )}
-
-        {mode === 'detail' && (!target || !sys) && (
-          <>
+            {target && <DetailTargetPanel system={sys} target={target} disabled={controlsDisabled} />}
+            {target && !isMainWorldTarget(sys, target) && sys.main_world >= 0 && (
+              <p class="panel-note">
+                UWP below describes the main world (
+                {systemName(sys.planets[sys.main_world]?.seed ?? sys.seed)}
+                ), not this body.
+              </p>
+            )}
             <UwpCodeEditor codeText={codeText} disabled={controlsDisabled} onCodeChange={setUwpFromCode} />
             <StarportEditor
               starport={u.starport}

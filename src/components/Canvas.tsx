@@ -51,8 +51,9 @@ export function Canvas() {
       setHoverTarget(null)
     }
 
-    function onClick(e: MouseEvent) {
+    function onPointerUp(e: PointerEvent) {
       if (viewMode.value !== 'system') return
+      if (e.button !== 0) return
       const { x, y } = canvasPoint(e)
       const target = pickSystemBody(x, y, performance.now())
       if (target != null) {
@@ -62,12 +63,12 @@ export function Canvas() {
 
     canvas.addEventListener('pointermove', onMove)
     canvas.addEventListener('pointerleave', onLeave)
-    canvas.addEventListener('click', onClick)
+    canvas.addEventListener('pointerup', onPointerUp)
 
     return () => {
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerleave', onLeave)
-      canvas.removeEventListener('click', onClick)
+      canvas.removeEventListener('pointerup', onPointerUp)
       setHoverTarget(null)
       client.dispose()
     }

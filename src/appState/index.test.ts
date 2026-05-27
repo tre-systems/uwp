@@ -22,6 +22,7 @@ import {
   selectHex,
   selectAndFocusSurfaceHex,
   selectedHex,
+  setSelectedHex,
   selectedSurfaceCell,
   selectedSurfaceHex,
   setSubsector,
@@ -34,8 +35,11 @@ import {
   setParamsSnapshot,
   setSurfaceMap,
   setSystemSnapshot,
+  resolveViewMode,
+  selectedSurfacePlanetIndex,
   setViewMode,
   setUwpField,
+  syncUwpFromSelectedHex,
   setUwpFromCode,
   detailTarget,
   focusMainWorldDetail,
@@ -150,6 +154,69 @@ describe('appState renderer command boundary', () => {
     setSystemSnapshot(null)
     setParamsSnapshot(initialParams)
     viewMode.value = initialView
+  })
+
+  it('rejects surface view for gas giants and other non-solid bodies', () => {
+    const initialView = viewMode.value
+    const system = {
+      ...fakeSystem(),
+      main_world: 0,
+      planets: [
+        fakePlanet({ seed: 100, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 288 }),
+        fakePlanet({ seed: 200, body_type: 'GasGiant', radius_earth: 11, mass_earth: 318, mean_surface_temp_k: 145 }),
+      ],
+    }
+    setSystemSnapshot(system)
+    focusSystemTarget({ kind: 'planet', index: 1 })
+
+    expect(selectedSurfacePlanetIndex(system)).toBeNull()
+    setViewMode('surface')
+    expect(viewMode.value).toBe('detail')
+
+    setSystemSnapshot(null)
+    detailTarget.value = null
+    viewMode.value = initialView
+  })
+
+  it('falls back when surface is requested before a system exists', () => {
+    const initialView = viewMode.value
+    setSystemSnapshot(null)
+    detailTarget.value = null
+
+    expect(resolveViewMode('surface')).toBe('subsector')
+    setViewMode('surface')
+    expect(viewMode.value).toBe('subsector')
+
+    viewMode.value = initialView
+  })
+
+  it('syncs UWP from a deep-linked hex once the subsector loads', () => {
+    const initialParams = { ...params.value }
+    const initialUwp = { ...uwp.value }
+    const initialSeed = systemSeed.value
+    const sub = fakeSubsector()
+
+    setSubsector(sub)
+    setSelectedHex({ col: 16, row: 10 })
+    systemSeed.value = 0x12345678
+    syncUwpFromSelectedHex()
+
+    expect(uwp.value).toMatchObject({
+      starport: 'C',
+      size: 4,
+      atm: 3,
+      hydro: 2,
+      pop: 9,
+      gov: 6,
+      law: 7,
+      tech: 8,
+    })
+    expect(params.value.seed).toBe(0x12345678)
+
+    setSubsector(null)
+    setParamsSnapshot(initialParams)
+    uwp.value = initialUwp
+    systemSeed.value = initialSeed
   })
 
   it('keeps Surface mode focused on the selected planet instead of snapping to the main world', () => {

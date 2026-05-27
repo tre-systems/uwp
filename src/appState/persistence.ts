@@ -2,6 +2,7 @@ import { effect } from '@preact/signals'
 import {
   panelOpen,
   renderQualityMode,
+  resolveViewMode,
   setPanelOpen,
   setRenderQualityMode,
   setViewMode,
@@ -53,7 +54,7 @@ export function loadPersistedPreferences(): void {
   const persisted = safeRead()
   if (!persisted) return
   if (persisted.viewMode && VIEW_MODES.includes(persisted.viewMode)) {
-    setViewMode(persisted.viewMode)
+    setViewMode(resolveViewMode(persisted.viewMode))
   }
   if (persisted.renderQuality && QUALITY_MODES.includes(persisted.renderQuality)) {
     setRenderQualityMode(persisted.renderQuality)

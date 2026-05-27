@@ -7,6 +7,7 @@ import {
   setSubsector,
   subsectorDensity,
   subsectorSeed,
+  syncUwpFromSelectedHex,
 } from './appState'
 import type { Subsector } from './domain/subsector'
 import { ensureWasmReady } from './wasm'
@@ -33,6 +34,8 @@ async function refresh(): Promise<void> {
     : null
   if (selected && (!nextSelected || (previousSelected && previousSelected.system_seed !== nextSelected.system_seed))) {
     setSelectedHex(null)
+  } else {
+    syncUwpFromSelectedHex()
   }
 }
 

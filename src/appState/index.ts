@@ -29,6 +29,7 @@ import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyVie
 import {
   isMainWorldTarget,
   paramsPatchForSystemTarget,
+  planetSupportsSurfaceMap,
   targetExists,
 } from '../systemVisualMapping'
 
@@ -164,16 +165,33 @@ export function togglePanel() {
   panelOpen.value = !panelOpen.value
 }
 
-export function setViewMode(mode: ViewMode) {
-  if (mode === 'surface' && selectedSurfacePlanetIndex() == null) {
-    if (!currentSystem.value) {
-      viewMode.value = mode
-      return
+/** Map a requested view to one we can actually show given loaded data. */
+export function resolveViewMode(requested: ViewMode): ViewMode {
+  if (requested === 'surface') {
+    if (selectedSurfacePlanetIndex() == null) {
+      if (currentSystem.value) return 'detail'
+      if (selectedHex.value) return 'system'
+      return 'subsector'
     }
-    currentSurfaceMap.value = null
-    return
   }
-  viewMode.value = mode
+  if (requested === 'detail' && !currentSystem.value) {
+    if (selectedHex.value) return 'system'
+    return 'subsector'
+  }
+  if (requested === 'system' && !currentSystem.value) {
+    return selectedHex.value ? 'system' : 'subsector'
+  }
+  return requested
+}
+
+export function setViewMode(mode: ViewMode) {
+  const resolved = resolveViewMode(mode)
+  if (resolved === 'surface') {
+    refreshSurfaceMap()
+  } else if (mode === 'surface') {
+    currentSurfaceMap.value = null
+  }
+  viewMode.value = resolved
 }
 
 export function selectedSurfacePlanetIndex(
@@ -183,10 +201,12 @@ export function selectedSurfacePlanetIndex(
   if (!system || system.planets.length === 0) return null
   if (target) {
     if (target.kind !== 'planet') return null
-    return system.planets[target.index] ? target.index : null
+    const planet = system.planets[target.index]
+    return planet && planetSupportsSurfaceMap(planet) ? target.index : null
   }
   const mainIndex = system.main_world >= 0 ? system.main_world : -1
-  return system.planets[mainIndex] ? mainIndex : null
+  const main = system.planets[mainIndex]
+  return main && planetSupportsSurfaceMap(main) ? mainIndex : null
 }
 
 export function selectedSurfacePlanet(): Planet | null {
@@ -495,6 +515,17 @@ function applySubsectorUwp(hexUwp: SubsectorUwp, seed: number): void {
   })
   uwp.value = nextUwp
   setParams({ ...params.value, ...paramsPatchFromUwpDigits(nextUwp), seed })
+}
+
+/** Apply the selected subsector hex UWP when the chart seed matches that hex. */
+export function syncUwpFromSelectedHex(): void {
+  const sub = currentSubsector.value
+  const coord = selectedHex.value
+  if (!sub || !coord) return
+  const hex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
+  if (!hex) return
+  if ((systemSeed.value >>> 0) !== (hex.system_seed >>> 0)) return
+  applySubsectorUwp(hex.uwp, hex.system_seed)
 }
 
 export function updateParams(patch: Partial<Params>) {

@@ -2,6 +2,7 @@ import { effect } from '@preact/signals'
 import { currentSystem, subsectorSeed, systemSeed, uwp, uwpToCode, viewMode } from './index'
 import { systemName } from '../domain/names'
 import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { isMainWorldTarget } from '../systemVisualMapping'
 
 // Mirror the current chart selection into document.title so a user with
 // several UWP tabs open can tell them apart at a glance. The base name
@@ -19,9 +20,14 @@ function compose(): string {
     const body = formatBodyViewLabel(currentSystem.value, resolvedDetailTarget(currentSystem.value))
     return `${body} surface — UWP`
   }
-  // Detail view: name the body being rendered, not always the system name.
-  const body = formatBodyViewLabel(currentSystem.value, resolvedDetailTarget(currentSystem.value))
-  return `${body} (${uwpToCode(uwp.value)}) — UWP`
+  // Detail view: UWP digits only describe the main world; other bodies omit them.
+  const sys = currentSystem.value
+  const target = resolvedDetailTarget(sys)
+  const body = formatBodyViewLabel(sys, target)
+  if (!target || isMainWorldTarget(sys, target)) {
+    return `${body} (${uwpToCode(uwp.value)}) — UWP`
+  }
+  return `${body} — UWP`
 }
 
 export function installDocumentTitle(): void {

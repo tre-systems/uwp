@@ -57,7 +57,7 @@ export function Breadcrumb() {
       onClick: () => setViewMode('subsector'),
     },
   ]
-  if (hexLabelText && hexNameText) {
+  if (hexLabelText && hexNameText && mode !== 'subsector') {
     crumbs.push({
       label: `${hexNameText} · ${hexLabelText}`,
       active: false,
@@ -65,25 +65,25 @@ export function Breadcrumb() {
       muted: true,
     })
   }
-  if (sys) {
+  if (sys && mode !== 'subsector') {
     crumbs.push({
       label: systemLabel,
       active: mode === 'system',
       onClick: () => setViewMode('system'),
     })
-    if (sys.main_world >= 0) {
+    if (mode === 'detail' || mode === 'surface') {
       crumbs.push({
         label: bodyLabel,
         active: mode === 'detail',
         onClick: () => setViewMode('detail'),
       })
-      if (canShowSurface) {
-        crumbs.push({
-          label: surfaceLabel,
-          active: mode === 'surface',
-          onClick: () => setViewMode('surface'),
-        })
-      }
+    }
+    if (mode === 'surface' && canShowSurface) {
+      crumbs.push({
+        label: surfaceLabel,
+        active: true,
+        onClick: () => setViewMode('surface'),
+      })
     }
   }
 

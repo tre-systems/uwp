@@ -1,6 +1,19 @@
 import type { Params, RGB } from './params'
 import type { AsteroidBelt, BodyType, Planet, SolarSystem, Star, SystemBodyTarget } from './domain/system'
 
+/** Bodies without a solid surface to map in the Surface view. */
+export function planetSupportsSurfaceMap(planet: Planet | null | undefined): boolean {
+  if (!planet) return false
+  switch (planet.body_type) {
+    case 'GasGiant':
+    case 'IceGiant':
+    case 'MiniNeptune':
+      return false
+    default:
+      return true
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
   return Math.max(min, Math.min(max, value))
