@@ -41,7 +41,7 @@ model quality (palette/terrain algorithm), not more synchronous generation.
   equal-area cells through an icosahedral projection. This is a better mental
   model for us than an equirectangular raster if we want map cells, globe
   pixels, and local regions to agree.
-- legacy 2d6-style world maps are visually an unfolded icosahedron with
+- Classic 2d6 world maps are visually an unfolded icosahedron with
   pointy-top hexes clipped by the triangular faces. That is a good UI target,
   but the data still needs a stable spherical cell id under it.
 
@@ -108,7 +108,7 @@ The first Rust-owned `SurfaceAtlas` slice now ships with `SurfaceMap`:
 - `SurfaceCell`: centre latitude/longitude, flat net boundary, elevation,
   signed elevation, water depth, slope, moisture, temperature, biome, and
   projected terrain.
-- `SurfaceAtlas`: all visible world-map cells at the current legacy 2d6-style
+- `SurfaceAtlas`: all visible world-map cells at the current unfolded-icosahedron
   12-subdivision resolution, serialized from Rust beside the compatibility
   32 x 16 grid.
 

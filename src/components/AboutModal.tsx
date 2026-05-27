@@ -49,8 +49,9 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
         </header>
         <div class="glossary-body">
           <p class="about-lede">
-            UWP is a procedural Cepheus / legacy 2d6 star-system generator. Worlds and
-            solar systems are simulated in Rust and rendered on the GPU via WebGPU.
+            UWP is a procedural star-system generator for original 2d6
+            science-fiction worlds. Worlds and solar systems are simulated in
+            Rust and rendered on the GPU via WebGPU.
           </p>
           <dl class="glossary-list">
             <div class="glossary-entry">
@@ -75,6 +76,14 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
                 {' '}<a href="https://www.orffenspace.com/cepheus-srd/" target="_blank" rel="noreferrer">
                   Cepheus SRD
                 </a>{' '}for the underlying tables.
+              </dd>
+            </div>
+            <div class="glossary-entry">
+              <dt>Legal</dt>
+              <dd>
+                UWP is an independent tool for original worlds. It is not
+                affiliated with legacy 2d6, third-party publishers, ultra-tech
+                Enterprises, Cepheus Engine, Samardan Press, or Jason Kemp.
               </dd>
             </div>
             <div class="glossary-entry">

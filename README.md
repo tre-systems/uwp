@@ -1,10 +1,18 @@
 # UWP
 
-Procedurally rendered Cepheus-style star systems in the browser via WebGPU.
+Procedurally rendered original 2d6 science-fiction star systems in the browser
+via WebGPU.
 Move the mouse to orbit, scroll to zoom, open the panel to tune planet
 parameters, edit the UWP, or inspect the generated system.
 
 Live: <https://uwp.tre.systems>
+
+## Licensing Guardrails
+
+UWP should stay original-universe and non-affiliated in public wording,
+examples, screenshots, and generated sample data. Cepheus-compatible rules
+references must keep their provenance and notices separate from the software
+licence. See [docs/LICENSING.md](docs/LICENSING.md).
 
 ## Stack
 
@@ -24,7 +32,7 @@ Live: <https://uwp.tre.systems>
 ┌────────────────────────────────────────────────────────────────┐
 │  src/  (Preact)                                                │
 │    appState/      typed signals, actions, renderer commands    │
-│    domain/        Cepheus UWP, system DTOs, main-world model   │
+│    domain/        UWP/profile logic, system DTOs, main-world model │
 │    rendererClient wasm lifecycle, resize, frame loop, snapshots│
 │    components/    presentation UI                              │
 └──────────┬─────────────────────────────────────────────────────┘
