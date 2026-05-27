@@ -45,6 +45,31 @@ describe('detectRenderProfile', () => {
       userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)',
     }).name).toBe('balanced')
   })
+
+  it('keeps privacy-capped high-end iPads out of the visibly chunky low profile', () => {
+    expect(detectRenderProfile({
+      width: 1024,
+      height: 1366,
+      devicePixelRatio: 3,
+      hardwareConcurrency: 4,
+      maxTouchPoints: 5,
+      coarsePointer: true,
+      userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)',
+    }).name).toBe('balanced')
+  })
+
+  it('can still protect genuinely constrained large tablets', () => {
+    expect(detectRenderProfile({
+      width: 800,
+      height: 1280,
+      devicePixelRatio: 2,
+      hardwareConcurrency: 2,
+      deviceMemory: 3,
+      maxTouchPoints: 5,
+      coarsePointer: true,
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Tablet)',
+    }).name).toBe('low')
+  })
 })
 
 describe('canvasPixelSize', () => {
@@ -62,6 +87,15 @@ describe('canvasPixelSize', () => {
     expect(canvasPixelSize(393, 852, profile, 3)).toEqual({
       width: 393,
       height: 852,
+    })
+  })
+
+  it('keeps low-profile tablet fallback near CSS resolution instead of heavily upscaling', () => {
+    const profile = renderProfileByName('low')
+
+    expect(canvasPixelSize(1280, 884, profile, 2)).toEqual({
+      width: 1203,
+      height: 831,
     })
   })
 

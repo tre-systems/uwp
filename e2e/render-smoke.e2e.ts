@@ -21,8 +21,8 @@ test('detail and system views render with quality controls', async ({ page }) =>
   await expect(panel.locator('.perf-fps-meta')).toContainText('target 60')
   await expect(panel.locator('.perf-grid')).toContainText('100%')
   const highCanvas = await canvasSize(panel)
-  expect(highCanvas.width).toBeGreaterThan(lowCanvas.width)
-  expect(highCanvas.height).toBeGreaterThan(lowCanvas.height)
+  expect(highCanvas.width).toBeGreaterThanOrEqual(lowCanvas.width)
+  expect(highCanvas.height).toBeGreaterThanOrEqual(lowCanvas.height)
 
   await selectQuality(panel, 'Low')
   await page.getByRole('tab', { name: /overview of the current solar system/i }).click({ force: true })

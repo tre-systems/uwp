@@ -45,12 +45,14 @@ pub const PREBAKE_LAT: usize = 512;
 
 /// Resolution tiers selected by render profile. Heightmap RAM cost
 /// (4 bytes/cell) and the biome/moisture/temp companions scale
-/// linearly with cell count, so weak devices fall back to the smallest
-/// tier and capable desktops use the canonical 1024 x 512 atlas. Higher
-/// apparent quality should come from shader/detail work; a 2048 x 1024
-/// synchronous WASM bake made startup and iPhone interaction too sluggish.
-pub const PREBAKE_LOW_LON: usize = 512;
-pub const PREBAKE_LOW_LAT: usize = 256;
+/// linearly with cell count, so weak devices use a smaller atlas while
+/// capable devices use the canonical 1024 x 512 atlas. The low tier is
+/// deliberately higher than CSS-phone resolution: 512 x 256 created
+/// visibly blocky coast and ice boundaries on large tablets when the
+/// renderer downshifted. A 768 x 384 atlas is still much cheaper than
+/// canonical while keeping zoomed globe surfaces presentable.
+pub const PREBAKE_LOW_LON: usize = 768;
+pub const PREBAKE_LOW_LAT: usize = 384;
 const LRU_CAPACITY: usize = 4;
 
 /// Map a 0..1 render-quality scalar to a (lon, lat) atlas resolution.

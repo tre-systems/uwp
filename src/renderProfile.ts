@@ -58,7 +58,7 @@ const BALANCED: RenderProfile = {
 const LOW: RenderProfile = {
   name: 'low',
   dprCap: 1,
-  maxPixels: 700_000,
+  maxPixels: 1_000_000,
   targetFps: 30,
   shaderQuality: 0.35,
   meshQuality: 0.45,
@@ -82,6 +82,21 @@ export function detectRenderProfile(hints = browserRenderHints()): RenderProfile
   const ua = hints.userAgent ?? ''
   const isiPhone = /iPhone|iPod/i.test(ua)
   const isiPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && (hints.maxTouchPoints ?? 0) > 1)
+  const largeTouchTablet = touch && !isiPhone && minSide >= 700
+
+  if (largeTouchTablet) {
+    let tabletPressure = 1
+    // Safari can privacy-cap hardwareConcurrency on even high-end iPads,
+    // so don't treat a reported 4-core tablet as phone-class hardware.
+    if (hints.hardwareConcurrency !== undefined && hints.hardwareConcurrency <= 2) {
+      tabletPressure += 2
+    }
+    if (hints.deviceMemory !== undefined) {
+      if (hints.deviceMemory <= 3) tabletPressure += 3
+      else if (hints.deviceMemory <= 4) tabletPressure += 1
+    }
+    return tabletPressure >= 4 ? LOW : BALANCED
+  }
 
   let pressure = 0
   if (isiPhone) pressure += 4
