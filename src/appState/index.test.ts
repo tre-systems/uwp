@@ -5,7 +5,6 @@ import {
   renderPerformance,
   renderQualityMode,
   registerRendererControls,
-  refreshSurfaceMap,
   refreshSurfaceMapAsync,
   rerollPlanet,
   clearSubsectorHexOverride,
