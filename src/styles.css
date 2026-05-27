@@ -1616,8 +1616,16 @@ label.color input[type="color"]::-webkit-color-swatch {
 .hex-cell.hex-occupied .hex-system-dot,
 .hex-cell.hex-occupied .hex-gas-giant,
 .hex-cell.hex-occupied .hex-belt-glyph,
-.hex-cell.hex-occupied .hex-zone-ring {
+.hex-cell.hex-occupied .hex-zone-ring,
+.hex-cell.hex-empty .hex-label,
+.hex-cell.hex-empty .hex-shape {
   pointer-events: none;
+}
+.hex-cell.hex-empty { cursor: pointer; }
+.hex-cell.hex-empty:hover .hex-shape { stroke: rgba(255, 255, 255, 0.55); }
+.hex-cell.hex-empty.hex-selected .hex-shape {
+  stroke: var(--color-accent);
+  stroke-width: 1.8;
 }
 .jump-routes {
   pointer-events: none;
@@ -1848,6 +1856,16 @@ label.color input[type="color"]::-webkit-color-swatch {
   pointer-events: none;
 }
 .surface-hex { cursor: pointer; }
+.surface-hit-area {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: none;
+  pointer-events: all;
+}
+.surface-hex .surface-hex-shape,
+.surface-hex .surface-marker,
+.surface-starport-group {
+  pointer-events: none;
+}
 .surface-hex-shape {
   fill: none;
   shape-rendering: geometricPrecision;

@@ -34,7 +34,7 @@ async function refresh(): Promise<void> {
     : null
   if (selected && (!nextSelected || (previousSelected && previousSelected.system_seed !== nextSelected.system_seed))) {
     setSelectedHex(null)
-  } else {
+  } else if (nextSelected) {
     syncUwpFromSelectedHex()
   }
 }

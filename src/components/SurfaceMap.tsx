@@ -314,6 +314,7 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
         }
       }}
     >
+      <path d={pathD} class="surface-hit-area" aria-hidden="true" />
       <path d={pathD} class="surface-hex-shape" />
     </g>
   )

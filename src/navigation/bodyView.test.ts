@@ -76,6 +76,15 @@ describe('resolvedDetailTarget', () => {
     expect(resolvedDetailTarget(system)).toEqual({ kind: 'planet', index: 1 })
     setParamsSnapshot(initial)
   })
+
+  it('prefers the main world when appearance seed matches the system seed', () => {
+    const system = fakeSystem()
+    const initial = { ...params.value }
+    detailTarget.value = null
+    setParamsSnapshot({ ...initial, seed: system.seed >>> 0 })
+    expect(resolvedDetailTarget(system)).toEqual({ kind: 'planet', index: 0 })
+    setParamsSnapshot(initial)
+  })
 })
 
 describe('formatBodyViewLabel', () => {

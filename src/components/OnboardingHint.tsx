@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
+import { viewMode } from '../appState'
 
 // Tiny first-run nudge. Shown once per browser, dismissed automatically
 // the first time the user interacts with the canvas (drag/scroll/touch)
@@ -25,22 +26,19 @@ function markDismissed(): void {
   }
 }
 
-// Touch devices "pinch" to zoom; mouse / trackpad users "scroll".
-// matchMedia is the standard way to check this — fall back to false on
-// the SSR-safe path where window is missing.
 function detectCoarsePointer(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
   return window.matchMedia('(pointer: coarse)').matches
 }
 
 export function OnboardingHint() {
+  const mode = viewMode.value
   const [visible, setVisible] = useState(false)
   const [coarse, setCoarse] = useState(false)
 
   useEffect(() => {
     setCoarse(detectCoarsePointer())
     if (readDismissed()) return
-    // Wait a beat so the hint doesn't pop in over the loading overlay.
     const showTimer = window.setTimeout(() => setVisible(true), 600)
 
     const dismiss = () => {
@@ -49,7 +47,6 @@ export function OnboardingHint() {
       cleanup()
     }
 
-    // Any meaningful interaction counts as "they get it now".
     const events: Array<keyof WindowEventMap> = [
       'pointerdown',
       'wheel',
@@ -61,8 +58,6 @@ export function OnboardingHint() {
       window.addEventListener(ev, onInteract, { once: true, passive: true })
     }
 
-    // Auto-dismiss after 12 seconds so the hint doesn't linger forever
-    // if the user just stares at the planet.
     const autoTimer = window.setTimeout(dismiss, 12_000)
 
     function cleanup() {
@@ -75,13 +70,16 @@ export function OnboardingHint() {
 
   if (!visible) return null
 
+  const mapMode = mode === 'subsector' || mode === 'surface'
+  const zoomVerb = coarse ? 'pinch' : 'scroll'
+
   return (
     <div class="onboarding-hint" role="note">
       <span class="onboarding-hint-row">
-        <kbd>drag</kbd> orbit
+        <kbd>drag</kbd> {mapMode ? 'pan map' : 'orbit'}
       </span>
       <span class="onboarding-hint-row">
-        <kbd>{coarse ? 'pinch' : 'scroll'}</kbd> zoom
+        <kbd>{zoomVerb}</kbd> zoom
       </span>
       <span class="onboarding-hint-row">
         <kbd>menu</kbd> open controls

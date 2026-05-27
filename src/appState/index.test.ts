@@ -20,6 +20,7 @@ import {
   regionHex,
   regionSurfaceCell,
   selectHex,
+  resetHexUwpAuthoringForTests,
   selectAndFocusSurfaceHex,
   selectedHex,
   setSelectedHex,
@@ -244,6 +245,39 @@ describe('appState renderer command boundary', () => {
     setParamsSnapshot(initialParams)
   })
 
+  it('does not re-apply hex UWP after the referee edits the panel', () => {
+    resetHexUwpAuthoringForTests()
+    const initialUwp = { ...uwp.value }
+    const sub = fakeSubsector()
+    setSubsector(sub)
+    selectHex({ col: 16, row: 10 })
+    setUwpField('starport', 'A')
+    syncUwpFromSelectedHex()
+    expect(uwp.value.starport).toBe('A')
+    setSubsector(null)
+    setSelectedHex(null)
+    uwp.value = initialUwp
+    resetHexUwpAuthoringForTests()
+  })
+
+  it('does not reset UWP when re-clicking the same occupied hex', () => {
+    resetHexUwpAuthoringForTests()
+    const initialUwp = { ...uwp.value }
+    const initialView = viewMode.value
+    const sub = fakeSubsector()
+    setSubsector(sub)
+    selectHex({ col: 16, row: 10 })
+    setUwpField('starport', 'B')
+    const edited = { ...uwp.value }
+    selectHex({ col: 16, row: 10 })
+    expect(uwp.value).toEqual(edited)
+    setSubsector(null)
+    setSelectedHex(null)
+    uwp.value = initialUwp
+    viewMode.value = initialView
+    resetHexUwpAuthoringForTests()
+  })
+
   it('syncs UWP from a deep-linked hex once the subsector loads', () => {
     const initialParams = { ...params.value }
     const initialUwp = { ...uwp.value }
@@ -266,9 +300,11 @@ describe('appState renderer command boundary', () => {
       tech: 8,
     })
     setSubsector(null)
+    setSelectedHex(null)
     setParamsSnapshot(initialParams)
     uwp.value = initialUwp
     systemSeed.value = initialSeed
+    resetHexUwpAuthoringForTests()
   })
 
   it('keeps Surface mode focused on the selected planet instead of snapping to the main world', () => {
@@ -440,6 +476,7 @@ describe('appState renderer command boundary', () => {
   })
 
   it('applies the selected subsector hex UWP to the main world controls', () => {
+    resetHexUwpAuthoringForTests()
     const initialParams = { ...params.value }
     const initialUwp = { ...uwp.value }
     const initialSeed = systemSeed.value
@@ -448,6 +485,8 @@ describe('appState renderer command boundary', () => {
     let received: Params | null = null
 
     setSubsector(sub)
+    setSelectedHex(null)
+    systemSeed.value = 1337
     registerRendererControls({
       rerollPlanet: () => undefined,
       getSystem: () => null,

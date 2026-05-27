@@ -11,6 +11,8 @@ import type { RefObject } from 'preact'
 export interface MapGestures {
   viewBox: string
   reset: () => void
+  /** True once after a pan/pinch gesture — consume on click to avoid mis-picks. */
+  consumeClickSuppression: () => boolean
 }
 
 export function useMapGestures(
@@ -25,6 +27,7 @@ export function useMapGestures(
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinchDist = useRef<number | null>(null)
   const dragging = useRef(false)
+  const suppressClick = useRef(false)
   const lastDrag = useRef({ x: 0, y: 0 })
 
   zoomRef.current = zoom
@@ -128,9 +131,20 @@ export function useMapGestures(
     }
 
     function onPointerUp(e: PointerEvent) {
+      const wasDragging = dragging.current
       pointers.current.delete(e.pointerId)
       if (pointers.current.size < 2) pinchDist.current = null
-      if (pointers.current.size === 0) dragging.current = false
+      if (pointers.current.size === 0) {
+        if (wasDragging) suppressClick.current = true
+        dragging.current = false
+      }
+    }
+
+    function onClickCapture(e: MouseEvent) {
+      if (!suppressClick.current) return
+      suppressClick.current = false
+      e.preventDefault()
+      e.stopPropagation()
     }
 
     const opts = { passive: false } as const
@@ -139,12 +153,14 @@ export function useMapGestures(
     el.addEventListener('pointermove', onPointerMove, opts)
     el.addEventListener('pointerup', onPointerUp, opts)
     el.addEventListener('pointercancel', onPointerUp, opts)
+    el.addEventListener('click', onClickCapture, true)
     return () => {
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('pointerdown', onPointerDown)
       el.removeEventListener('pointermove', onPointerMove)
       el.removeEventListener('pointerup', onPointerUp)
       el.removeEventListener('pointercancel', onPointerUp)
+      el.removeEventListener('click', onClickCapture, true)
     }
   }, [containerRef, srcW, srcH])
 
@@ -159,6 +175,11 @@ export function useMapGestures(
       offsetRef.current = { x: 0, y: 0 }
       setZoom(1)
       setOffset({ x: 0, y: 0 })
+    },
+    consumeClickSuppression: () => {
+      const suppressed = suppressClick.current
+      suppressClick.current = false
+      return suppressed
     },
   }
 }

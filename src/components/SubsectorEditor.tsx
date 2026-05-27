@@ -137,7 +137,47 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
       </section>
 
       {sub && selectedDetail && <HexDetailSection subsector={sub} hex={selectedDetail} />}
+      {sub && sel && !selectedDetail && (
+        <TerritoryDetailSection subsector={sub} coord={sel} />
+      )}
     </>
+  )
+}
+
+function TerritoryDetailSection({ subsector, coord }: { subsector: Subsector; coord: { col: number; row: number } }) {
+  const cell = subsector.polity_cells?.find((c) => c.coord.col === coord.col && c.coord.row === coord.row) ?? null
+  const allegiance = cell ? allegianceForCode(subsector, cell.allegiance) : null
+  return (
+    <section>
+      <h2>Hex {hexLabel(coord)}</h2>
+      <dl class="sys-meta">
+        <div class="sys-meta-row">
+          <dt>Status</dt>
+          <dd>No star system (empty hex)</dd>
+        </div>
+        {cell && (
+          <>
+            <div class="sys-meta-row">
+              <dt>Allegiance</dt>
+              <dd>
+                <span
+                  class={`polity-chip polity-chip-${Math.max(0, Math.min(5, Math.trunc(allegiance?.color_index ?? 2)))}`}
+                >
+                  {cell.allegiance}
+                </span>
+                <span class="sys-unit">{allegiance?.name ?? 'Uncatalogued'}</span>
+              </dd>
+            </div>
+            {cell.capital && (
+              <div class="sys-meta-row">
+                <dt>Capital</dt>
+                <dd>Polity capital hex</dd>
+              </div>
+            )}
+          </>
+        )}
+      </dl>
+    </section>
   )
 }
 

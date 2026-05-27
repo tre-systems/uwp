@@ -12,7 +12,7 @@ export function ViewControls({ params, disabled, onParamsChange }: ViewControlsP
     <section>
       <h2>View</h2>
       <Slider
-        label="Seed"
+        label="Appearance seed"
         value={params.seed}
         min={0}
         max={0xffffffff}

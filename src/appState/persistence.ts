@@ -5,7 +5,9 @@ import {
   resolveViewMode,
   setPanelOpen,
   setRenderQualityMode,
+  setSubsectorDensity,
   setViewMode,
+  subsectorDensity,
   viewMode,
   type RenderQualityMode,
   type ViewMode,
@@ -19,6 +21,7 @@ interface Persisted {
   viewMode?: ViewMode
   panelOpen?: boolean
   renderQuality?: RenderQualityMode
+  subsectorDensity?: number
 }
 
 const VIEW_MODES: readonly ViewMode[] = ['subsector', 'system', 'detail', 'surface']
@@ -62,6 +65,9 @@ export function loadPersistedPreferences(): void {
   if (typeof persisted.panelOpen === 'boolean') {
     setPanelOpen(persisted.panelOpen)
   }
+  if (typeof persisted.subsectorDensity === 'number' && Number.isFinite(persisted.subsectorDensity)) {
+    setSubsectorDensity(persisted.subsectorDensity)
+  }
 }
 
 // Subscribe to the persisted signals. Writes are debounced into a single
@@ -73,6 +79,7 @@ export function installPreferencePersistence(): void {
       viewMode: viewMode.value,
       panelOpen: panelOpen.value,
       renderQuality: renderQualityMode.value,
+      subsectorDensity: subsectorDensity.value,
     })
   })
 }

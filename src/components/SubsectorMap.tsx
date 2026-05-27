@@ -1,6 +1,7 @@
 import {
   selectedHex,
   selectHex,
+  selectTerritoryHex,
   showJumpRoutes,
   subsectorSeed,
 } from '../appState'
@@ -213,6 +214,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
                 displayName={nameMap.get(key)}
                 allegianceColorIndex={allegiance?.color_index ?? 2}
                 polityAllegiance={polityCell?.allegiance ?? null}
+                polityName={allegiance?.name ?? null}
               />
             )
           }),
@@ -250,13 +252,45 @@ interface HexCellProps {
   displayName?: string
   allegianceColorIndex: number
   polityAllegiance: string | null
+  polityName: string | null
 }
 
-function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, allegianceColorIndex, polityAllegiance }: HexCellProps) {
+function HexCell({
+  col,
+  row,
+  cx,
+  cy,
+  hex,
+  selected,
+  subsectorSeed,
+  displayName,
+  allegianceColorIndex,
+  polityAllegiance,
+  polityName,
+}: HexCellProps) {
   const label = `${col.toString().padStart(2, '0')}${row.toString().padStart(2, '0')}`
+  const fullCoord: HexCoord = { col, row }
   if (!hex) {
+    const territoryLabel = polityAllegiance
+      ? `Hex ${label}: ${polityName ?? polityAllegiance} territory (no system)`
+      : `Hex ${label}: unoccupied`
     return (
-      <g class="hex-cell hex-empty" data-coord={label} data-allegiance={polityAllegiance ?? undefined}>
+      <g
+        class={`hex-cell hex-empty${selected ? ' hex-selected' : ''}`}
+        data-coord={label}
+        data-allegiance={polityAllegiance ?? undefined}
+        tabIndex={0}
+        role="button"
+        aria-label={territoryLabel}
+        onClick={() => selectTerritoryHex(fullCoord)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            selectTerritoryHex(fullCoord)
+          }
+        }}
+      >
+        <path d={hexPath(cx, cy, HEX_R)} class="hex-hit-area" aria-hidden="true" />
         {polityAllegiance && (
           <path
             d={hexPath(cx, cy, HEX_R - 1)}
@@ -270,7 +304,6 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, 
       </g>
     )
   }
-  const fullCoord: HexCoord = { col, row }
   const zoneClass = travelZoneClass(hex.travel_zone)
   const portClass = `port-${hex.uwp.starport.toLowerCase()}`
   const isRed = hex.travel_zone === 'Red'

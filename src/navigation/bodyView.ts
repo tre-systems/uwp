@@ -24,6 +24,10 @@ function inferDetailTargetFromParams(
     return { kind: 'planet', index: planetIndex }
   }
   if ((system.seed >>> 0) === seed) {
+    const mainIndex = system.main_world
+    if (mainIndex >= 0 && system.planets[mainIndex]) {
+      return { kind: 'planet', index: mainIndex }
+    }
     return { kind: 'star', index: 0 }
   }
   if (system.companion && ((system.seed ^ 0xA51CE5ED) >>> 0) === seed) {

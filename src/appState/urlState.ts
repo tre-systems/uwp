@@ -4,6 +4,11 @@ import { resolvedDetailTarget } from '../navigation/bodyView'
 import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
 import type { SurfaceHexCoord } from '../domain/surfaceMap'
 import {
+  decodeOverridesPayload,
+  encodeOverridesPayload,
+  filterOverridesForSeed,
+} from './urlOverrides'
+import {
   closeRegionView,
   currentSubsector,
   currentSurfaceMap,
@@ -19,9 +24,15 @@ import {
   selectedSurfacePlanetIndex,
   setDetailTarget,
   setSelectedHex,
+  setSubsectorDensity,
+  setSubsectorOverrides,
+  setSubsectorRouteOverrides,
   setSubsectorSeed,
   setSystemSeed,
   setViewMode,
+  subsectorDensity,
+  subsectorOverrides,
+  subsectorRouteOverrides,
   subsectorSeed,
   syncUwpFromSelectedHex,
   systemSeed,
@@ -34,7 +45,7 @@ import type { ViewMode } from '.'
 // Encodes the user's current chart selection in `location.hash` so a
 // shared link recreates the same view:
 //
-//   #sub=…&hex=…&sys=…&body=…&surface=…&view=<mode>
+//   #sub=…&density=…&hex=…&sys=…&body=…&surface=…&ov=…&view=<mode>
 //
 // All fields are optional; missing keys fall back to defaults. We
 // hydrate at boot, then mirror future signal writes back into the
@@ -42,10 +53,12 @@ import type { ViewMode } from '.'
 
 interface ParsedState {
   subsectorSeed?: number
+  subsectorDensity?: number
   systemSeed?: number
   hex?: { col: number; row: number }
   body?: SystemBodyTarget
   surfaceHex?: SurfaceHexCoord
+  overrides?: ReturnType<typeof decodeOverridesPayload>
   view?: ViewMode
   keys: Set<string>
 }
@@ -74,6 +87,16 @@ function parseHash(hash: string): ParsedState {
   if (sub) {
     const n = parseSeed(sub)
     if (n != null) out.subsectorSeed = n
+  }
+  const density = params.get('density')
+  if (density) {
+    const n = parseDensity(density)
+    if (n != null) out.subsectorDensity = n
+  }
+  const ov = params.get('ov')
+  if (ov) {
+    const decoded = decodeOverridesPayload(ov)
+    if (decoded) out.overrides = decoded
   }
   const sys = params.get('sys')
   if (sys) {
@@ -109,6 +132,13 @@ function parseSeed(raw: string): number | null {
   return value >>> 0
 }
 
+function parseDensity(raw: string): number | null {
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return null
+  if (value > 1) return Math.max(0, Math.min(1, value / 100))
+  return Math.max(0, Math.min(1, value))
+}
+
 export function encodeDetailBody(target: SystemBodyTarget | null): string | null {
   if (!target) return null
   if (target.kind === 'planet') return `p${target.index}`
@@ -129,7 +159,17 @@ export function decodeDetailBody(raw: string): SystemBodyTarget | null {
 function buildHash(): string {
   const params = new URLSearchParams()
   params.set('sub', subsectorSeed.value.toString(10))
+  const density = subsectorDensity.value
+  if (Math.abs(density - 0.5) > 0.001) {
+    params.set('density', String(Math.round(density * 100)))
+  }
   params.set('sys', systemSeed.value.toString(10))
+  const ov = encodeOverridesPayload(filterOverridesForSeed(
+    subsectorSeed.value,
+    subsectorOverrides.value,
+    subsectorRouteOverrides.value,
+  ))
+  if (ov) params.set('ov', ov)
   const h = selectedHex.value
   if (h) params.set('hex', `${h.col},${h.row}`)
   const sys = currentSystem.value
@@ -166,6 +206,16 @@ export function loadUrlState(): void {
   closeRegionView()
 
   if (parsed.subsectorSeed != null) setSubsectorSeed(parsed.subsectorSeed)
+  if (keys.has('density') && parsed.subsectorDensity != null) {
+    setSubsectorDensity(parsed.subsectorDensity)
+  }
+  if (keys.has('ov') && parsed.overrides) {
+    setSubsectorOverrides(parsed.overrides.h)
+    setSubsectorRouteOverrides(parsed.overrides.r)
+  } else if (keys.has('ov')) {
+    setSubsectorOverrides({})
+    setSubsectorRouteOverrides({})
+  }
   if (parsed.systemSeed != null) setSystemSeed(parsed.systemSeed)
 
   if (keys.has('hex') && parsed.hex) {
@@ -248,6 +298,9 @@ export function installUrlStateMirror(): void {
     // Touch every signal we care about so the effect re-runs when any
     // of them changes.
     subsectorSeed.value
+    subsectorDensity.value
+    subsectorOverrides.value
+    subsectorRouteOverrides.value
     systemSeed.value
     viewMode.value
     selectedHex.value

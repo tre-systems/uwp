@@ -149,6 +149,9 @@ let rendererControls: RendererControls | null = null
 /** View requested before WASM has produced a system snapshot. */
 let deferredViewMode: ViewMode | null = null
 
+/** Skip hex-driven UWP sync after the referee edits the UWP panel. */
+let uwpEditedSinceHexSelect = false
+
 function viewModeNeedsSystem(mode: ViewMode): boolean {
   return mode === 'system' || mode === 'detail' || mode === 'surface'
 }
@@ -552,12 +555,38 @@ export function selectHex(coord: HexCoord): void {
   const sub = currentSubsector.value
   if (!sub) return
   const hex = sub.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
-  if (!hex) return
+  if (!hex) {
+    selectTerritoryHex(coord)
+    return
+  }
+  const prev = selectedHex.value
+  const sameHex = !!prev && prev.col === coord.col && prev.row === coord.row
+  const sameSystem = (systemSeed.value >>> 0) === (hex.system_seed >>> 0)
+
   setSelectedHex(coord)
+
+  if (sameHex && sameSystem) {
+    if (viewMode.value === 'subsector') setViewMode('system')
+    return
+  }
+
+  uwpEditedSinceHexSelect = false
   detailTarget.value = null
   applySubsectorUwp(hex.uwp)
   setSystemSeed(hex.system_seed)
   setViewMode('system')
+}
+
+/** Select an empty hex for territory / polity inspection (no system load). */
+export function selectTerritoryHex(coord: HexCoord): void {
+  const sub = currentSubsector.value
+  if (!sub) return
+  if (sub.hexes.some((h) => h.coord.col === coord.col && h.coord.row === coord.row)) {
+    selectHex(coord)
+    return
+  }
+  setSelectedHex(coord)
+  detailTarget.value = null
 }
 
 function applySubsectorUwp(hexUwp: SubsectorUwp): void {
@@ -577,6 +606,7 @@ function applySubsectorUwp(hexUwp: SubsectorUwp): void {
 
 /** Apply the selected subsector hex UWP when the chart seed matches that hex. */
 export function syncUwpFromSelectedHex(): void {
+  if (uwpEditedSinceHexSelect) return
   const sub = currentSubsector.value
   const coord = selectedHex.value
   if (!sub || !coord) return
@@ -584,6 +614,15 @@ export function syncUwpFromSelectedHex(): void {
   if (!hex) return
   if ((systemSeed.value >>> 0) !== (hex.system_seed >>> 0)) return
   applySubsectorUwp(hex.uwp)
+}
+
+function markUwpEdited(): void {
+  uwpEditedSinceHexSelect = true
+}
+
+/** Reset hex/UWP authoring guard (unit tests only). */
+export function resetHexUwpAuthoringForTests(): void {
+  uwpEditedSinceHexSelect = false
 }
 
 export function updateParams(patch: Partial<Params>) {
@@ -602,6 +641,7 @@ export function applyUwp(code: string): boolean {
 }
 
 export function setUwpField<K extends keyof UwpDigits>(field: K, value: UwpDigits[K]) {
+  markUwpEdited()
   uwp.value = reconcileUwpDigits({ ...uwp.value, [field]: value })
   updateParams(paramsPatchFromUwpDigits(uwp.value))
 }
@@ -609,17 +649,20 @@ export function setUwpField<K extends keyof UwpDigits>(field: K, value: UwpDigit
 export function setUwpFromCode(code: string): boolean {
   const parsed = parseUwpDigits(code)
   if (!parsed) return false
+  markUwpEdited()
   uwp.value = parsed
   applyUwp(uwpToCode(parsed))
   return true
 }
 
 export function randomizeUwp() {
+  markUwpEdited()
   uwp.value = randomUwpDigits()
   applyUwp(uwpToCode(uwp.value))
 }
 
 export function resetUwp() {
+  markUwpEdited()
   uwp.value = { ...defaultUwp }
   applyUwp(uwpToCode(uwp.value))
 }
