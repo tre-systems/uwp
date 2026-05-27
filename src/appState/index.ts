@@ -28,6 +28,7 @@ import type { RenderProfileName } from '../renderProfile'
 import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
 import { hasPendingDetailBody } from './urlState'
 import { withChartWork } from './chartWork'
+import { generateSurfaceMapInWorker, wasmComputeAvailable } from '../wasmCompute'
 import {
   isMainWorldTarget,
   paramsPatchForSystemTarget,
@@ -504,13 +505,37 @@ export function refreshSurfaceMap(): void {
 
 export async function refreshSurfaceMapAsync(): Promise<void> {
   const planetIndex = selectedSurfacePlanetIndex()
-  if (planetIndex == null || !rendererControls) {
+  const sys = currentSystem.value
+  if (planetIndex == null || !sys) {
     currentSurfaceMap.value = null
     return
   }
-  await withChartWork('Generating world surface map…', () => {
+  const planet = sys.planets[planetIndex]
+  if (!planet) {
+    currentSurfaceMap.value = null
+    return
+  }
+  const p = params.value
+  await withChartWork('Generating world surface map…', async () => {
     const previous = currentSurfaceMap.value
-    const map = rendererControls?.getSurfaceMap(planetIndex) ?? null
+    let map = null as ReturnType<NonNullable<typeof rendererControls>['getSurfaceMap']>
+    if (wasmComputeAvailable()) {
+      try {
+        map = await generateSurfaceMapInWorker(
+          planet,
+          p.seed >>> 0,
+          p.sea_level,
+          p.ice_latitude,
+          p.vegetation_richness,
+          p.population_intensity,
+        )
+      } catch (err) {
+        console.warn('surface map worker failed, using main thread', err)
+      }
+    }
+    if (!map) {
+      map = rendererControls?.getSurfaceMap(planetIndex) ?? null
+    }
     currentSurfaceMap.value = map
     if (!map || previous?.seed !== map.seed) {
       selectedSurfaceHex.value = null

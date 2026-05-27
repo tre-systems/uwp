@@ -12,6 +12,7 @@
 // agrees pixel-for-pixel with the globe shader and the region view.
 
 import { netToSphere, NET_WIDTH, NET_HEIGHT } from '../domain/icosahedron'
+import type { SurfaceAtlas, SurfaceAtlasCell } from '../domain/surfaceMap'
 import {
   biomeColorLinear,
   biomeIsIce,
@@ -240,6 +241,139 @@ export async function renderSurfaceBackground(
   }
   ctx.putImageData(img, 0, 0)
   return canvas.toDataURL('image/png')
+}
+
+/**
+ * Paint the surface backdrop from the Rust-owned atlas cells (no second
+ * pre-bake pass on the main thread).
+ */
+export async function renderSurfaceBackgroundFromAtlas(
+  atlas: SurfaceAtlas,
+  opts: RenderOptions,
+  signal?: AbortSignal,
+): Promise<string> {
+  const width = opts.width
+  const height = Math.round((width * NET_HEIGHT) / NET_WIDTH)
+  const scaleNetToPx = width / NET_WIDTH
+  const seaLevel = atlas.sea_level_threshold
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')!
+  const img = ctx.createImageData(width, height)
+  const data = img.data
+
+  const sunDir: [number, number, number] = [-0.55, -0.55, 0.62]
+  const paletteSrgb: [number, number, number][] = new Array(16)
+  for (let i = 0; i < 16; i++) {
+    const linear = biomeColorLinear(i, opts.paletteBase)
+    paletteSrgb[i] = [
+      linearToSrgb8(linear[0]),
+      linearToSrgb8(linear[1]),
+      linearToSrgb8(linear[2]),
+    ]
+  }
+
+  const elev = new Float32Array(width * height)
+  const biomeBuf = new Uint8Array(width * height)
+  const inside = new Uint8Array(width * height)
+  const CHUNK_ROWS = 64
+
+  for (let yStart = 0; yStart < height; yStart += CHUNK_ROWS) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const yEnd = Math.min(yStart + CHUNK_ROWS, height)
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = 0; x < width; x++) {
+        const netX = x / scaleNetToPx
+        const netY = y / scaleNetToPx
+        const proj = netToSphere(netX, netY)
+        const idx = y * width + x
+        if (!proj) continue
+        inside[idx] = 1
+        const cell = nearestAtlasCell(atlas.cells, proj.lat, proj.lon)
+        elev[idx] = cell.elevation_signed
+        biomeBuf[idx] = cell.biome_id
+      }
+    }
+    await new Promise((r) => setTimeout(r, 0))
+  }
+
+  for (let yStart = 0; yStart < height; yStart += CHUNK_ROWS) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const yEnd = Math.min(yStart + CHUNK_ROWS, height)
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x
+        if (!inside[idx]) {
+          data[idx * 4 + 3] = 0
+          continue
+        }
+        const h = elev[idx]
+        const biomeId = biomeBuf[idx]
+        const isWater = biomeIsOcean(biomeId)
+        const xL = x > 0 && inside[idx - 1] ? idx - 1 : idx
+        const xR = x < width - 1 && inside[idx + 1] ? idx + 1 : idx
+        const yU = y > 0 && inside[idx - width] ? idx - width : idx
+        const yD = y < height - 1 && inside[idx + width] ? idx + width : idx
+        const dx = elev[xR] - elev[xL]
+        const dy = elev[yD] - elev[yU]
+        const dryLand = opts.waterFraction < 0.08
+        const slopeScale = isWater ? 22 : dryLand ? 18 : 42
+        const nl = Math.hypot(-dx * slopeScale, -dy * slopeScale, 1)
+        const lamb = Math.max(0, (-dx * slopeScale * sunDir[0] + -dy * slopeScale * sunDir[1] + sunDir[2]) / nl)
+        const shade = isWater
+          ? 0.95 + lamb * 0.06
+          : dryLand
+            ? 0.78 + lamb * 0.26
+            : 0.68 + lamb * 0.42
+        let [r, g, b] = paletteSrgb[biomeId] ?? paletteSrgb[3]
+        if (isWater) {
+          const depth = clamp(seaLevel - h, 0, 1)
+          const t = smoothstep(0.02, 0.35, depth) * 0.45
+          const shallow = paletteSrgb[1]
+          const deep = paletteSrgb[0]
+          r = shallow[0] + (deep[0] - shallow[0]) * t
+          g = shallow[1] + (deep[1] - shallow[1]) * t
+          b = shallow[2] + (deep[2] - shallow[2]) * t
+        }
+        r *= shade
+        g *= shade
+        b *= shade
+        if (biomeIsIce(biomeId)) {
+          r = r * 0.95 + 6
+          g = g * 0.95 + 10
+          b = b * 0.95 + 15
+        }
+        const di = idx * 4
+        data[di] = clamp255(r)
+        data[di + 1] = clamp255(g)
+        data[di + 2] = clamp255(b)
+        data[di + 3] = 255
+      }
+    }
+    await new Promise((r) => setTimeout(r, 0))
+  }
+
+  ctx.putImageData(img, 0, 0)
+  return canvas.toDataURL('image/png')
+}
+
+function nearestAtlasCell(cells: SurfaceAtlasCell[], latRad: number, lonRad: number): SurfaceAtlasCell {
+  let best = cells[0]
+  let bestDot = -2
+  const sinLat = Math.sin(latRad)
+  const cosLat = Math.cos(latRad)
+  for (const cell of cells) {
+    const clat = (cell.latitude_deg * Math.PI) / 180
+    const clon = (cell.longitude_deg * Math.PI) / 180
+    const dot = sinLat * Math.sin(clat) + cosLat * Math.cos(clat) * Math.cos(lonRad - clon)
+    if (dot > bestDot) {
+      bestDot = dot
+      best = cell
+    }
+  }
+  return best
 }
 
 // Heightmap-only fallback used when the prebake doesn't carry biome ids

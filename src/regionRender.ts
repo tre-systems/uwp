@@ -276,6 +276,145 @@ export function renderRegion(
   return { labels }
 }
 
+const REGION_PIXEL_CHUNK_ROWS = 24
+
+/** Chunked final pass so the modal stays responsive on slower devices. */
+export async function renderRegionAsync(
+  ctx: CanvasRenderingContext2D,
+  input: RegionRenderInput,
+  quality: RegionQuality = 'final',
+  signal?: AbortSignal,
+): Promise<RegionRenderResult> {
+  const { hex, worldSeed, width, height } = input
+  const profile = QUALITY_PROFILES[quality]
+  const map = buildHeightmap(input, profile)
+  const seaLevel = map.biome
+    ? input.atlas?.sea_level_threshold ?? seaLevelForTerrain(hex.terrain, input.authoredHydroFraction)
+    : seaLevelForTerrain(hex.terrain, input.authoredHydroFraction)
+  const sunDir = [-0.55, -0.55, 0.62] as const
+  const off = document.createElement('canvas')
+  off.width = profile.noiseRes
+  off.height = Math.round(profile.noiseRes * (height / width))
+  const offCtx = off.getContext('2d')!
+  const img = offCtx.createImageData(off.width, off.height)
+  const data = img.data
+  const palette = input.paletteBase
+    ? paletteForBiome(TERRAIN_TO_BIOME[hex.terrain] ?? 3, input.paletteBase)
+    : paletteForTerrain(hex.terrain, hex.temperature_k)
+  const biomePalettes = input.paletteBase ? buildBiomePalettes(input.paletteBase) : null
+  const elev = new Float32Array(off.width * off.height)
+  const slopeX = new Float32Array(off.width * off.height)
+  const slopeY = new Float32Array(off.width * off.height)
+  for (let py = 0; py < off.height; py++) {
+    for (let px = 0; px < off.width; px++) {
+      const u = px / (off.width - 1)
+      const v = py / (off.height - 1)
+      elev[py * off.width + px] = sampleHeight(map, u, v)
+    }
+  }
+  for (let py = 0; py < off.height; py++) {
+    for (let px = 0; px < off.width; px++) {
+      const idx = py * off.width + px
+      const xm = px > 0 ? idx - 1 : idx
+      const xp = px < off.width - 1 ? idx + 1 : idx
+      const ym = py > 0 ? idx - off.width : idx
+      const yp = py < off.height - 1 ? idx + off.width : idx
+      slopeX[idx] = elev[xp] - elev[xm]
+      slopeY[idx] = elev[yp] - elev[ym]
+    }
+  }
+  const slopeScale = profile.noiseRes / 32
+  const detailSeed = mix32(worldSeed, 0xA5A55A5A) >>> 0
+  for (let yStart = 0; yStart < off.height; yStart += REGION_PIXEL_CHUNK_ROWS) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const yEnd = Math.min(yStart + REGION_PIXEL_CHUNK_ROWS, off.height)
+    for (let py = yStart; py < yEnd; py++) {
+      for (let px = 0; px < off.width; px++) {
+        const idx = py * off.width + px
+        const h = elev[idx]
+        const isWater = h < seaLevel
+        const nx = -slopeX[idx] * slopeScale
+        const ny = -slopeY[idx] * slopeScale
+        const nz = 1.0
+        const nl = Math.hypot(nx, ny, nz)
+        const lamb = Math.max(0, (nx * sunDir[0] + ny * sunDir[1] + nz * sunDir[2]) / nl)
+        const shade = 0.55 + lamb * 0.55
+        const biomeId = map.biome?.[idx] ?? TERRAIN_TO_BIOME[hex.terrain] ?? 3
+        const localPalette = biomePalettes?.[biomeId] ?? palette
+        const tempK = map.temperatureK?.[idx] ?? hex.temperature_k
+        let [r, g, b] = isWater
+          ? oceanColor(seaLevel - h, input.paletteBase)
+          : terrainColor(localPalette, (h - seaLevel) / Math.max(0.01, 1 - seaLevel))
+        const freeze = 1 - smoothstep(245, 273, tempK)
+        if (freeze > 0) {
+          const ice = input.paletteBase
+            ? toSrgb(biomeColorLinear(isWater ? 13 : 11, input.paletteBase))
+            : [220, 232, 242] as [number, number, number]
+          const k = isWater ? freeze * 0.92 : freeze * 0.82
+          r = r * (1 - k) + ice[0] * k
+          g = g * (1 - k) + ice[1] * k
+          b = b * (1 - k) + ice[2] * k
+        }
+        const coastBand = Math.abs(h - seaLevel)
+        if (coastBand < 0.025) {
+          const t = 1 - coastBand / 0.025
+          r = r * (1 - t * 0.4) + 220 * t * 0.4
+          g = g * (1 - t * 0.4) + 200 * t * 0.4
+          b = b * (1 - t * 0.4) + 160 * t * 0.4
+        }
+        if (!isWater) {
+          r *= shade
+          g *= shade
+          b *= shade
+        }
+        if (profile.fineDetail && !isWater) {
+          const j = valueNoise(px * 0.7, py * 0.7, detailSeed)
+          const k = 1 + j * 0.06
+          r *= k
+          g *= k
+          b *= k
+        }
+        const di = idx * 4
+        data[di] = clamp255(r)
+        data[di + 1] = clamp255(g)
+        data[di + 2] = clamp255(b)
+        data[di + 3] = 255
+      }
+    }
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  offCtx.putImageData(img, 0, 0)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = quality === 'final' ? 'medium' : 'low'
+  ctx.drawImage(off, 0, 0, width, height)
+  drawRivers(ctx, map, seaLevel, width, height, hex.terrain)
+  drawBiomeFlourish(ctx, map, seaLevel, width, height, hex.terrain, worldSeed, hex.coord.col, hex.coord.row)
+  const labels: RegionLabel[] = []
+  if (input.starport) {
+    drawStarport(ctx, input.starport.x * width, input.starport.y * height)
+    labels.push({
+      x: input.starport.x * width,
+      y: input.starport.y * height + 16,
+      text: input.starport.name,
+      tier: 3,
+      kind: 'starport',
+    })
+  }
+  if (input.settlements) {
+    for (const s of input.settlements) {
+      drawCity(ctx, s.x * width, s.y * height, s.tier)
+      labels.push({
+        x: s.x * width,
+        y: s.y * height - 8,
+        text: s.name,
+        tier: s.tier,
+        kind: 'city',
+      })
+    }
+  }
+  return { labels }
+}
+
 export function buildRegionHeightmapForTest(
   input: RegionRenderInput,
   quality: RegionQuality = 'preview',

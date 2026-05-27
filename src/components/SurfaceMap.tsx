@@ -22,7 +22,10 @@ import {
 import { systemName } from '../domain/names'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { useMapGestures } from './useMapGestures'
-import { renderSurfaceBackground } from './surfaceMapBackground'
+import {
+  renderSurfaceBackground,
+  renderSurfaceBackgroundFromAtlas,
+} from './surfaceMapBackground'
 import { buildIcosahedralSurface, type IcosaHex, type IcosaSurface } from './icosahedralSurface'
 import {
   FACES,
@@ -80,9 +83,9 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   const meanTempK = surfacePlanet?.climate.mean_surface_temp_k ?? surfacePlanet?.temperature_k ?? 288
   const iceFraction = surfacePlanet?.climate.ice_fraction ?? 0.0
   const prebake = useMemo(() => {
-    if (!map) return null
+    if (!map || map.atlas) return null
     return getSurfacePrebake()
-  }, [map?.seed, seaLevelParam, iceLatitudeDeg, atmosphereDensity, vegetationRichness, meanTempK])
+  }, [map?.atlas, map?.seed, seaLevelParam, iceLatitudeDeg, atmosphereDensity, vegetationRichness, meanTempK])
 
   // Rebuild the icosahedral hex set whenever the inputs that drive
   // terrain / sea level / temperature change. Done synchronously in a
@@ -105,31 +108,34 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   // navigates away or the inputs change.
   const [bgUrl, setBgUrl] = useState<string | null>(null)
   useEffect(() => {
-    if (!map || !prebake) { setBgUrl(null); return }
+    if (!map) { setBgUrl(null); return }
     const controller = new AbortController()
-    renderSurfaceBackground(
-      prebake,
-      {
-        waterFraction: seaLevelParam,
-        iceLatitudeDeg,
-        meanTempK,
-        width: surfaceBackgroundWidth(containerRef.current),
-        paletteBase,
-      },
-      controller.signal,
-    )
+    const bgOpts = {
+      waterFraction: seaLevelParam,
+      iceLatitudeDeg,
+      meanTempK,
+      width: surfaceBackgroundWidth(containerRef.current),
+      paletteBase,
+    }
+    const paint = map.atlas
+      ? renderSurfaceBackgroundFromAtlas(map.atlas, bgOpts, controller.signal)
+      : prebake
+        ? renderSurfaceBackground(prebake, bgOpts, controller.signal)
+        : Promise.resolve(null)
+    void paint
       .then((url) => {
-        if (!controller.signal.aborted) setBgUrl(url)
+        if (!controller.signal.aborted && url) setBgUrl(url)
       })
       .catch((err) => {
         if ((err as DOMException)?.name !== 'AbortError') {
-          console.warn('renderSurfaceBackground failed', err)
+          console.warn('surface background paint failed', err)
         }
       })
     return () => {
       controller.abort()
     }
   }, [
+    map?.atlas,
     map?.seed,
     prebake,
     seaLevelParam,

@@ -8,7 +8,7 @@ import {
 } from '../appState'
 import { hexCoordLabel, terrainLabel } from '../domain/surfaceMap'
 import { systemName } from '../domain/names'
-import { renderRegion, type RegionLabel } from '../regionRender'
+import { renderRegion, renderRegionAsync, type RegionLabel } from '../regionRender'
 import { useFocusTrap } from './useFocusTrap'
 
 // Full-screen "Region" view shown when the user drills into a single
@@ -127,28 +127,68 @@ export function RegionView() {
       setLabels(result.labels)
     }
 
-    let raf1 = 0
-    let raf2 = 0
     let cancelled = false
+    let raf1 = 0
+    const controller = new AbortController()
     setRefining(true)
-    // First frame: low-res preview so the modal has content within
-    // ~25 ms. Run inside rAF so the modal layout settles before the
-    // synchronous render blocks the main thread.
     raf1 = requestAnimationFrame(() => {
       if (cancelled) return
       paint('preview')
-      // Second frame: high-resolution final paint. The user sees a
-      // soft preview for one frame, then a sharp result.
-      raf2 = requestAnimationFrame(() => {
-        if (cancelled) return
-        paint('final')
-        setRefining(false)
-      })
+      void (async () => {
+        const regionInput = {
+          hex: surfaceHex,
+          worldSeed: map.seed,
+          authoredHydroFraction: surfaceHexHydroFraction(map.ocean_fraction),
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
+          starport,
+          settlements,
+          paletteBase: {
+            ocean: params.value.ocean_color,
+            land: params.value.land_color,
+            mountain: params.value.mountain_color,
+            sand: params.value.sand_color,
+            snow: params.value.snow_color,
+          },
+          atlas: map.atlas ?? null,
+          selectedCellId,
+        }
+        try {
+          if (cancelled) return
+          ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT)
+          ctx.save()
+          pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
+          ctx.clip()
+          const result = await renderRegionAsync(
+            ctx,
+            regionInput,
+            'final',
+            controller.signal,
+          )
+          ctx.restore()
+          if (!cancelled) {
+            ctx.save()
+            pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
+            ctx.lineWidth = 3
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'
+            ctx.stroke()
+            ctx.restore()
+            setLabels(result.labels)
+          }
+        } catch (err) {
+          if ((err as DOMException)?.name !== 'AbortError') {
+            console.warn('renderRegionAsync failed', err)
+            if (!cancelled) paint('final')
+          }
+        } finally {
+          if (!cancelled) setRefining(false)
+        }
+      })()
     })
     return () => {
       cancelled = true
+      controller.abort()
       cancelAnimationFrame(raf1)
-      cancelAnimationFrame(raf2)
     }
   }, [hex, exactCell, map])
 

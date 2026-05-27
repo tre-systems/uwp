@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-use crate::domain::{subsector, surface_map, surface_prebake};
+use crate::domain::{subsector, surface_map, surface_prebake, system};
 use crate::scenes::system as system_scene;
 use crate::{params, renderer};
 
@@ -214,6 +214,70 @@ impl Planet {
 pub fn generate_subsector(seed: u32, density: f32) -> Result<JsValue, JsValue> {
     let sub = subsector::generate(seed, density);
     serde_wasm_bindgen::to_value(&sub).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub struct SubsectorBuilder {
+    inner: subsector::SubsectorBuilder,
+}
+
+#[wasm_bindgen(js_name = createSubsectorBuilder)]
+pub fn create_subsector_builder(seed: u32, density: f32) -> SubsectorBuilder {
+    SubsectorBuilder {
+        inner: subsector::SubsectorBuilder::new(seed, density),
+    }
+}
+
+#[wasm_bindgen(js_name = stepSubsectorBuilder)]
+pub fn step_subsector_builder(builder: &mut SubsectorBuilder, max_cells: u32) -> bool {
+    builder.inner.step(max_cells.max(1) as usize)
+}
+
+#[wasm_bindgen(js_name = finishSubsectorBuilder)]
+pub fn finish_subsector_builder(builder: SubsectorBuilder) -> Result<JsValue, JsValue> {
+    let sub = builder.inner.finish();
+    serde_wasm_bindgen::to_value(&sub).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Surface map generation for a single planet without a live renderer.
+/// Used by the compute worker so heavy pre-bake work stays off the UI thread.
+#[wasm_bindgen(js_name = generateSurfaceMapFromPlanet)]
+pub fn generate_surface_map_from_planet(
+    planet: JsValue,
+    seed: u32,
+    sea_level: f32,
+    ice_latitude: f32,
+    vegetation_richness: f32,
+    population_intensity: f32,
+) -> Result<JsValue, JsValue> {
+    let planet: system::Planet = serde_wasm_bindgen::from_value(planet)?;
+    let mut climate = planet.climate;
+    let water = sea_level.clamp(0.0, 1.0);
+    climate.liquid_water_fraction = water;
+    climate.ice_fraction = (1.0 - ice_latitude).clamp(0.0, 1.0);
+    climate.aridity = (1.0 - water).clamp(0.0, 1.0);
+    climate.mean_surface_temp_k =
+        surface_map::effective_surface_mean_temp_k(climate.mean_surface_temp_k, 1.0);
+    if population_intensity > 0.0 {
+        climate.habitability = climate
+            .habitability
+            .max((population_intensity * 0.85).clamp(0.0, 1.0));
+    }
+    let map = surface_map::generate_with_bake_input(
+        &planet,
+        &climate,
+        seed,
+        surface_prebake::BakeInput {
+            seed,
+            water_fraction: water,
+            ice_latitude,
+            mean_temp_k: climate.mean_surface_temp_k,
+            vegetation_richness,
+            lon_cells: surface_prebake::PREBAKE_LON as u32,
+            lat_cells: surface_prebake::PREBAKE_LAT as u32,
+        },
+    );
+    serde_wasm_bindgen::to_value(&map).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Generate the per-seed surface pre-bake (heightmap + plate ids +

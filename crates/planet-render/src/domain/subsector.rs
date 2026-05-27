@@ -9,10 +9,10 @@
 //! `hash(subsector_seed, col, row)` so any single hex can be regenerated
 //! without disturbing its neighbours.
 //!
-//! Lazy generation: phase 1 generates the *full* `SolarSystem` per
-//! occupied hex once so we can extract main-world climate and presence
-//! flags. The hex stores only the projected summary; the user fetches
-//! the full system on demand by selecting a hex (Phase 3).
+//! Map pass: each occupied hex runs `system::generate_for_subsector_map`
+//! (no moons, no companion, climate only on the main world) so the grid
+//! stays responsive. Selecting a hex still loads the full `SolarSystem`
+//! through the renderer.
 //!
 //! Reference: <https://www.orffenspace.com/cepheus-srd/book3/worlds.html>
 
@@ -248,26 +248,19 @@ impl Rng {
     }
 }
 
-/// Generate a subsector at the requested seed and density. Density is the
-/// presence probability per hex; 0.5 matches the classic 1d6 ≥ 4 rule.
-pub fn generate(seed: u32, density: f32) -> Subsector {
-    let density = density.clamp(0.0, 1.0);
-    let mut hexes = Vec::new();
-
-    for col in 1..=SUBSECTOR_COLS {
-        for row in 1..=SUBSECTOR_ROWS {
-            let mut rng = Rng::new(hash_hex_seed(seed, col, row));
-            if rng.f01() > density {
-                continue;
-            }
-            let coord = HexCoord::new(col, row);
-            let system_seed = rng.next_u32();
-            let system = system::generate(system_seed);
-            let hex = build_hex(coord, system_seed, &system, &mut rng);
-            hexes.push(hex);
-        }
+fn push_occupied_hex(hexes: &mut Vec<SubsectorHex>, seed: u32, density: f32, col: u8, row: u8) {
+    let mut rng = Rng::new(hash_hex_seed(seed, col, row));
+    if rng.f01() > density {
+        return;
     }
+    let coord = HexCoord::new(col, row);
+    let system_seed = rng.next_u32();
+    let system = system::generate_for_subsector_map(system_seed);
+    hexes.push(build_hex(coord, system_seed, &system, &mut rng));
+}
 
+fn finalize_subsector(seed: u32, density: f32, hexes: Vec<SubsectorHex>) -> Subsector {
+    let mut hexes = hexes;
     let mut allegiances = generate_allegiances(seed);
     let mut polity_cells = compute_polity_cells(&allegiances);
     assign_hex_allegiances(&mut hexes, &polity_cells);
@@ -288,6 +281,72 @@ pub fn generate(seed: u32, density: f32) -> Subsector {
         hexes,
         jump_routes,
     }
+}
+
+/// Incremental subsector builder so the host can yield between hexes.
+pub struct SubsectorBuilder {
+    seed: u32,
+    density: f32,
+    col: u8,
+    row: u8,
+    hexes: Vec<SubsectorHex>,
+    grid_done: bool,
+}
+
+impl SubsectorBuilder {
+    pub fn new(seed: u32, density: f32) -> Self {
+        Self {
+            seed,
+            density: density.clamp(0.0, 1.0),
+            col: 1,
+            row: 1,
+            hexes: Vec::new(),
+            grid_done: false,
+        }
+    }
+
+    /// Process up to `max_cells` grid positions. Returns `true` once the
+    /// occupancy scan is complete (call `finish` next).
+    pub fn step(&mut self, max_cells: usize) -> bool {
+        if self.grid_done {
+            return true;
+        }
+        let mut budget = max_cells;
+        while budget > 0 && self.row <= SUBSECTOR_ROWS {
+            push_occupied_hex(&mut self.hexes, self.seed, self.density, self.col, self.row);
+            budget -= 1;
+            if self.col >= SUBSECTOR_COLS {
+                self.col = 1;
+                self.row += 1;
+            } else {
+                self.col += 1;
+            }
+        }
+        if self.row > SUBSECTOR_ROWS {
+            self.grid_done = true;
+            return true;
+        }
+        false
+    }
+
+    pub fn finish(self) -> Subsector {
+        finalize_subsector(self.seed, self.density, self.hexes)
+    }
+}
+
+/// Generate a subsector at the requested seed and density. Density is the
+/// presence probability per hex; 0.5 matches the classic 1d6 ≥ 4 rule.
+pub fn generate(seed: u32, density: f32) -> Subsector {
+    let density = density.clamp(0.0, 1.0);
+    let mut hexes = Vec::new();
+
+    for col in 1..=SUBSECTOR_COLS {
+        for row in 1..=SUBSECTOR_ROWS {
+            push_occupied_hex(&mut hexes, seed, density, col, row);
+        }
+    }
+
+    finalize_subsector(seed, density, hexes)
 }
 
 fn generate_allegiances(seed: u32) -> Vec<Allegiance> {

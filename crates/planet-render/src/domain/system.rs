@@ -655,10 +655,33 @@ fn sample_companion(rng: &mut Rng, primary: &Star) -> Option<Companion> {
     })
 }
 
+/// Full simulation used when the user drills into a hex. Skips moons,
+/// companions, and per-planet climate on the subsector map path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenerateProfile {
+    Full,
+    SubsectorMap,
+}
+
 pub fn generate(seed: u32) -> SolarSystem {
+    generate_with_profile(seed, GenerateProfile::Full)
+}
+
+/// Lightweight system used only to project a subsector hex UWP and
+/// presence flags. Roughly 3–5× faster than a full `generate` call.
+pub fn generate_for_subsector_map(seed: u32) -> SolarSystem {
+    generate_with_profile(seed, GenerateProfile::SubsectorMap)
+}
+
+fn generate_with_profile(seed: u32, profile: GenerateProfile) -> SolarSystem {
+    let subsector_map = profile == GenerateProfile::SubsectorMap;
     let mut rng = Rng::new(seed);
     let star = sample_star(&mut rng);
-    let companion = sample_companion(&mut rng, &star);
+    let companion = if subsector_map {
+        None
+    } else {
+        sample_companion(&mut rng, &star)
+    };
     let hz = habitable_zone(&star);
     let snow = snow_line(&star);
 
@@ -714,8 +737,12 @@ pub fn generate(seed: u32) -> SolarSystem {
                     moons: Vec::new(),
                     climate: ClimateSummary::dead(),
                 };
-                planet.moons = generate_moons(&mut rng, &planet);
-                recompute_planet_climate(&mut planet);
+                if !subsector_map {
+                    planet.moons = generate_moons(&mut rng, &planet);
+                }
+                if !subsector_map {
+                    recompute_planet_climate(&mut planet);
+                }
                 planets.push(planet);
                 prev_was_giant = true;
             }
@@ -739,8 +766,12 @@ pub fn generate(seed: u32) -> SolarSystem {
                     moons: Vec::new(),
                     climate: ClimateSummary::dead(),
                 };
-                planet.moons = generate_moons(&mut rng, &planet);
-                recompute_planet_climate(&mut planet);
+                if !subsector_map {
+                    planet.moons = generate_moons(&mut rng, &planet);
+                }
+                if !subsector_map {
+                    recompute_planet_climate(&mut planet);
+                }
                 planets.push(planet);
                 prev_was_giant = false;
             }
@@ -764,8 +795,12 @@ pub fn generate(seed: u32) -> SolarSystem {
                     moons: Vec::new(),
                     climate: ClimateSummary::dead(),
                 };
-                planet.moons = generate_moons(&mut rng, &planet);
-                recompute_planet_climate(&mut planet);
+                if !subsector_map {
+                    planet.moons = generate_moons(&mut rng, &planet);
+                }
+                if !subsector_map {
+                    recompute_planet_climate(&mut planet);
+                }
                 planets.push(planet);
                 prev_was_giant = false;
             }
@@ -780,6 +815,12 @@ pub fn generate(seed: u32) -> SolarSystem {
     //   3. First planet of any kind, so the system always has a focal body
     //      the UI can render and the Surface map can hex-grid.
     let main_world = pick_main_world(&planets);
+
+    if subsector_map {
+        if let Some(planet) = planets.get_mut(main_world.max(0) as usize) {
+            recompute_planet_climate(planet);
+        }
+    }
 
     SolarSystem {
         seed,
