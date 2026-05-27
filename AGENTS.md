@@ -576,3 +576,46 @@ If a check cannot be run, say so explicitly. Warnings in Rust should be treated 
 Always check `git status` before editing — the user or their tooling may have local changes you didn't make. Don't overwrite or revert unrelated edits unless asked.
 
 Use `rg` for searching.
+
+## Cursor Cloud specific instructions
+
+### Environment setup
+
+The VM ships Node 22 by default; this project requires Node 24 (pinned in
+`.nvmrc`). The update script handles `nvm install`/`nvm use` and PATH
+override so that `node` and `npm` resolve to the correct version. It also
+installs `wasm-pack` v0.14.0 from the GitHub release binary (v0.15.0
+requires Rust 1.91+, which is newer than the pinned 1.88.0 toolchain).
+
+### Running the dev server
+
+```bash
+export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && nvm use 24.16.0
+export PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH"
+npm run dev
+```
+
+The Vite dev server starts at `http://localhost:5173/`. WASM is built first
+(dev profile), then Vite serves the SPA with HMR for TypeScript. WASM
+changes require `npm run build:wasm:dev` and a manual browser reload.
+
+### WebGPU caveat
+
+The Cloud Agent VM has no GPU, so the WebGPU 3D renderer will show a
+"No suitable GPU adapter found" error overlay. The SVG subsector map,
+all UI panels, data generation, and non-WebGPU views still work normally.
+Playwright e2e tests launch Chromium with `--enable-unsafe-webgpu` but will
+also fail the renderer init in a GPU-less environment.
+
+### Verification commands
+
+See `package.json` scripts and the README. Key commands:
+
+- `npm run verify:fast` — pre-commit gate (TS unit tests, Rust fmt, native
+  Rust check).
+- `npm run verify` — full pre-push gate (everything above plus clippy for
+  native + wasm, Rust tests, typecheck, audit, production build, Playwright
+  e2e).
+- `npm test` — Vitest TS unit tests only.
+- `cargo test --workspace` — Rust unit tests only.
+- `npm run build` — release WASM + Vite production build.
