@@ -53,6 +53,10 @@ let pendingDetailBody: SystemBodyTarget | null = null
 /** Surface hex from the URL hash, applied once the surface map is available. */
 let pendingSurfaceHex: SurfaceHexCoord | null = null
 
+export function hasPendingDetailBody(): boolean {
+  return pendingDetailBody != null
+}
+
 function parseHash(hash: string): ParsedState {
   const out: ParsedState = {}
   const stripped = hash.replace(/^#/, '')

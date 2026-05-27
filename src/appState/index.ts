@@ -26,6 +26,7 @@ import {
 import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
 import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { hasPendingDetailBody } from './urlState'
 import {
   isMainWorldTarget,
   paramsPatchForSystemTarget,
@@ -261,7 +262,8 @@ export function setSystemSnapshot(system: SolarSystem | null) {
     system &&
     selectedHex.value &&
     detailTarget.value == null &&
-    (params.value.seed >>> 0) === (system.seed >>> 0)
+    (params.value.seed >>> 0) === (system.seed >>> 0) &&
+    !hasPendingDetailBody()
   ) {
     focusMainWorldDetail()
   }
