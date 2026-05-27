@@ -6,12 +6,12 @@ import { flushChartUrlHash } from '../appState/urlState'
 // doesn't have to look elsewhere for confirmation.
 
 interface ShareButtonProps {
-  disabled: boolean
+  disabled?: boolean
 }
 
 type Status = 'idle' | 'copied' | 'error'
 
-export function ShareButton({ disabled }: ShareButtonProps) {
+export function ShareButton({ disabled = false }: ShareButtonProps) {
   const [status, setStatus] = useState<Status>('idle')
 
   const onCopy = async () => {
