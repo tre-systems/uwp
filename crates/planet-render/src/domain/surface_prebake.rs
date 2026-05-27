@@ -678,7 +678,7 @@ fn soften_heightmap_grid(heightmap: &mut [f32], lon_cells: usize, lat_cells: usi
                 + heightmap[i_up * lon_cells + j]
                 + heightmap[i_dn * lon_cells + j])
                 / 6.0;
-            scratch[idx] = heightmap[idx] * 0.62 + blurred * 0.38;
+            scratch[idx] = heightmap[idx] * 0.55 + blurred * 0.45;
         }
     }
     heightmap.copy_from_slice(&scratch);

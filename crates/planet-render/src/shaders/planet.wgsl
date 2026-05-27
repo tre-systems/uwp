@@ -776,10 +776,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let raw_h = terrain_field(dir);
     let coast_amp = mix(0.055, 0.075, quality);
     let h = clamp(raw_h + coastline_detail(dir, raw_h, sea_h) * coast_amp, -1.0, 1.0);
-    let water_delta = h - sea_h;
+    // Coast mask uses a wider height footprint when zoomed in so the land/ocean
+    // boundary and shallow-water rim do not follow atlas texel stairsteps.
+    let raw_h_coast = terrain_field_smoothed(dir, close_zoom);
+    let h_coast = clamp(
+        mix(raw_h, raw_h_coast, close_zoom) + coastline_detail(dir, raw_h, sea_h) * coast_amp,
+        -1.0,
+        1.0
+    );
+    let water_delta = mix(h - sea_h, h_coast - sea_h, close_zoom);
+    // Screen-space AA widens the blend wherever the coast crosses pixels quickly.
+    let coast_aa = max(fwidth(water_delta) * 1.75, 0.0012);
     // Continuous land/ocean weight — replaces the old hard threshold that
     // produced single-pixel stairsteps and binary normal switching at coasts.
-    let coast_band = mix(0.04, 0.075, close_zoom);
+    let coast_band = mix(0.04, 0.09, close_zoom) + coast_aa;
     let land_factor = smoothstep(-coast_band, coast_band, water_delta);
     // Normalised height above sea level in roughly [0, 1] regardless of sea_h,
     // so biome thresholds (alpine, snow_alt) keep working at desert worlds
@@ -948,7 +958,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             // Feather land into shallow water colour over a wider band so
             // the continuous land_factor blend does not reveal atlas stairs.
             let shore_water = mix(u.ocean_color.rgb * 1.50, vec3<f32>(0.35, 0.78, 0.78), 0.32);
-            let shore_feather = 1.0 - smoothstep(0.0, mix(0.045, 0.08, close_zoom), water_delta);
+            let shore_band = mix(0.045, 0.11, close_zoom) + coast_aa;
+            let shore_feather = 1.0 - smoothstep(0.0, shore_band, water_delta);
             land_surface = mix(land_surface, shore_water, shore_feather * 0.32);
         }
 
@@ -991,11 +1002,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // --- Three-tone water with smooth depth gradient ---
     var ocean_surface: vec3<f32>;
     {
-        let depth = sea_h - h;
+        let depth = sea_h - mix(h, h_coast, close_zoom * 0.85);
         let turquoise = mix(u.ocean_color.rgb * 1.55, vec3<f32>(0.35, 0.78, 0.78), 0.35);
         let open_ocean = u.ocean_color.rgb * 0.72;
         let ocean_grain = fbm(dir * 18.0 + u.seed_block.xyz + vec3<f32>(-137.0, 19.0, 61.0), 2);
-        let shallow = pow(1.0 - smoothstep(0.0, 0.028, depth), 2.0);
+        let shallow_band = mix(0.028, 0.065, close_zoom) + max(fwidth(depth) * 1.5, 0.0008);
+        let shallow = pow(1.0 - smoothstep(0.0, shallow_band, depth), 2.0);
         var water = open_ocean * (0.985 + ocean_grain * 0.018);
         let shallow_tint = select(0.0, shallow * 0.18, quality > 0.55);
         water = mix(water, turquoise, shallow_tint);
@@ -1140,7 +1152,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
         let shadow_low = cloud_low - 0.06;
         let shadow_high = cloud_high + 0.04;
-        let cloud_shadow = smoothstep(shadow_low, shadow_high, cloud_raw_shadow);
+        let cloud_aa = max(fwidth(cloud_raw_shadow) * 0.85, 0.02);
+        let cloud_shadow = smoothstep(shadow_low - cloud_aa, shadow_high + cloud_aa, cloud_raw_shadow);
         shadow_factor = 1.0 - cloud_shadow * 0.42;
     }
 
