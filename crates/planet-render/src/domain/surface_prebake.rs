@@ -59,7 +59,7 @@ const LRU_CAPACITY: usize = 4;
 /// Mirrors the JS-side renderProfile tiers so atlas size lines up with
 /// shader detail level.
 pub fn resolution_for_quality(quality: f32) -> (u32, u32) {
-    if quality < 0.55 {
+    if quality < 0.45 {
         (PREBAKE_LOW_LON as u32, PREBAKE_LOW_LAT as u32)
     } else {
         (PREBAKE_LON as u32, PREBAKE_LAT as u32)

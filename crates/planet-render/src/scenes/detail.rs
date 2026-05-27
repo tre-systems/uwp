@@ -227,9 +227,9 @@ fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
 
 pub fn mesh_resolution(quality: f32) -> u32 {
     if quality < 0.55 {
-        96
+        128
     } else if quality < 0.85 {
-        192
+        256
     } else {
         PLANET_RES
     }

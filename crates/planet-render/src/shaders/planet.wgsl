@@ -260,9 +260,10 @@ fn terrain_field(dir: vec3<f32>) -> f32 {
 
 fn relief_above_sea(h: f32, sea_h: f32) -> f32 {
     let above = max(h - sea_h, 0.0);
-    // Ease the first few metres of coastline into the base sphere so the
+    // Ease the first stretch of coastline into the base sphere so the
     // pre-baked waterline does not create a visible vertical wall on the mesh.
-    return above * smoothstep(0.0, 0.08, above);
+    // Wider ramp hides atlas texel stairsteps at close zoom.
+    return above * smoothstep(0.0, 0.14, above);
 }
 
 // Sub-texel visual coastline detail. The Rust atlas owns the continental
@@ -270,7 +271,7 @@ fn relief_above_sea(h: f32, sea_h: f32) -> f32 {
 // around the sea threshold so large-scale map / globe alignment stays intact
 // while close-up coast and pack-ice edges do not reveal atlas-cell stair steps.
 fn coastline_detail(dir: vec3<f32>, raw_h: f32, sea_h: f32) -> f32 {
-    let band = 1.0 - smoothstep(0.018, 0.185, abs(raw_h - sea_h));
+    let band = 1.0 - smoothstep(0.025, 0.22, abs(raw_h - sea_h));
     if (band <= 0.001) {
         return 0.0;
     }
@@ -654,7 +655,11 @@ fn vs_main(in: VsIn) -> VsOut {
     let base_radius  = u.resolution.w;
     var radius       = base_radius;
     if (body_kind < 0.5) {
-        let h = terrain_field(dir);
+        let raw_h = terrain_field(dir);
+        // Match fragment coastline perturbation so mesh silhouettes do not
+        // stair-step against the smoothed land/ocean colour boundary.
+        let coast_detail = coastline_detail(dir, raw_h, sea_h) * 0.035;
+        let h = clamp(raw_h + coast_detail, -1.0, 1.0);
         let above = relief_above_sea(h, sea_h);
         radius = base_radius + above * mountain_amp * base_radius;
     } else if (body_kind > 2.5) {
@@ -744,10 +749,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mountain_amp = u.planet_params.y;
     let quality = u.misc.w;
     let raw_h = terrain_field(dir);
-    let coast_amp = mix(0.045, 0.065, quality);
+    let coast_amp = mix(0.055, 0.075, quality);
     let h = clamp(raw_h + coastline_detail(dir, raw_h, sea_h) * coast_amp, -1.0, 1.0);
     let water_delta = h - sea_h;
-    let above_water = water_delta > 0.0;
+    // Continuous land/ocean weight — replaces the old hard threshold that
+    // produced single-pixel stairsteps and binary normal switching at coasts.
+    let land_factor = smoothstep(-0.04, 0.04, water_delta);
     // Normalised height above sea level in roughly [0, 1] regardless of sea_h,
     // so biome thresholds (alpine, snow_alt) keep working at desert worlds
     // (very low sea_h) and water worlds (very high sea_h).
@@ -762,41 +769,42 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     var local_normal: vec3<f32>;
     var slope: f32 = 0.0;
-    if (above_water && quality > 0.45) {
+    var land_normal = dir;
+    var ocean_normal = dir;
+    if (quality > 0.45) {
         let eps = 0.0025;
         let h0 = h;
         let ht = terrain_field(normalize(dir + tangent * eps));
         let hb = terrain_field(normalize(dir + bitangent * eps));
         let dx = (relief_above_sea(ht, sea_h) - relief_above_sea(h0, sea_h)) * mountain_amp / (eps * above_range);
         let dy = (relief_above_sea(hb, sea_h) - relief_above_sea(h0, sea_h)) * mountain_amp / (eps * above_range);
-        local_normal = normalize(dir - tangent * dx - bitangent * dy);
-        slope = 1.0 - clamp(dot(local_normal, dir), 0.0, 1.0);
+        land_normal = normalize(dir - tangent * dx - bitangent * dy);
+        slope = 1.0 - clamp(dot(land_normal, dir), 0.0, 1.0);
         // Fine-scale land detail — perturbs the lit normal so flat plateaus pick
         // up texture and mountain flanks scatter light instead of reading flat.
         let detail_a = fbm(dir * 55.0 + u.seed_block.xyz, 2);
         let detail_b = fbm(dir * 55.0 + u.seed_block.xyz + vec3<f32>(13.7, 0.0, 0.0), 2);
-        local_normal = normalize(local_normal + tangent * detail_a * 0.025 + bitangent * detail_b * 0.025);
-    } else if (!above_water && quality > 0.55) {
+        land_normal = normalize(land_normal + tangent * detail_a * 0.025 + bitangent * detail_b * 0.025);
+    }
+    if (quality > 0.55) {
         // Wave shimmer — subtle moving normal perturbation gives the ocean
         // surface life and lets the sun specular scatter into a wider, more
         // believable highlight rather than a single dot.
-        // Calmer wave shimmer — previous 0.030 amplitude produced
-        // visible streaky artifacts on water at certain camera angles
-        // where the FBM noise pattern showed through the specular
-        // calculation. 0.014 keeps the surface alive enough to spread
-        // the GGX highlight without dominating it.
         let wave_a = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(u.misc.y * 0.40, 0.0, 0.0), 2);
         let wave_b = fbm(dir * 35.0 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, u.misc.y * 0.40), 2);
-        local_normal = normalize(dir + tangent * wave_a * 0.014 + bitangent * wave_b * 0.014);
-    } else {
-        local_normal = dir;
+        ocean_normal = normalize(dir + tangent * wave_a * 0.014 + bitangent * wave_b * 0.014);
     }
+    local_normal = normalize(mix(ocean_normal, land_normal, land_factor));
 
     let world_normal = normalize((u.model * vec4<f32>(local_normal, 0.0)).xyz);
 
-    let surface_radius = base_radius + relief_above_sea(raw_h, sea_h) * mountain_amp * base_radius;
+    let surface_radius = base_radius + relief_above_sea(h, sea_h) * mountain_amp * base_radius;
     let surface_world_pos = (u.model * vec4<f32>(dir * surface_radius, 1.0)).xyz;
-    let n_dot_l = max(dot(world_normal, sun_dir), 0.0);
+    // Soft terminator penumbra — real sun discs subtend ~0.5°; a narrow
+    // smoothstep band avoids the hard binary day/night cut that reads as
+    // aliased stair-steps on coastlines and cloud shadows.
+    let n_dot_l_raw = dot(world_normal, sun_dir);
+    let n_dot_l = smoothstep(-0.05, 0.08, n_dot_l_raw);
     let view_dir = normalize(u.camera_pos.xyz - surface_world_pos);
 
     // Latitude proxy: |y| component of unrotated direction (poles at top/bottom).
@@ -820,7 +828,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // on vegetated biomes, the beach strip only at Shore, etc.
 
     let biome = biome_id_at(dir);
-    var surface: vec3<f32> = biome_color_blended(dir);
+    var land_surface: vec3<f32> = biome_color_blended(dir);
 
     // Derive masks used by the city-lights pass below. Cheap bool->float
     // beats the FBM stacks the previous shader ran for these.
@@ -834,7 +842,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let veg_richness = u.world_features.z;
     let above_amt_n = clamp(above_amt, 0.0, 1.0);
 
-    if (above_water) {
+    {
         // --- Elevation-driven gradient ---
         // Real Earth-from-space photos show a smooth elevation
         // gradient: bright sandy coast → biome interior → rocky highlands.
@@ -845,9 +853,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Pull coastline tones toward sand — but the biome already
         // accounts for ice / volcanic via its colour, so this just
         // mixes a slight warm cast where elevation is low.
-        surface = mix(u.sand_color.rgb, surface, coast_t);
+        land_surface = mix(u.sand_color.rgb, land_surface, coast_t);
         // Pull alpine tones toward mountain rock.
-        surface = mix(surface, u.mountain_color.rgb, alpine_t * 0.45);
+        land_surface = mix(land_surface, u.mountain_color.rgb, alpine_t * 0.45);
 
         // --- Vegetation patchwork (forest / grassland / savanna) ---
         // Tri-scale FBM yields organic patches at sub-cell resolution.
@@ -873,7 +881,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let veg_top     = 1.0 - smoothstep(tree_line, tree_line + 0.14, above_amt_n);
             let polar_mask  = 1.0 - smoothstep(0.65, 0.85, lat);
             let vegetated_band = coast_t * veg_top * polar_mask;
-            surface = mix(surface, vegetated, clamp(veg_richness, 0.0, 1.0) * vegetated_band * 0.65);
+            land_surface = mix(land_surface, vegetated, clamp(veg_richness, 0.0, 1.0) * vegetated_band * 0.65);
         }
 
         // --- Subtropical desert noise ---
@@ -889,31 +897,30 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Inversely proportional to vegetation strength — wet worlds
         // get less obvious deserts, dry worlds get more.
         let desert_strength = desert_amt * coast_t * (0.45 + (1.0 - veg_richness) * 0.30);
-        surface = mix(surface, u.sand_color.rgb, desert_strength);
+        land_surface = mix(land_surface, u.sand_color.rgb, desert_strength);
 
         // --- Slope-based rock ---
         // Exposed cliffs / valleys / river banks read as bare rock.
         let rocky = smoothstep(0.06, 0.28, slope);
-        surface = mix(surface, u.mountain_color.rgb, rocky * 0.65);
+        land_surface = mix(land_surface, u.mountain_color.rgb, rocky * 0.65);
 
         // --- Mid-scale tint noise ---
         // Fine procedural variation breaks up uniformity.
         let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
-        surface = surface * (0.88 + tint_n * 0.24);
+        land_surface = land_surface * (0.88 + tint_n * 0.24);
 
         // --- Beach strip ---
         // Bright sandy band right at the waterline. Only on humid
         // worlds. Continuous gating on elevation — no biome flag.
         if (veg_richness > 0.05) {
-            let beach = 1.0 - smoothstep(0.0, 0.012, above_amt_n);
+            let beach = 1.0 - smoothstep(0.0, 0.022, above_amt_n);
             let beach_color = mix(u.sand_color.rgb, vec3<f32>(0.98, 0.92, 0.74), 0.45);
-            surface = mix(surface, beach_color, beach * 0.75);
-            // Feather the first few visible pixels of land into shallow
-            // water colour. This hides single-pixel binary thresholding at
-            // the waterline and makes islands read like satellite imagery.
+            land_surface = mix(land_surface, beach_color, beach * 0.75);
+            // Feather land into shallow water colour over a wider band so
+            // the continuous land_factor blend does not reveal atlas stairs.
             let shore_water = mix(u.ocean_color.rgb * 1.50, vec3<f32>(0.35, 0.78, 0.78), 0.32);
-            let shore_feather = 1.0 - smoothstep(0.0, 0.018, water_delta);
-            surface = mix(surface, shore_water, shore_feather * 0.28);
+            let shore_feather = 1.0 - smoothstep(0.0, 0.045, water_delta);
+            land_surface = mix(land_surface, shore_water, shore_feather * 0.32);
         }
 
         // --- Rivers ---
@@ -927,7 +934,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let lowland    = 1.0 - smoothstep(0.05, 0.40, above_amt_n);
             let temperate  = 1.0 - smoothstep(0.62, 0.85, lat);
             let river = river_line * in_valley * lowland * temperate * veg_richness * 0.9;
-            surface = mix(surface, u.ocean_color.rgb * 1.6, clamp(river, 0.0, 0.7));
+            land_surface = mix(land_surface, u.ocean_color.rgb * 1.6, clamp(river, 0.0, 0.7));
         }
 
         // --- Snow / ice cap modulation ---
@@ -949,33 +956,30 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let crack_n = ridged_fbm(dir * 22.0 + u.seed_block.xyz + vec3<f32>(41.0, 113.0, -57.0), 2);
         let ice_cracks = smoothstep(0.86, 0.96, crack_n);
         let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25) * (1.0 - ice_cracks * 0.55);
-        surface = mix(surface, ice_tone, snow_amt);
-    } else {
-        // --- Three-tone water with smooth depth gradient ---
-        // Per-fragment depth gives a continuous shallow→deep
-        // transition that reads better than two flat-tone biome
-        // cells meeting at a texel boundary. Bright turquoise reef
-        // tint where depth is sub-shelf.
+        land_surface = mix(land_surface, ice_tone, snow_amt);
+    }
+
+    // --- Three-tone water with smooth depth gradient ---
+    var ocean_surface: vec3<f32>;
+    {
         let depth = sea_h - h;
         let turquoise = mix(u.ocean_color.rgb * 1.55, vec3<f32>(0.35, 0.78, 0.78), 0.35);
         let open_ocean = u.ocean_color.rgb * 0.72;
         let ocean_grain = fbm(dir * 18.0 + u.seed_block.xyz + vec3<f32>(-137.0, 19.0, 61.0), 2);
-        let shallow = pow(1.0 - smoothstep(0.0, 0.012, depth), 2.0);
-        // Low-power tablet views need clean water more than speculative
-        // bathymetry. Broad depth tint exposed atlas/grid geometry at close
-        // zoom, so only a narrow shore tint remains here.
+        let shallow = pow(1.0 - smoothstep(0.0, 0.028, depth), 2.0);
         var water = open_ocean * (0.985 + ocean_grain * 0.018);
-        let shallow_tint = select(0.0, shallow * 0.14, quality > 0.55);
+        let shallow_tint = select(0.0, shallow * 0.18, quality > 0.55);
         water = mix(water, turquoise, shallow_tint);
-        surface = water;
-        // Polar pack-ice — continuous latitude blend. No biome flag.
+        ocean_surface = water;
         let ice_lat = u.seed_block.w;
         let sea_lobe = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), 3) * 0.14;
         let sea_finger = ridged_fbm(dir * 11.0 + u.seed_block.xyz + vec3<f32>(17.0, 31.0, -41.0), 2) * 0.06;
         let sea_off = sea_lobe + sea_finger - 0.03;
         let polar = smoothstep(ice_lat - 0.08 + sea_off, ice_lat + 0.05 + sea_off, lat);
-        surface = mix(surface, u.snow_color.rgb * 0.94, polar);
+        ocean_surface = mix(ocean_surface, u.snow_color.rgb * 0.94, polar);
     }
+
+    var surface = mix(ocean_surface, land_surface, land_factor);
 
     // ---------- Atmospheric haze / fine grain ----------
     // Subtle global noise for satellite-photo realism. Strength biased
@@ -987,9 +991,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Keep oceans clean at low quality. Broad low-frequency grain over water
     // reads as square GPU/noise tiles when the user zooms in; land still gets
     // enough variation to avoid flat-fill continents.
-    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * select(0.015, 0.14, above_water);
+    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * mix(0.015, 0.14, land_factor);
     surface = mix(surface, surface * warm_dirt, patch_amt);
-    surface = surface * (1.0 + dirt_hi * select(0.012, 0.07, above_water));
+    surface = surface * (1.0 + dirt_hi * mix(0.012, 0.07, land_factor));
 
     // ---------- Cloud noise (3-layer system) ----------
     // Three distinct layers at different altitudes, each with its own scale,
@@ -1088,10 +1092,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cloud_smooth = fbm(cloud_p, 5) * 0.5 + 0.5;
     let cloud_billow = ridged_fbm(cloud_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 3);
     let cloud_raw = cloud_smooth * 0.55 + cloud_billow * 0.45;
-    // Narrower smoothstep band — sharper edges, more cumulus-like billows
-    // instead of soft cotton-candy fuzz.
-    let cloud_low  = mix(0.85, 0.30, coverage);
-    let cloud_high = mix(1.02, 0.50, coverage);
+    // Slightly wider smoothstep band — softer cloud edges cast gentler
+    // surface shadows instead of hard aliased cutouts on coastlines.
+    let cloud_low  = mix(0.82, 0.28, coverage);
+    let cloud_high = mix(1.05, 0.55, coverage);
     var cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
     if (quality <= 0.55) {
         cloud_density = 0.0;
@@ -1105,8 +1109,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec + vortex_disp;
         let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
         let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;
-        let cloud_shadow     = smoothstep(cloud_low, cloud_high, cloud_raw_shadow);
-        shadow_factor = 1.0 - cloud_shadow * 0.65;
+        let shadow_low = cloud_low - 0.06;
+        let shadow_high = cloud_high + 0.04;
+        let cloud_shadow = smoothstep(shadow_low, shadow_high, cloud_raw_shadow);
+        shadow_factor = 1.0 - cloud_shadow * 0.42;
     }
 
     // ---------- Lighting ----------
@@ -1130,14 +1136,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // statistics, Heitz 2014). We use an anisotropic GGX NDF with a tangent
     // frame aligned to the planet's east direction so the highlight elongates
     // along the equatorial wave pattern.
-    if (!above_water) {
+    let water_factor = 1.0 - land_factor;
+    if (water_factor > 0.001) {
         let cos_v = max(dot(world_normal, view_dir), 0.0);
         let f0 = 0.02;
         let fresnel_v = f0 + (1.0 - f0) * pow(1.0 - cos_v, 5.0);
         // Mild sky reflection; saturation kept modest so the limb doesn't
         // become a bright ring of sky.
         let sky_tint = u.atmosphere_color.rgb * (0.45 + n_dot_l * 0.5);
-        lit = mix(lit, sky_tint, fresnel_v * 0.45);
+        lit = mix(lit, sky_tint, fresnel_v * 0.45 * water_factor);
 
         // Anisotropic GGX specular (Heitz 2014 form). α_t broader than α_b so
         // the highlight stretches along the east-tangent direction — closer
@@ -1180,7 +1187,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // energy further, so the visible glint stays comparable while
         // streaky artifacts from wave-shimmer normals are damped.
         let spec = d_aniso * fresnel_h / (4.0 * n_dot_v);
-        lit = lit + sun_color * spec * sun_mask * 8.0;
+        lit = lit + sun_color * spec * sun_mask * 8.0 * water_factor;
     }
 
     // ---------- Cloud composite (3 layers, bottom-up) ----------
@@ -1273,7 +1280,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // rather than uniformly. Visible only on land, on the dark hemisphere,
     // not buried under cloud cover.
     let population = u.world_features.y;
-    if (quality > 0.25 && population > 0.02 && above_water) {
+    if (quality > 0.25 && population > 0.02 && land_factor > 0.5) {
         // Slight coast bias: brighter near shoreline (real cities cluster there),
         // but inland cities should still glow at high pop.
         let coast_bias = 0.45 + 0.55 * (1.0 - smoothstep(0.04, 0.35, above_amt));
