@@ -30,6 +30,8 @@ import {
   type FrameTimeDownshiftState,
   type RenderProfile,
 } from '../renderProfile'
+import { popChartWork, pushChartWork, yieldToPaint } from '../appState/chartWork'
+import type { Params } from '../params'
 import type { SolarSystem, SystemBodyTarget } from '../domain/system'
 import type { SurfaceMap } from '../domain/surfaceMap'
 import { ensureWasmReady } from '../wasm'
@@ -86,6 +88,10 @@ export class RendererClient {
     vegetationRichness: number
     bake: SurfacePrebakeSnapshot
   } | null = null
+  private terrainParamsTimer: ReturnType<typeof setTimeout> | null = null
+  private surfaceMapTimer: ReturnType<typeof setTimeout> | null = null
+  private lastCommittedParams: Params | null = null
+  private systemLoadGeneration = 0
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.profile = detectRenderProfile()
@@ -115,6 +121,7 @@ export class RendererClient {
       }
       this.planet.resize(this.canvas.width, this.canvas.height)
       this.planet.setParams(this.renderParams())
+      this.lastCommittedParams = { ...params.value }
       this.planet.setViewMode(viewMode.value)
       this.planet.setSystemSeed(systemSeed.value)
       this.refreshSystemSnapshot()
@@ -360,8 +367,21 @@ export class RendererClient {
       }),
       effect(() => {
         if (!this.planet) return
-        this.planet.setSystemSeed(systemSeed.value)
-        this.refreshSystemSnapshot()
+        const seed = systemSeed.value
+        const generation = ++this.systemLoadGeneration
+        void (async () => {
+          pushChartWork('Loading star system…')
+          await yieldToPaint()
+          try {
+            if (generation !== this.systemLoadGeneration) return
+            this.planet?.setSystemSeed(seed)
+            if (generation !== this.systemLoadGeneration) return
+            this.refreshSystemSnapshot()
+            this.lastCommittedParams = { ...params.value }
+          } finally {
+            if (generation === this.systemLoadGeneration) popChartWork()
+          }
+        })()
       }),
     )
   }
@@ -441,15 +461,56 @@ export class RendererClient {
     this.animationFrame = requestAnimationFrame(loop)
   }
 
-  private setParams(nextParams: typeof params.value) {
+  private paramsAffectTerrain(a: Params, b: Params): boolean {
+    return (
+      a.seed !== b.seed
+      || a.sea_level !== b.sea_level
+      || a.ice_latitude !== b.ice_latitude
+      || a.vegetation_richness !== b.vegetation_richness
+      || (a.surface_temp_k ?? 0) !== (b.surface_temp_k ?? 0)
+    )
+  }
+
+  private setParams(nextParams: Params) {
     setParamsSnapshot(nextParams)
-    this.planet?.setParams(this.renderParams())
-    // Surface map depends on sea_level / ice_latitude / atmosphere, but
-    // generating it also runs the Rust pre-bake. Refresh it while visible
-    // and let tab entry lazily regenerate it otherwise.
-    if (this.planet && viewMode.value === 'surface') {
-      this.refreshSurfaceMapSnapshot()
+    const planet = this.planet
+    if (!planet) return
+
+    const prev = this.lastCommittedParams ?? params.value
+    const renderParams = this.renderParams()
+    if (!this.paramsAffectTerrain(prev, params.value)) {
+      planet.setParams(renderParams)
+      this.lastCommittedParams = { ...params.value }
+      return
     }
+
+    if (this.terrainParamsTimer != null) clearTimeout(this.terrainParamsTimer)
+    this.terrainParamsTimer = setTimeout(() => {
+      this.terrainParamsTimer = null
+      if (!this.planet) return
+      pushChartWork('Updating terrain…')
+      void yieldToPaint().then(() => {
+        try {
+          const latest = this.renderParams()
+          this.planet?.setParams(latest)
+          this.lastCommittedParams = { ...params.value }
+        } finally {
+          popChartWork()
+        }
+      })
+    }, 140)
+
+    if (viewMode.value === 'surface') {
+      this.scheduleSurfaceMapRefresh()
+    }
+  }
+
+  private scheduleSurfaceMapRefresh(): void {
+    if (this.surfaceMapTimer != null) clearTimeout(this.surfaceMapTimer)
+    this.surfaceMapTimer = setTimeout(() => {
+      this.surfaceMapTimer = null
+      this.refreshSurfaceMapSnapshot()
+    }, 220)
   }
 
   private sampleFrameTime(frameTimeMs: number) {

@@ -27,6 +27,7 @@ import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceM
 import type { RenderProfileName } from '../renderProfile'
 import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
 import { hasPendingDetailBody } from './urlState'
+import { withChartWork } from './chartWork'
 import {
   isMainWorldTarget,
   paramsPatchForSystemTarget,
@@ -37,6 +38,7 @@ import {
 export * from '../params'
 export * from '../domain/cepheus'
 export { paramsPatchFromUwp, paramsPatchFromUwpDigits }
+export * from './chartWork'
 
 export type ViewMode = 'subsector' | 'system' | 'detail' | 'surface'
 export type RenderQualityMode = 'auto' | RenderProfileName
@@ -497,14 +499,24 @@ export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null, cell: Surfa
  *  This can trigger Rust surface pre-bake work, so callers should prefer
  *  doing it on Surface-view entry or when the Surface view is already visible. */
 export function refreshSurfaceMap(): void {
+  void refreshSurfaceMapAsync()
+}
+
+export async function refreshSurfaceMapAsync(): Promise<void> {
   const planetIndex = selectedSurfacePlanetIndex()
-  const previous = currentSurfaceMap.value
-  const map = planetIndex == null ? null : rendererControls?.getSurfaceMap(planetIndex) ?? null
-  currentSurfaceMap.value = map
-  if (!map || previous?.seed !== map.seed) {
-    selectedSurfaceHex.value = null
-    selectedSurfaceCell.value = null
+  if (planetIndex == null || !rendererControls) {
+    currentSurfaceMap.value = null
+    return
   }
+  await withChartWork('Generating world surface map…', () => {
+    const previous = currentSurfaceMap.value
+    const map = rendererControls?.getSurfaceMap(planetIndex) ?? null
+    currentSurfaceMap.value = map
+    if (!map || previous?.seed !== map.seed) {
+      selectedSurfaceHex.value = null
+      selectedSurfaceCell.value = null
+    }
+  })
 }
 
 /** Fetch the Rust pre-bake heightmap for the selected planet (used

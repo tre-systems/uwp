@@ -12,6 +12,7 @@ import { SurfaceMap } from './components/SurfaceMap'
 import { ViewModeToggle } from './components/ViewModeToggle'
 import { ViewTransition } from './components/ViewTransition'
 import {
+  chartWorkMessage,
   currentSubsector,
   currentSurfaceMap,
   errorMessage,
@@ -23,6 +24,7 @@ import {
 export function App() {
   const error = errorMessage.value
   const status = rendererStatus.value
+  const chartWork = chartWorkMessage.value
   const mode = viewMode.value
   const subsector = currentSubsector.value
   const surfaceMap = currentSurfaceMap.value
@@ -61,6 +63,7 @@ export function App() {
         </div>
         <ViewTransition />
         {status === 'loading' && <LoadingOverlay />}
+        {status !== 'loading' && chartWork && <LoadingOverlay label={chartWork} />}
         {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
         {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
         <HoverTooltip />

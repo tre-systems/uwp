@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks'
 import {
+  chartWorkMessage,
   currentSystem,
   panelOpen,
   params,
@@ -45,7 +46,7 @@ export function ControlPanel() {
   void _
   const codeText = uwpToCode(u)
   const panelId = 'controls-panel'
-  const controlsDisabled = !open
+  const controlsDisabled = !open || chartWorkMessage.value != null
   const [glossaryOpen, setGlossaryOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
 

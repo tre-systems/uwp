@@ -9,6 +9,7 @@ import {
   subsectorSeed,
   syncUwpFromSelectedHex,
 } from './appState'
+import { withChartWork } from './appState/chartWork'
 import type { Subsector } from './domain/subsector'
 import { ensureWasmReady } from './wasm'
 
@@ -21,22 +22,46 @@ import { ensureWasmReady } from './wasm'
 //   - clears the selected hex when the underlying grid changes so a
 //     stale selection doesn't point at a now-empty cell
 
+let refreshGeneration = 0
+let densityDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let lastRefreshSeed = subsectorSeed.value
+
 async function refresh(): Promise<void> {
-  await ensureWasmReady()
-  const sub = generateSubsector(subsectorSeed.value, subsectorDensity.value) as Subsector
-  const selected = selectedHex.value
-  const previousSelected = selected
-    ? currentSubsector.value?.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
-    : null
-  setSubsector(sub)
-  const nextSelected = selected
-    ? sub.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
-    : null
-  if (selected && (!nextSelected || (previousSelected && previousSelected.system_seed !== nextSelected.system_seed))) {
-    setSelectedHex(null)
-  } else if (nextSelected) {
-    syncUwpFromSelectedHex()
+  const generation = ++refreshGeneration
+  await withChartWork('Generating region map…', async () => {
+    await ensureWasmReady()
+    if (generation !== refreshGeneration) return
+    const sub = generateSubsector(subsectorSeed.value, subsectorDensity.value) as Subsector
+    if (generation !== refreshGeneration) return
+    const selected = selectedHex.value
+    const previousSelected = selected
+      ? currentSubsector.value?.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
+      : null
+    setSubsector(sub)
+    const nextSelected = selected
+      ? sub.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
+      : null
+    if (selected && (!nextSelected || (previousSelected && previousSelected.system_seed !== nextSelected.system_seed))) {
+      setSelectedHex(null)
+    } else if (nextSelected) {
+      syncUwpFromSelectedHex()
+    }
+  })
+}
+
+function scheduleRefresh(immediate: boolean): void {
+  if (densityDebounceTimer != null) {
+    clearTimeout(densityDebounceTimer)
+    densityDebounceTimer = null
   }
+  if (immediate) {
+    void refresh()
+    return
+  }
+  densityDebounceTimer = setTimeout(() => {
+    densityDebounceTimer = null
+    void refresh()
+  }, 280)
 }
 
 let disposer: (() => void) | null = null
@@ -46,16 +71,20 @@ export function installSubsectorPipeline(): void {
   // Initial generation kicks off as soon as the wasm module is ready;
   // subsequent (seed, density) changes also trigger a regen.
   disposer = effect(() => {
-    // Touch both signals so the effect re-runs when either changes.
     const seed = subsectorSeed.value
     const density = subsectorDensity.value
-    void seed
     void density
-    void refresh()
+    const seedChanged = seed !== lastRefreshSeed
+    lastRefreshSeed = seed
+    scheduleRefresh(seedChanged)
   })
 }
 
 export function disposeSubsectorPipeline(): void {
   disposer?.()
   disposer = null
+  if (densityDebounceTimer != null) {
+    clearTimeout(densityDebounceTimer)
+    densityDebounceTimer = null
+  }
 }

@@ -6,6 +6,7 @@ import {
   renderQualityMode,
   registerRendererControls,
   refreshSurfaceMap,
+  refreshSurfaceMapAsync,
   rerollPlanet,
   clearSubsectorHexOverride,
   clearSubsectorRouteOverride,
@@ -344,7 +345,7 @@ describe('appState renderer command boundary', () => {
     viewMode.value = initialView
   })
 
-  it('requests surface maps for the selected planet index', () => {
+  it('requests surface maps for the selected planet index', async () => {
     const initialView = viewMode.value
     const system = {
       ...fakeSystem(),
@@ -379,7 +380,7 @@ describe('appState renderer command boundary', () => {
       pointAtSurface: () => undefined,
     })
 
-    refreshSurfaceMap()
+    await refreshSurfaceMapAsync()
 
     expect(requestedIndex).toBe(1)
     expect(currentSurfaceMap.value).toBe(map)
