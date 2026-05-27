@@ -1,9 +1,9 @@
 import {
-  currentSystem,
   getSurfacePrebake,
   openRegionView,
   params,
   selectAndFocusSurfaceHex,
+  selectedSurfacePlanet,
   selectedSurfaceHex,
 } from '../appState'
 import {
@@ -60,7 +60,6 @@ interface SurfaceMapProps {
 }
 
 export function SurfaceMap({ map }: SurfaceMapProps) {
-  const system = currentSystem.value
   const containerRef = useRef<HTMLDivElement>(null)
   const gestures = useMapGestures(containerRef, SVG_W, SVG_H)
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null)
@@ -76,9 +75,9 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
     sand: params.value.sand_color,
     snow: params.value.snow_color,
   }
-  const mainWorld = system && system.main_world >= 0 ? system.planets[system.main_world] ?? null : null
-  const meanTempK = mainWorld?.climate.mean_surface_temp_k ?? mainWorld?.temperature_k ?? 288
-  const iceFraction = mainWorld?.climate.ice_fraction ?? 0.0
+  const surfacePlanet = selectedSurfacePlanet()
+  const meanTempK = surfacePlanet?.climate.mean_surface_temp_k ?? surfacePlanet?.temperature_k ?? 288
+  const iceFraction = surfacePlanet?.climate.ice_fraction ?? 0.0
   const prebake = useMemo(() => {
     if (!map) return null
     return getSurfacePrebake()
@@ -149,7 +148,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   if (!map) {
     return (
       <div class="surface-map surface-empty">
-        <p>No main world available — generate a habitable system first.</p>
+        <p>Select a planet to generate a surface map. Stars and belts do not have hex surfaces.</p>
       </div>
     )
   }

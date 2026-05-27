@@ -9,7 +9,7 @@ import {
   uwpToCode,
 } from '../uwp'
 import { paramsPatchFromUwp, paramsPatchFromUwpDigits } from '../uwpVisualMapping'
-import type { SolarSystem, SystemBodyTarget } from '../domain/system'
+import type { Planet, SolarSystem, SystemBodyTarget } from '../domain/system'
 import {
   applySubsectorOverrides,
   routeOverrideKey,
@@ -69,13 +69,13 @@ export interface RendererControls {
    */
   pickSystemPlanet(canvasX: number, canvasY: number, timeMs: number): number | null
   pickSystemBody(canvasX: number, canvasY: number, timeMs: number): SystemBodyTarget | null
-  /** Generate a Cepheus hex world map for the current main world. */
-  getSurfaceMap(): SurfaceMap | null
+  /** Generate a Cepheus hex world map for a planet in the current system. */
+  getSurfaceMap(planetIndex?: number | null): SurfaceMap | null
   /** Generate the Rust-side surface pre-bake (plate-tectonics +
-   *  multi-octave noise heightmap) for the current main world. Used by
+   *  multi-octave noise heightmap) for a planet in the current system. Used by
    *  the Surface view to paint a rendered globe-like background under
    *  the hex grid. */
-  getSurfacePrebake(): SurfacePrebake | null
+  getSurfacePrebake(planetIndex?: number | null): SurfacePrebake | null
   /** Rotate the detail-view globe to face a surface (lat, lon) in degrees. */
   pointAtSurface(latDeg: number, lonDeg: number): void
 }
@@ -164,18 +164,41 @@ export function togglePanel() {
 }
 
 export function setViewMode(mode: ViewMode) {
-  if (mode === 'surface' && detailTarget.value) {
-    const sys = currentSystem.value
-    const main = sys && sys.main_world >= 0 ? sys.planets[sys.main_world] ?? null : null
-    detailTarget.value = null
-    setParams({
-      ...params.value,
-      ...paramsPatchFromUwpDigits(uwp.value),
-      seed: main?.seed ?? params.value.seed,
-      surface_temp_k: main?.climate.mean_surface_temp_k ?? 0,
-    })
+  if (mode === 'surface' && selectedSurfacePlanetIndex() == null) {
+    if (!currentSystem.value) {
+      viewMode.value = mode
+      return
+    }
+    currentSurfaceMap.value = null
+    return
   }
   viewMode.value = mode
+}
+
+export function selectedSurfacePlanetIndex(
+  system: SolarSystem | null = currentSystem.value,
+  target: SystemBodyTarget | null = detailTarget.value,
+): number | null {
+  if (!system || system.planets.length === 0) return null
+  if (target) {
+    if (target.kind !== 'planet') return null
+    return system.planets[target.index] ? target.index : null
+  }
+  const mainIndex = system.main_world >= 0 ? system.main_world : -1
+  return system.planets[mainIndex] ? mainIndex : null
+}
+
+export function selectedSurfacePlanet(): Planet | null {
+  const system = currentSystem.value
+  const index = selectedSurfacePlanetIndex(system)
+  return index == null ? null : system?.planets[index] ?? null
+}
+
+export function selectedSurfaceTargetLabel(): string {
+  const system = currentSystem.value
+  const index = selectedSurfacePlanetIndex(system)
+  if (index == null) return 'No planet selected'
+  return system?.main_world === index ? 'Main World' : `Planet ${index + 1}`
 }
 
 export function setSystemTimeSpeed(speed: number) {
@@ -391,20 +414,22 @@ export function setSelectedSurfaceHex(coord: SurfaceHexCoord | null, cell: Surfa
   selectedSurfaceCell.value = cell
 }
 
-/** Refresh the surface map from the current main world's climate.
+/** Refresh the surface map from the selected planet's climate.
  *  This can trigger Rust surface pre-bake work, so callers should prefer
  *  doing it on Surface-view entry or when the Surface view is already visible. */
 export function refreshSurfaceMap(): void {
-  const map = rendererControls?.getSurfaceMap() ?? null
+  const planetIndex = selectedSurfacePlanetIndex()
+  const map = planetIndex == null ? null : rendererControls?.getSurfaceMap(planetIndex) ?? null
   currentSurfaceMap.value = map
   selectedSurfaceHex.value = null
   selectedSurfaceCell.value = null
 }
 
-/** Fetch the Rust pre-bake heightmap for the current main world (used
+/** Fetch the Rust pre-bake heightmap for the selected planet (used
  *  to paint the Surface view's rendered background). */
 export function getSurfacePrebake(): SurfacePrebake | null {
-  return rendererControls?.getSurfacePrebake() ?? null
+  const planetIndex = selectedSurfacePlanetIndex()
+  return planetIndex == null ? null : rendererControls?.getSurfacePrebake(planetIndex) ?? null
 }
 
 /** Rotate the detail-view globe to face a surface (lat, lon). */

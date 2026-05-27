@@ -10,6 +10,7 @@ import {
   setParamsSnapshot,
   setRenderPerformanceSnapshot,
   setSystemSeed,
+  selectedSurfacePlanetIndex,
   setSurfaceMap as setSurfaceMapSnapshot,
   setSystemSnapshot,
   setViewMode,
@@ -77,6 +78,7 @@ export class RendererClient {
   private lastFps = 0
   private lastFrameMs = 0
   private surfacePrebakeCache: {
+    planetIndex: number
     seed: number
     waterFraction: number
     iceLatitude: number
@@ -184,9 +186,16 @@ export class RendererClient {
     return isSystemBodyTarget(hit) ? hit : null
   }
 
-  getSurfaceMap(): SurfaceMap | null {
+  getSurfaceMap(planetIndex?: number | null): SurfaceMap | null {
     const planet = this.planet
     if (!planet) return null
+    if (planetIndex != null) {
+      const getForPlanet = (planet as Planet & {
+        getSurfaceMapForPlanet?: (index: number) => SurfaceMap | null | undefined
+      }).getSurfaceMapForPlanet
+      if (!getForPlanet) return null
+      return getForPlanet.call(planet, planetIndex) ?? null
+    }
     return (planet.getSurfaceMap() as SurfaceMap | null | undefined) ?? null
   }
 
@@ -194,32 +203,34 @@ export class RendererClient {
     this.planet?.pointAtSurface(latDeg, lonDeg)
   }
 
-  getSurfacePrebake(): SurfacePrebakeSnapshot | null {
+  getSurfacePrebake(planetIndex?: number | null): SurfacePrebakeSnapshot | null {
     // The Rust surface_map::generate path uses params.seed (the visual
-    // appearance seed) - NOT the main world's per-planet seed - when
+    // appearance seed) - NOT the selected planet's per-body seed - when
     // it calls surface_prebake::generate. The background here has to
     // use the same seed or the rendered continents won't line up with
     // the hex grid's terrain classifications.
     const planet = this.planet
     if (!planet) return null
+    const selectedPlanetIndex = planetIndex ?? selectedSurfacePlanetIndex()
+    if (selectedPlanetIndex == null) return null
+    const system = currentSystem.value
+    const selectedPlanet = system?.planets[selectedPlanetIndex] ?? null
+    if (!selectedPlanet) return null
     const seed = params.value.seed >>> 0
     const waterFraction = params.value.sea_level
     const iceLatitude = params.value.ice_latitude
     const vegetationRichness = params.value.vegetation_richness
-    // Pull the main world's mean surface temperature from the latest
+    // Pull the selected planet's mean surface temperature from the latest
     // system snapshot so biome classification on the painted background
     // matches what the renderer's atlas produces for the globe.
-    const system = currentSystem.value
-    const mainWorld = system && system.main_world >= 0
-      ? system.planets[system.main_world] ?? null
-      : null
     const meanTempK = effectiveSurfaceMeanTempK(
-      mainWorld?.climate?.mean_surface_temp_k ?? 288,
+      selectedPlanet.climate?.mean_surface_temp_k ?? selectedPlanet.temperature_k ?? 288,
       params.value.atmosphere_density,
     )
     const cached = this.surfacePrebakeCache
     if (
       cached &&
+      cached.planetIndex === selectedPlanetIndex &&
       cached.seed === seed &&
       Math.abs(cached.waterFraction - waterFraction) < 0.0005 &&
       Math.abs(cached.iceLatitude - iceLatitude) < 0.0005 &&
@@ -266,6 +277,7 @@ export class RendererClient {
         sea_level_threshold,
       }
       this.surfacePrebakeCache = {
+        planetIndex: selectedPlanetIndex,
         seed,
         waterFraction,
         iceLatitude,
@@ -320,17 +332,22 @@ export class RendererClient {
     // Surface map generation includes the surface pre-bake, so keep it
     // lazy: update it immediately only while the Surface view is visible.
     if (this.planet && viewMode.value === 'surface') {
-      setSurfaceMapSnapshot(this.getSurfaceMap())
+      this.refreshSurfaceMapSnapshot()
     }
+  }
+
+  private refreshSurfaceMapSnapshot(planetIndex: number | null = selectedSurfacePlanetIndex()) {
+    setSurfaceMapSnapshot(planetIndex == null ? null : this.getSurfaceMap(planetIndex))
   }
 
   private installEffects() {
     this.disposers.push(
       effect(() => {
         const mode = viewMode.value
+        const surfacePlanetIndex = selectedSurfacePlanetIndex()
         this.planet?.setViewMode(mode)
         if (this.planet && mode === 'surface') {
-          setSurfaceMapSnapshot(this.getSurfaceMap())
+          this.refreshSurfaceMapSnapshot(surfacePlanetIndex)
         }
       }),
       effect(() => {
@@ -351,8 +368,8 @@ export class RendererClient {
       setParams: (nextParams) => this.setParams(nextParams),
       pickSystemPlanet: (x, y, t) => this.pickSystemPlanet(x, y, t),
       pickSystemBody: (x, y, t) => this.pickSystemBody(x, y, t),
-      getSurfaceMap: () => this.getSurfaceMap(),
-      getSurfacePrebake: () => this.getSurfacePrebake(),
+      getSurfaceMap: (planetIndex) => this.getSurfaceMap(planetIndex),
+      getSurfacePrebake: (planetIndex) => this.getSurfacePrebake(planetIndex),
       pointAtSurface: (lat, lon) => this.pointAtSurface(lat, lon),
     })
     this.debugHandle = {
@@ -426,7 +443,7 @@ export class RendererClient {
     // generating it also runs the Rust pre-bake. Refresh it while visible
     // and let tab entry lazily regenerate it otherwise.
     if (this.planet && viewMode.value === 'surface') {
-      setSurfaceMapSnapshot(this.getSurfaceMap())
+      this.refreshSurfaceMapSnapshot()
     }
   }
 

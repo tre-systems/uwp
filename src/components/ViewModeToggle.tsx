@@ -1,16 +1,16 @@
 import { useEffect } from 'preact/hooks'
 import {
-  currentSurfaceMap,
   currentSystem,
   detailTarget,
+  selectedSurfacePlanetIndex,
   setViewMode,
   viewMode,
   type ViewMode,
 } from '../appState'
 
 // Four-state segmented control. Detail and Surface stay disabled until a
-// system loads (and Surface additionally requires a main world) so the
-// user can't drop into a blank view.
+// system loads (and Surface additionally requires a selected planet) so
+// the user can't drop into a blank view.
 
 interface ModeOption {
   mode: ViewMode
@@ -22,14 +22,14 @@ const OPTIONS: readonly ModeOption[] = [
   { mode: 'subsector', label: 'Subsector', hint: 'Browse the subsector hex grid' },
   { mode: 'system', label: 'System', hint: 'Overview of the current solar system' },
   { mode: 'detail', label: 'Detail', hint: 'Render the selected world or system body' },
-  { mode: 'surface', label: 'Surface', hint: 'Cepheus hex world map for the main world' },
+  { mode: 'surface', label: 'Surface', hint: 'Cepheus hex world map for the selected planet' },
 ]
 
 export function ViewModeToggle() {
   const mode = viewMode.value
   const sys = currentSystem.value
   const target = detailTarget.value
-  const surface = currentSurfaceMap.value
+  const canShowSurface = selectedSurfacePlanetIndex() != null
 
   useEffect(() => {
     // 1 / 2 / 3 / 4 keys jump straight to a view. We intentionally
@@ -53,23 +53,21 @@ export function ViewModeToggle() {
         e.key === '4' ? 3 : -1
       if (idx < 0) return
       const opt = OPTIONS[idx]
-      const hasMainWorld = sys != null && sys.main_world >= 0
       const disabled =
         (opt.mode === 'detail' && !sys) ||
-        (opt.mode === 'surface' && !hasMainWorld && !surface)
+        (opt.mode === 'surface' && !canShowSurface)
       if (disabled) return
       e.preventDefault()
       setViewMode(opt.mode)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sys, surface])
+  }, [sys, canShowSurface])
 
   return (
     <div class="view-mode-toggle" role="tablist" aria-label="View mode">
       {OPTIONS.map((opt) => {
-        const hasMainWorld = sys != null && sys.main_world >= 0
-        const disabled = (opt.mode === 'detail' && !sys) || (opt.mode === 'surface' && !hasMainWorld)
+        const disabled = (opt.mode === 'detail' && !sys) || (opt.mode === 'surface' && !canShowSurface)
         const isActive = mode === opt.mode
         return (
           <button

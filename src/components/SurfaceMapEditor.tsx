@@ -1,9 +1,11 @@
 import {
+  currentSystem,
   currentSurfaceMap,
   openRegionView,
   pointAtSurface,
   selectedSurfaceCell,
   selectedSurfaceHex,
+  selectedSurfaceTargetLabel,
   setSelectedSurfaceHex,
   setViewMode,
 } from '../appState'
@@ -23,13 +25,15 @@ interface SurfaceMapEditorProps {
 
 export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps) {
   const map = currentSurfaceMap.value
+  const system = currentSystem.value
+  const targetLabel = selectedSurfaceTargetLabel()
   const sel = selectedSurfaceHex.value
   const exactSelection = selectedSurfaceCell.value
   if (!map) {
     return (
       <section>
         <h2>Surface</h2>
-        <p class="sys-meta sys-empty">No surface map — load a habitable main world to generate one.</p>
+        <p class="sys-meta sys-empty">No surface map — select a planet. Stars and belts do not have hex surfaces.</p>
       </section>
     )
   }
@@ -50,6 +54,10 @@ export function SurfaceMapEditor({ disabled: _disabled }: SurfaceMapEditorProps)
       <section>
         <h2>Surface</h2>
         <dl class="sys-meta">
+          <div class="sys-meta-row">
+            <dt>Body</dt>
+            <dd>{system ? targetLabel : '—'}</dd>
+          </div>
           <div class="sys-meta-row">
             <dt>Grid</dt>
             <dd>{gridLabel}</dd>

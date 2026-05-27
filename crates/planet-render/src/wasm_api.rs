@@ -128,11 +128,9 @@ impl Planet {
     }
 
     /// Generate a Cepheus-style hex world map for the main world of the
-    /// current system. The surface composition follows the user's
-    /// authored planet parameters (`sea_level`, `ice_latitude`, …) so the
-    /// hex grid always matches the planet the user is actually
-    /// rendering, not an unrelated Rust-side main-world candidate.
-    /// Returns null only when the system has no planets at all.
+    /// current system. Kept as a compatibility wrapper; product UI should
+    /// call `getSurfaceMapForPlanet` so Surface mode follows the selected
+    /// body instead of always snapping back to the main world.
     #[wasm_bindgen(js_name = getSurfaceMap)]
     pub fn get_surface_map(&self) -> Result<JsValue, JsValue> {
         let system = self.inner.system();
@@ -144,7 +142,25 @@ impl Planet {
         } else {
             0
         };
-        let planet = &system.planets[main_idx];
+        self.surface_map_for_planet(main_idx)
+    }
+
+    /// Generate a Cepheus-style hex world map for a specific planet in
+    /// the current system. The surface composition follows the user's
+    /// authored planet parameters (`sea_level`, `ice_latitude`, …) so the
+    /// hex grid always matches the selected globe, not an unrelated
+    /// Rust-side main-world candidate. Returns null for stars, belts, or
+    /// an out-of-range planet index.
+    #[wasm_bindgen(js_name = getSurfaceMapForPlanet)]
+    pub fn get_surface_map_for_planet(&self, planet_index: u32) -> Result<JsValue, JsValue> {
+        self.surface_map_for_planet(planet_index as usize)
+    }
+
+    fn surface_map_for_planet(&self, planet_index: usize) -> Result<JsValue, JsValue> {
+        let system = self.inner.system();
+        let Some(planet) = system.planets.get(planet_index) else {
+            return Ok(JsValue::NULL);
+        };
         let params = self.inner.params();
 
         // Build a climate snapshot that overrides the water / ice fractions

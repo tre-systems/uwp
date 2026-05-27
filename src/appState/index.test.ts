@@ -5,10 +5,12 @@ import {
   renderPerformance,
   renderQualityMode,
   registerRendererControls,
+  refreshSurfaceMap,
   rerollPlanet,
   clearSubsectorHexOverride,
   clearSubsectorRouteOverride,
   currentSubsector,
+  currentSurfaceMap,
   currentSystem,
   generatedSubsectorHex,
   getSubsectorHexOverride,
@@ -32,6 +34,7 @@ import {
   setParamsSnapshot,
   setSurfaceMap,
   setSystemSnapshot,
+  setViewMode,
   setUwpField,
   setUwpFromCode,
   detailTarget,
@@ -146,6 +149,90 @@ describe('appState renderer command boundary', () => {
     registerRendererControls(null)
     setSystemSnapshot(null)
     setParamsSnapshot(initialParams)
+    viewMode.value = initialView
+  })
+
+  it('keeps Surface mode focused on the selected planet instead of snapping to the main world', () => {
+    const initialParams = { ...params.value }
+    const initialView = viewMode.value
+    const system = {
+      ...fakeSystem(),
+      main_world: 0,
+      planets: [
+        fakePlanet({ seed: 100, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 288 }),
+        fakePlanet({ seed: 200, body_type: 'Frozen', radius_earth: 0.65, mean_surface_temp_k: 190 }),
+      ],
+    }
+    setSystemSnapshot(system)
+    registerRendererControls({
+      rerollPlanet: () => undefined,
+      getSystem: () => system,
+      setParams: (nextParams) => setParamsSnapshot(nextParams),
+      pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
+      getSurfaceMap: () => null,
+      getSurfacePrebake: () => null,
+      pointAtSurface: () => undefined,
+    })
+
+    focusSystemTarget({ kind: 'planet', index: 1 })
+    setViewMode('surface')
+
+    expect(detailTarget.value).toEqual({ kind: 'planet', index: 1 })
+    expect(viewMode.value).toBe('surface')
+    expect(params.value.seed).toBe(200)
+
+    registerRendererControls(null)
+    setSystemSnapshot(null)
+    setParamsSnapshot(initialParams)
+    detailTarget.value = null
+    viewMode.value = initialView
+  })
+
+  it('requests surface maps for the selected planet index', () => {
+    const initialView = viewMode.value
+    const system = {
+      ...fakeSystem(),
+      main_world: 0,
+      planets: [
+        fakePlanet({ seed: 100, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 288 }),
+        fakePlanet({ seed: 200, body_type: 'SuperEarth', radius_earth: 1.4, mean_surface_temp_k: 255 }),
+      ],
+    }
+    const map = {
+      seed: 200,
+      ocean_fraction: 0.4,
+      hexes: [],
+      starport: null,
+      cities: [],
+    }
+    let requestedIndex: number | null | undefined = undefined
+
+    setSystemSnapshot(system)
+    detailTarget.value = { kind: 'planet', index: 1 }
+    registerRendererControls({
+      rerollPlanet: () => undefined,
+      getSystem: () => system,
+      setParams: () => undefined,
+      pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
+      getSurfaceMap: (planetIndex) => {
+        requestedIndex = planetIndex
+        return map
+      },
+      getSurfacePrebake: () => null,
+      pointAtSurface: () => undefined,
+    })
+
+    refreshSurfaceMap()
+
+    expect(requestedIndex).toBe(1)
+    expect(currentSurfaceMap.value).toBe(map)
+
+    registerRendererControls(null)
+    setSystemSnapshot(null)
+    setSurfaceMap(null)
+    detailTarget.value = null
     viewMode.value = initialView
   })
 

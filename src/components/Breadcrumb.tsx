@@ -4,6 +4,7 @@ import {
   currentSystem,
   detailTarget,
   selectedHex,
+  selectedSurfacePlanetIndex,
   setViewMode,
   subsectorSeed,
   viewMode,
@@ -24,6 +25,7 @@ export function Breadcrumb() {
   const seed = subsectorSeed.value
   const sys = currentSystem.value
   const target = detailTarget.value
+  const canShowSurface = selectedSurfacePlanetIndex(sys, target) != null
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -76,7 +78,7 @@ export function Breadcrumb() {
         active: mode === 'detail',
         onClick: () => setViewMode('detail'),
       })
-      if (!target) {
+      if (canShowSurface) {
         crumbs.push({
           label: 'Surface',
           active: mode === 'surface',
