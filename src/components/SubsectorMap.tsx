@@ -293,6 +293,11 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, 
         }
       }}
     >
+      <path
+        d={hexPath(cx, cy, HEX_R)}
+        class="hex-hit-area"
+        aria-hidden="true"
+      />
       {/* Grid outline (grey, continuous across the whole subsector). */}
       <path
         d={hexPath(cx, cy, HEX_R - 1)}

@@ -1,4 +1,4 @@
-import { effect } from '@preact/signals'
+import { effect, untracked } from '@preact/signals'
 import { Planet, generateSurfacePrebake, generateSurfacePrebakeFull } from '../../pkg/planet_render'
 import {
   currentSystem,
@@ -351,7 +351,12 @@ export class RendererClient {
         }
       }),
       effect(() => {
-        this.applyRenderQualityMode(renderQualityMode.value)
+        const mode = renderQualityMode.value
+        // Quality changes resize the canvas and refresh GPU params, but
+        // must not subscribe to `params` — hex selection and URL sync
+        // update params while the renderer is reacting to `systemSeed`,
+        // which would re-enter this effect and trip Preact's cycle guard.
+        untracked(() => this.applyRenderQualityMode(mode))
       }),
       effect(() => {
         if (!this.planet) return
@@ -489,11 +494,15 @@ export class RendererClient {
     this.publishPerformanceSnapshot()
   }
 
-  private publishPerformanceSnapshot(fps = this.lastFps, frameMs = this.lastFrameMs) {
+  private publishPerformanceSnapshot(
+    fps = this.lastFps,
+    frameMs = this.lastFrameMs,
+    mode = untracked(() => renderQualityMode.value),
+  ) {
     this.lastFps = fps
     this.lastFrameMs = frameMs
     setRenderPerformanceSnapshot({
-      mode: renderQualityMode.value,
+      mode,
       profile: this.profile.name,
       fps,
       frameMs,

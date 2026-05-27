@@ -91,10 +91,12 @@ export function Canvas() {
     }
   }, [])
 
+  const gpuActive = viewMode.value === 'system' || viewMode.value === 'detail'
+
   return (
     <canvas
       ref={ref}
-      class="planet-canvas"
+      class={`planet-canvas${gpuActive ? '' : ' planet-canvas-inert'}`}
       role="img"
       aria-label="Interactive 3D rendering of the generated planet or solar system. Drag to orbit, pinch or scroll to zoom."
       tabIndex={-1}

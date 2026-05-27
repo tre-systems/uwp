@@ -1,4 +1,4 @@
-import { effect } from '@preact/signals'
+import { effect, untracked } from '@preact/signals'
 import type { SystemBodyTarget } from '../domain/system'
 import { resolvedDetailTarget } from '../navigation/bodyView'
 import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
@@ -220,7 +220,9 @@ export function installUrlStateMirror(): void {
     currentSubsector.value
     selectedHex.value
     systemSeed.value
-    syncUwpFromSelectedHex()
+    // Defer so hex/system selection can finish flushing renderer
+    // effects before we rewrite params from the hex UWP.
+    queueMicrotask(() => untracked(() => syncUwpFromSelectedHex()))
   })
 
   effect(() => {

@@ -187,6 +187,10 @@ html, body, #app {
   touch-action: none;
 }
 .planet-canvas:active { cursor: grabbing; }
+.planet-canvas-inert {
+  pointer-events: none;
+  cursor: default;
+}
 
 .panel {
   position: fixed;
@@ -1597,6 +1601,26 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-width: 0.8;
   fill: transparent;
   transition: stroke var(--motion-fast);
+  pointer-events: none;
+}
+/* SVG only hit-tests painted areas; transparent fills miss clicks. */
+.hex-hit-area {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: none;
+  pointer-events: all;
+}
+.hex-cell.hex-occupied .hex-label,
+.hex-cell.hex-occupied .hex-starport,
+.hex-cell.hex-occupied .hex-name,
+.hex-cell.hex-occupied .hex-base,
+.hex-cell.hex-occupied .hex-system-dot,
+.hex-cell.hex-occupied .hex-gas-giant,
+.hex-cell.hex-occupied .hex-belt-glyph,
+.hex-cell.hex-occupied .hex-zone-ring {
+  pointer-events: none;
+}
+.jump-routes {
+  pointer-events: none;
 }
 .hex-polity-fill {
   opacity: 0.22;
