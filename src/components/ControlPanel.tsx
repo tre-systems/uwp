@@ -1,7 +1,6 @@
 import { useState } from 'preact/hooks'
 import {
   currentSystem,
-  detailTarget,
   panelOpen,
   params,
   randomizeUwp,
