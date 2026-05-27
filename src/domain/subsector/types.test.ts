@@ -19,7 +19,7 @@ function hex(col: number, row: number, allegiance: string): SubsectorHex {
     coord: { col, row },
     system_seed: 1,
     uwp: { starport: 'C', size: 7, atm: 6, hydro: 5, pop: 6, gov: 7, law: 4, tech: 9 },
-    bases: { naval: false, scout: false, research: false, Aid: false },
+    bases: { naval: false, scout: false, research: false, aid: false },
     travel_zone: 'Green',
     allegiance,
     gas_giant: false,
@@ -133,7 +133,7 @@ describe('applySubsectorOverrides', () => {
         system_seed: original.system_seed,
         travel_zone: 'Red',
         allegiance: 'NaVa',
-        bases: { naval: true, scout: false, research: true, Aid: false },
+        bases: { naval: true, scout: false, research: true, aid: false },
       },
     })
 
@@ -141,12 +141,12 @@ describe('applySubsectorOverrides', () => {
     expect(out.hexes[0]).toMatchObject({
       travel_zone: 'Red',
       allegiance: 'NaVa',
-      bases: { naval: true, scout: false, research: true, Aid: false },
+      bases: { naval: true, scout: false, research: true, aid: false },
     })
     expect(original).toMatchObject({
       travel_zone: 'Green',
       allegiance: 'ImDi',
-      bases: { naval: false, scout: false, research: false, Aid: false },
+      bases: { naval: false, scout: false, research: false, aid: false },
     })
   })
 

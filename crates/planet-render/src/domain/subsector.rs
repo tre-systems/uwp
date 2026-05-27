@@ -59,7 +59,7 @@ pub struct Bases {
     pub naval: bool,
     pub scout: bool,
     pub research: bool,
-    pub Aid: bool,
+    pub aid: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -496,7 +496,7 @@ fn communication_endpoint_score(hex: &SubsectorHex) -> i32 {
     let bases = i32::from(hex.bases.naval)
         + i32::from(hex.bases.scout)
         + i32::from(hex.bases.research)
-        + i32::from(hex.bases.Aid);
+        + i32::from(hex.bases.aid);
     let zone = match hex.travel_zone {
         TravelZone::Green => 0,
         TravelZone::Amber => -1,
@@ -838,12 +838,12 @@ fn roll_bases(uwp: &Uwp, rng: &mut Rng) -> Bases {
         naval: matches!(uwp.starport, 'A' | 'B') && check(8, rng),
         scout: matches!(uwp.starport, 'A' | 'B' | 'C' | 'D') && check(7, rng),
         research: matches!(uwp.starport, 'A' | 'B') && check(10, rng),
-        Aid: matches!(uwp.starport, 'A' | 'B') && check(8, rng),
+        aid: matches!(uwp.starport, 'A' | 'B') && check(8, rng),
     }
 }
 
 fn roll_travel_zone(uwp: &Uwp, rng: &mut Rng) -> TravelZone {
-    // Match legacy 2d6 Map density: most worlds are unmarked (green), a
+    // Match classic sector map density: most worlds are unmarked (green), a
     // small minority flag as Amber (high-law / contested) and a rare
     // few as Red (interdicted). Roughly 10-15 % amber, 2-3 % red.
     let extreme_law = uwp.law >= 12;

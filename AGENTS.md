@@ -30,7 +30,7 @@ and historical roadmap context.
 
 ## Product Intent
 
-UWP is intended to support Cepheus Engine / legacy 2d6-style games. The app should generate and visualize whole stellar systems for play, not just pretty standalone planets.
+UWP is intended to support Cepheus Engine / classic 2d6 games. The app should generate and visualize whole stellar systems for play, not just pretty standalone planets.
 
 The Cepheus Engine SRD describes the Universal World Profile (UWP) as the compact, game-facing code for the main world of a system: Starport, Size, Atmosphere, Hydrographics, Population, Government, Law Level, and Tech Level. It also treats belts, gas giants, bases, travel zones, trade codes, and allegiance as system or map context.
 
@@ -222,7 +222,7 @@ Presentation layer work — `src/components/`, `src/styles.css`, `src/app.tsx`, 
 8. **First-run onboarding.** Bottom-centre hint chip with drag/scroll/menu cues; dismissed on first interaction or after 12 s; persisted to `localStorage`. → `4adc4d5`
 9. **Trade-code chips.** Main-world trade codes rendered as accented chips with `<abbr>` tooltips. → `9e4b7bf`
 10. **Settings persistence.** View mode, panel open state, render quality persisted to `localStorage` under a versioned key; hydrated before App mounts. → `19e1830`
-11. **Help / glossary.** Modal of Cepheus / legacy 2d6 vocabulary, opened from a `?` button in the panel header. → `c7cfe89`
+11. **Help / glossary.** Modal of Cepheus vocabulary, opened from a `?` button in the panel header. → `c7cfe89`
 12. **About + copy pass.** Footer About link opens a credits modal (engine, shell, rules ref, source, build ID). → `4ab1c05`
 13. **Three-way view toggle.** Segmented control (Subsector / System / Main World) replaces the two-state button; Main World disabled until a system loads. → `88b0928`
 14. **Breadcrumb / location header.** Centre-top pill walks the navigation depth with clickable crumbs and `Esc` shortcut. → `ab4d689`
@@ -238,7 +238,7 @@ Presentation layer work — `src/components/`, `src/styles.css`, `src/app.tsx`, 
 
 22. **Body inspector.** Click any row in the System editor's planet table to expand a derived-properties strip — radius, surface gravity, density, escape velocity, year length, day length, eccentricity, inclination — plus a per-moon list with sizes and orbital radii. Reroll dismisses the expansion so stale numbers can't flash. → `3611bc1`
 
-23. **Subsector text export.** `subsectorToText` renders a legacy 2d6-Map-style fixed-width table (Name / Hex / UWP / Bases / Codes / Zone / PBG / Allegiance). The Subsector panel ships two buttons that copy it to the clipboard or download it as a `.tab` file. → `c82e36f`
+23. **Subsector text export.** `subsectorToText` renders a sector-map-style fixed-width table (Name / Hex / UWP / Bases / Codes / Zone / PBG / Allegiance). The Subsector panel ships two buttons that copy it to the clipboard or download it as a `.tab` file. → `c82e36f`
 
 24. **Card export — main-world stats block.** Detail-mode `Planet card` PNGs now include the body inspector numbers (radius, gravity, density, escape velocity, year, day) so a player handout is one click away. → `a922868`
 
@@ -404,7 +404,7 @@ Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
 4. **App state + renderer client.** *Shipped → `88b0928`.* `subsectorSeed`, `subsectorDensity`, `currentSubsector`, `selectedHex`, `showJumpRoutes`, `subsectorOverrides`, and `subsectorRouteOverrides` signals; `selectHex` action stores the choice, feeds the system pipeline, and snaps view mode. `subsectorClient.ts` regenerates on seed/density changes.
 
-5. **SVG subsector map UI.** *Shipped → `88b0928`, expanded → current.* `SubsectorMap.tsx` renders pointy-top hexes with system dots, UWP digits, base markers (N/S/R/T), travel-zone tinting, full-grid polity tinting, continuous borders, capital markers, and keyboard focus. `SubsectorEditor.tsx` surfaces allegiance, occupied/territory counts, capitals, occupancy, density, the reroll button, and a hex inspector for the selected cell.
+5. **SVG subsector map UI.** *Shipped → `88b0928`, expanded → current.* `SubsectorMap.tsx` renders pointy-top hexes with system dots, UWP digits, base markers (N/S/R/A), travel-zone tinting, full-grid polity tinting, continuous borders, capital markers, and keyboard focus. `SubsectorEditor.tsx` surfaces allegiance, occupied/territory counts, capitals, occupancy, density, the reroll button, and a hex inspector for the selected cell.
 
 6. **Jump routes overlay.** *Shipped → `1912943`, expanded → current.* `compute_jump_routes` walks every pair of class-C+ starports and emits jump-1 or jump-2 edges based on hex-grid distance. Rust annotates each route with communication/trade metadata and tests red-zone blocking, jump-2 courier penalties, trade-promoted communications, and score clamping. The SVG renders route classes through `visibleRoutes`; selected-hex route overrides can hide links or adjust communication/trade metadata without mutating generated Rust data.
 
@@ -434,9 +434,9 @@ For the first phase to be "done":
 
 ## World Surface Map Roadmap
 
-legacy 2d6-style hex world maps of each main world's surface, sitting one level *below* the Main World detail view. Each hex shows terrain (mountain, forest, desert, ocean, ice, urban, etc.) and the map identifies the starport location and the major cities derived from the main world's UWP. The hex map's terrain must match what the 3D globe shows — clicking a hex should be able to spin the globe to point at that location.
+classic 2d6 hex world maps of each main world's surface, sitting one level *below* the Main World detail view. Each hex shows terrain (mountain, forest, desert, ocean, ice, urban, etc.) and the map identifies the starport location and the major cities derived from the main world's UWP. The hex map's terrain must match what the 3D globe shows — clicking a hex should be able to spin the globe to point at that location.
 
-This is a separate feature from the *subsector* hex map (which arranges star systems across a sector). This one is **the planetary surface**, at a much higher detail level. Classic legacy 2d6 world maps are typically ~32-column × 16-row hex grids covering the whole sphere via a hex-friendly equal-area projection.
+This is a separate feature from the *subsector* hex map (which arranges star systems across a sector). This one is **the planetary surface**, at a much higher detail level. Classic classic 2d6 world maps are typically ~32-column × 16-row hex grids covering the whole sphere via a hex-friendly equal-area projection.
 
 ### Hard Dependency
 
@@ -519,7 +519,7 @@ Phases 1-7 are shipped on a pre-bake-backed v1 (`6785193`, later GPU atlas integ
 - **Surface pre-bake first.** Don't try to reproduce the shader's noise stack in Rust as a shortcut. Implement Rust Compute Roadmap item 1, then build this on top of it.
 - **Equal-area or interrupted-Goode projection.** A naïve lat-lon hex grid distorts wildly at the poles. Use an equal-area hex tessellation of the sphere (geodesic, icosahedral subdivision, or HEALPix-style) or fall back to the classic legacy 2d6 interrupted-rectangle projection. Pick whichever makes hex-to-globe-coord conversion cheap, because the globe-bridge step needs it both ways.
 - **Cepheus hydrographics is a rounded view, not the source of truth.** If the pre-bake's water fraction is 0.62, the UWP rounds to hydrographics 6, and the surface map should show 60 % ocean coverage (matching the pre-bake), not 60 % exactly to match the rounded UWP. The pre-bake is canonical; UWP is the rounded game label.
-- **Cities are not just "dots on land".** A good legacy 2d6 GM hex map clusters cities along coasts, rivers, and habitable bands. Use the climate field (item 6 above) to weight placement properly — desert worlds have cities along oases / poles, ice worlds along the equatorial belt, etc.
+- **Cities are not just "dots on land".** A good Referee hex map clusters cities along coasts, rivers, and habitable bands. Use the climate field (item 6 above) to weight placement properly — desert worlds have cities along oases / poles, ice worlds along the equatorial belt, etc.
 - **State ownership stays Rust-owned.** Same rule as subsector: Rust holds the canonical `SurfaceMap`, JS snapshots it. The hex picking math can run in TS but the data is Rust's.
 
 ## Deployment Policy

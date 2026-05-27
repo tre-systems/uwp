@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'preact/hooks'
 import { useFocusTrap } from './useFocusTrap'
 
-// Cepheus / legacy 2d6 vocabulary reference. Opened from the panel header,
+// Cepheus vocabulary reference. Opened from the panel header,
 // dismissed by Escape, backdrop click, or close button. Definitions are
-// concise enough to scan; the goal is "non-legacy 2d6 reader stops being
+// concise enough to scan; the goal is "new reader stops being
 // confused", not "complete rules reference".
 
 interface GlossaryModalProps {
@@ -71,11 +71,11 @@ const ENTRIES: readonly GlossaryEntry[] = [
   },
   {
     term: 'Bases',
-    defn: 'Per-hex installations. Naval (military fleet), Scout (courier service courier base), Research (lab outpost), Aid (pilots Aid Society lounge).',
+    defn: 'Per-hex installations. Naval (military fleet), Scout (courier courier base), Research (lab outpost), Aid (travel-aid service lounge).',
   },
   {
     term: 'Travel zone',
-    defn: 'Per-hex safety advisory. Green is unmarked, Amber warns pilots off, Red is interdicted - typically a hot war or contagion.',
+    defn: 'Per-hex safety advisory. Green is unmarked, Amber warns ships away, Red is interdicted - typically a hot war or contagion.',
   },
   {
     term: 'Jump route',

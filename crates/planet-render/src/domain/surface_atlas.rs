@@ -1,4 +1,4 @@
-//! Rust-owned surface atlas for the legacy 2d6-style icosahedral world map.
+//! Rust-owned surface atlas for the classic 2d6 icosahedral world map.
 //!
 //! The older `SurfaceMap` JSON still carries a coarse 32 x 16 compatibility
 //! grid, but the visible map now reads these stable cells. Each id is tied to

@@ -6,7 +6,7 @@
 // fraction of seeds to break the monotony of pure stems.
 //
 // The bigram lists were tuned to avoid name-sequences that read as
-// English words; the inventory leans Cepheus / legacy 2d6 flavour
+// English words; the inventory leans Cepheus flavour
 // (lots of soft consonants, no `q`, no English plurals).
 
 const CONSONANTS = [

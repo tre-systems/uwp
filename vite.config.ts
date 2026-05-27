@@ -45,7 +45,7 @@ export default defineConfig({
       manifest: {
         name: 'UWP',
         short_name: 'UWP',
-        description: 'Procedural 3D planets driven by Cepheus/legacy 2d6 UWP codes, rendered with WebGPU.',
+        description: 'Procedural 3D planets driven by Cepheus UWP codes, rendered with WebGPU.',
         theme_color: '#05070d',
         background_color: '#05070d',
         display: 'standalone',

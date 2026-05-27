@@ -33,7 +33,7 @@ describe('icosahedral surface net', () => {
 
   it('has no old diamond-hole centre in the equatorial belt', () => {
     // In the old 5x4 layout this point sat in the large black diamond
-    // between four isolated face tiles. In the connected legacy 2d6-style
+    // between four isolated face tiles. In the connected classic 2d6
     // strip it is inside the equatorial belt.
     expect(netToSphere(2.75 * TRI_SIDE, 1.5 * TRI_HEIGHT)).not.toBeNull()
   })

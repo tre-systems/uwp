@@ -462,7 +462,7 @@ describe('appState renderer command boundary', () => {
     setSubsectorHexOverride({ col: 16, row: 10 }, {
       travel_zone: 'Red',
       allegiance: 'Na',
-      bases: { naval: true, scout: false, research: true, Aid: false },
+      bases: { naval: true, scout: false, research: true, aid: false },
     })
 
     expect(getSubsectorHexOverride(99, { col: 16, row: 10 })).toMatchObject({
@@ -471,11 +471,11 @@ describe('appState renderer command boundary', () => {
     })
     expect(generatedSubsectorHex({ col: 16, row: 10 })).toMatchObject({
       travel_zone: 'Green',
-      bases: { naval: false, scout: true, research: false, Aid: false },
+      bases: { naval: false, scout: true, research: false, aid: false },
     })
     expect(currentSubsector.value?.hexes[0]).toMatchObject({
       travel_zone: 'Red',
-      bases: { naval: true, scout: false, research: true, Aid: false },
+      bases: { naval: true, scout: false, research: true, aid: false },
     })
 
     clearSubsectorHexOverride({ col: 16, row: 10 })
@@ -483,7 +483,7 @@ describe('appState renderer command boundary', () => {
     expect(getSubsectorHexOverride(99, { col: 16, row: 10 })).toBeNull()
     expect(currentSubsector.value?.hexes[0]).toMatchObject({
       travel_zone: 'Green',
-      bases: { naval: false, scout: true, research: false, Aid: false },
+      bases: { naval: false, scout: true, research: false, aid: false },
     })
 
     setSubsector(null)
@@ -688,7 +688,7 @@ function fakeSubsector(): Subsector {
           naval: false,
           scout: true,
           research: false,
-          Aid: false,
+          aid: false,
         },
         travel_zone: 'Green',
         allegiance: 'Na',

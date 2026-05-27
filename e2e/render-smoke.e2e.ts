@@ -78,7 +78,7 @@ for (const viewport of [
     await panel.getByRole('checkbox', { name: 'Research' }).check()
     await panel.getByRole('checkbox', { name: 'Aid' }).check()
     await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-research`)).toHaveCount(1)
-    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-Aid`)).toHaveCount(1)
+    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-aid`)).toHaveCount(1)
 
     const allegianceSelect = panel.getByLabel('Override allegiance')
     const nextAllegiance = await allegianceSelect.evaluate((select) => {

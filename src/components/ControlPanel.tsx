@@ -74,7 +74,7 @@ export function ControlPanel() {
               class="ghost glossary-trigger"
               onClick={() => setGlossaryOpen(true)}
               disabled={controlsDisabled}
-              title="Cepheus / legacy 2d6 glossary"
+              title="Cepheus glossary"
               aria-label="Open glossary"
             >
               ?

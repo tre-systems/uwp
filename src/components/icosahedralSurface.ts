@@ -109,7 +109,7 @@ export function buildIcosahedralSurface(opts: BuildOptions): IcosaSurface {
   type Raw = { x: number; y: number; latRad: number; lonRad: number; elev: number; faceIdx: number; upPointing: boolean }
   const raws: Raw[] = []
 
-  // A classic legacy 2d6-style icosahedral world map uses pointy-top
+  // A classic classic 2d6 icosahedral world map uses pointy-top
   // hexes clipped by the unfolded d20 faces. `N` is the approximate
   // number of hex columns across a face edge.
   const hexRadius = TRI_SIDE / (N * Math.sqrt(3))

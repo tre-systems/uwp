@@ -8,12 +8,12 @@ online Cepheus Engine play.
 - Implement Chapter 12, "Worlds", from the Cepheus Engine SRD as the game-facing
   rules layer: UWP, subsector star mapping, trade codes, bases, travel zones,
   allegiance, PBG, communication routes, and trade routes.
-- Present an attractive, functional subsector map inspired by legacy 2d6 Map, but
+- Present an attractive, functional subsector map inspired by classic sector map, but
   tuned for this app. The near-term target is a two-subsector-wide map
   (16 columns by 10 rows) so referees can see local context and cross-border
   routes without jumping between screens.
 - Keep generated solar systems coherent with modern astronomy and planetary
-  science, while nodding to Classic legacy 2d6 survey rules: Scouts through familiar
+  science, while nodding to classic survey-generation rules through familiar
   concepts such as star classes, orbital placement, gas giants, belts, worlds,
   and survey-style system data.
 - Use Rust for work that benefits from Rust: deterministic simulation,
@@ -121,7 +121,7 @@ backlog item is any visual refinement discovered on devices.
 - Generate, store, and render two adjacent subsectors as one local play region.
 - Preserve individual subsector identity while allowing routes and borders to
   cross the seam.
-- Keep the map visually close to legacy 2d6 Map conventions: legible hexes,
+- Keep the map visually close to classic sector map conventions: legible hexes,
   world dots, starports, bases, zones, names, routes, and allegiance cues.
 - Make mobile panning/zooming and desktop hover/click comfortable at the larger
   map size.
@@ -174,7 +174,7 @@ Done when:
 
 ### 6. Strengthen survey rules Style System Detail
 
-Use survey rules: Scouts as inspiration for deeper system surveys while keeping modern
+Use Survey-Style System Detail as inspiration for deeper system surveys while keeping modern
 science as the source of truth.
 
 - Expand star and companion generation outputs: spectral class, luminosity,

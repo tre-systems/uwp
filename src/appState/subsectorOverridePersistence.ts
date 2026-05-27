@@ -107,7 +107,7 @@ function normalizeBases(value: unknown): Bases | null {
     naval: record.naval === true,
     scout: record.scout === true,
     research: record.research === true,
-    Aid: record.Aid === true,
+    aid: record.aid === true,
   }
 }
 

@@ -11,7 +11,7 @@ export interface Bases {
   naval: boolean
   scout: boolean
   research: boolean
-  Aid: boolean
+  aid: boolean
 }
 
 export type TravelZone = 'Green' | 'Amber' | 'Red'

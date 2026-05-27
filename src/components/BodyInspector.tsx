@@ -3,7 +3,7 @@ import type { Planet, Star, Moon } from '../domain/system/types'
 
 // Inline expansion row for the System editor's Planets table. The compute side
 // already produced day length, mass, radius, eccentricity etc. - the inspector
-// just derives the human-facing numbers a legacy 2d6 GM actually quotes
+// just derives the human-facing numbers a Referee actually quotes
 // (year, gravity, density, escape velocity) and pulls the moon list out so it
 // stops hiding behind a count.
 

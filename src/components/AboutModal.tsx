@@ -82,7 +82,7 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
               <dt>Legal</dt>
               <dd>
                 UWP is an independent tool for original worlds. It is not
-                affiliated with legacy 2d6, third-party publishers, ultra-tech
+                affiliated with legacy 2d6, third-party publishers, third-party rightsholders
                 Enterprises, Cepheus Engine, Samardan Press, or Jason Kemp.
               </dd>
             </div>

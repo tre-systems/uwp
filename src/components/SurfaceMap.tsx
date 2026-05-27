@@ -31,7 +31,7 @@ import {
   sphereToNet,
 } from '../domain/icosahedron'
 
-// Cepheus / legacy 2d6-style icosahedral surface map.
+// Cepheus-style icosahedral surface map.
 //
 // The world is laid out as a connected net of the 20 triangular faces
 // of an icosahedron: five north-cap faces, a ten-face equatorial
@@ -192,7 +192,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
         )}
         {/* Surface cells act as an interactive atlas grid over the rendered
             pre-bake. Keep them visually quiet; the background carries the
-            photoreal terrain, the cells provide legacy 2d6-style picking. */}
+            photoreal terrain, the cells provide classic 2d6 picking. */}
         {surface && (
           <SurfaceCells
             surface={surface}

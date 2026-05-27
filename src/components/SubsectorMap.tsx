@@ -22,8 +22,8 @@ import { useRef } from 'preact/hooks'
 import { hexName, uniqueHexNames } from '../domain/names'
 import { useMapGestures } from './useMapGestures'
 
-// Subsector map styled after the classic legacy 2d6 Map
-// (https://sector-map.com): pure black field, thin grey flat-top
+// Subsector map styled after classic 2d6 sector charts: pure black field,
+// thin grey flat-top
 // hex grid, each occupied hex shows base markers across the top,
 // starport letter above a filled system dot, world name below it,
 // gas-giant / belt glyphs to the sides. Travel zones outline the hex
@@ -32,7 +32,7 @@ import { useMapGestures } from './useMapGestures'
 //
 // Geometry: FLAT-TOP hex with circumradius R. Horizontal centre step
 // = 1.5 * R, vertical centre step = sqrt(3) * R. Odd columns shift
-// DOWN by half a vertical step. Matches the legacy 2d6 Map convention
+// DOWN by half a vertical step. Matches the classic sector-map convention
 // exactly — point-east/west, flat top/bottom.
 
 const HEX_R = 34
@@ -147,7 +147,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
         aria-label={`${columns} by ${rows} subsector hex grid`}
       >
         {/* Routes sit below the hex outlines so the hex border reads as
-            the connector boundary, matching the legacy 2d6 Map look. */}
+            the connector boundary, matching the classic sector map look. */}
         {routesVisible && (
           <g class="jump-routes" aria-hidden="true">
             {visibleRoutes(subsector).map((route) => {
@@ -347,7 +347,7 @@ function HexCell({ col, row, cx, cy, hex, selected, subsectorSeed, displayName, 
       </text>
 
       {/* Gas-giant glyph: hollow ring to the right of the system dot,
-          matching the legacy 2d6 Map's "GG" indicator. */}
+          matching the sector-map "GG" indicator. */}
       {hex.gas_giant && (
         <circle
           cx={cx + HEX_R * 0.42}
@@ -388,8 +388,8 @@ function BaseMarkers({ cx, cy, bases }: { cx: number; cy: number; bases: Bases }
     markers.push({ x: nextX, y: rowY, symbol: '◆', cls: 'base-research' })
     nextX += stepX
   }
-  if (bases.Aid) {
-    markers.push({ x: nextX, y: rowY, symbol: '◯', cls: 'base-Aid' })
+  if (bases.aid) {
+    markers.push({ x: nextX, y: rowY, symbol: '◯', cls: 'base-aid' })
   }
   return (
     <>
@@ -433,7 +433,7 @@ function describe(hex: SubsectorHex): string {
   if (hex.bases.naval) flags.push('naval base')
   if (hex.bases.scout) flags.push('scout base')
   if (hex.bases.research) flags.push('research base')
-  if (hex.bases.Aid) flags.push('Aid')
+  if (hex.bases.aid) flags.push('Aid')
   const tail = flags.length > 0 ? ' (' + flags.join(', ') + ')' : ''
   return `Hex ${hexLabel(hex.coord)}: UWP ${uwpToCode(hex.uwp)}, ${hex.travel_zone} zone, allegiance ${hex.allegiance}${tail}`
 }

@@ -13,7 +13,7 @@ function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): S
     coord: { col, row },
     system_seed: 0xABCD1234,
     uwp: { starport: 'A', size: 7, atm: 8, hydro: 8, pop: 8, gov: 9, law: 9, tech: 12 },
-    bases: { naval: true, scout: true, research: false, Aid: false },
+    bases: { naval: true, scout: true, research: false, aid: false },
     travel_zone: 'Green',
     allegiance: 'ImDi',
     gas_giant: true,
@@ -89,16 +89,16 @@ describe('subsectorToText', () => {
       subsector([
         hex(1, 1, {
           travel_zone: 'Red',
-          bases: { naval: false, scout: false, research: true, Aid: true },
+          bases: { naval: false, scout: false, research: true, aid: true },
         }),
         hex(2, 2, {
           travel_zone: 'Amber',
-          bases: { naval: false, scout: false, research: false, Aid: false },
+          bases: { naval: false, scout: false, research: false, aid: false },
         }),
       ]),
     )
     const lines = text.trim().split('\n').slice(9)
-    expect(lines[0]).toMatch(/--RT/)  // research + Aid, leading hyphens preserved
+    expect(lines[0]).toMatch(/--RA/)  // research + aid, leading hyphens preserved
     expect(lines[0]).toMatch(/\sR\s/) // red zone column
     expect(lines[1]).toMatch(/\sA\s/) // amber zone column
   })
@@ -130,12 +130,12 @@ describe('subsectorToText', () => {
         system_seed: raw.hexes[0].system_seed,
         travel_zone: 'Red',
         allegiance: 'NaVa',
-        bases: { naval: false, scout: false, research: true, Aid: true },
+        bases: { naval: false, scout: false, research: true, aid: true },
       },
     })
 
     const row = subsectorToText(effective).trim().split('\n').at(-1) ?? ''
-    expect(row).toContain('--RT')
+    expect(row).toContain('--RA')
     expect(row).toMatch(/\sR\s/)
     expect(row).toMatch(/NaVa$/)
   })

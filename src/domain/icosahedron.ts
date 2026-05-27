@@ -1,4 +1,4 @@
-// Icosahedral (20-face) projection for the legacy 2d6-style world map.
+// Icosahedral (20-face) projection for the classic 2d6 world map.
 //
 // The icosahedron has 12 vertices arranged as a north pole, a south pole,
 // a "north ring" of 5 vertices at lat ≈ +26.57° and a "south ring" of 5

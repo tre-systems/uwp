@@ -11,7 +11,7 @@ import {
   type SubsectorHex,
 } from './types'
 
-// Tab-aligned plain text export, modelled on legacy 2d6-Map's "Second
+// Tab-aligned plain text export, modelled on sector-map "Second
 // Survey" sec/tab format. Columns are space-padded so the file reads
 // well in a terminal *and* round-trips through tools that expect
 // fixed-width fields.
@@ -38,13 +38,13 @@ const COLS = [
 
 function basesField(h: SubsectorHex): string {
   // Single-letter legacy 2d6 convention: Naval (N), Scout (S),
-  // Research (R), Aid (T). Hyphen fills empty slots so the column
+  // Research (R), Aid (A). Hyphen fills empty slots so the column
   // stays a stable width.
   const slots = [
     h.bases.naval ? 'N' : '-',
     h.bases.scout ? 'S' : '-',
     h.bases.research ? 'R' : '-',
-    h.bases.Aid ? 'T' : '-',
+    h.bases.aid ? 'A' : '-',
   ]
   return slots.join('').replace(/-+$/, '') || '-'
 }

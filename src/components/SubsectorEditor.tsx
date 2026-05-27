@@ -195,7 +195,7 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
   if (hex.bases.naval) baseList.push('Naval')
   if (hex.bases.scout) baseList.push('Scout')
   if (hex.bases.research) baseList.push('Research')
-  if (hex.bases.Aid) baseList.push('Aid')
+  if (hex.bases.aid) baseList.push('Aid')
   const name = systemName(hex.system_seed)
   const allegiance = allegianceForCode(subsector, hex.allegiance)
   const generatedHex = generatedSubsectorHex(hex.coord)
@@ -497,7 +497,7 @@ function RefereeOverrideControls({
             ['naval', 'Naval'],
             ['scout', 'Scout'],
             ['research', 'Research'],
-            ['Aid', 'Aid'],
+            ['aid', 'Aid'],
           ] as const).map(([field, label]) => (
             <label class="toggle-label" key={field}>
               <input

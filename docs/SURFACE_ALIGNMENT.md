@@ -51,7 +51,6 @@ References:
 - <https://www.uber.com/en-US/blog/h3/>
 - <https://proj.org/en/stable/operations/projections/isea.html>
 - <https://discreteglobalgrids.org/wp-content/uploads/2019/05/dggridManualV64.pdf>
-- <https://www.profantasy.com/products/cos3-world-map.asp>
 
 ## Current State
 

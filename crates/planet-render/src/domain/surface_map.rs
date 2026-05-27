@@ -1,4 +1,4 @@
-//! legacy 2d6-style hex world map for a single planet.
+//! classic 2d6 hex world map for a single planet.
 //!
 //! The map samples the same Rust surface pre-bake the globe uploads as its
 //! terrain atlas, then applies climate bands and Cepheus settlement rules.

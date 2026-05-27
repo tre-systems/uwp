@@ -1488,7 +1488,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Pure black field matches the canonical legacy 2d6 Map look and
+  /* Pure black field matches the classic sector-map look and
      keeps the hex grid + jump-route greens as the only chromatic
      content on the page. */
   background: #000000;
@@ -1527,12 +1527,12 @@ label.color input[type="color"]::-webkit-color-swatch {
   text-align: center;
 }
 
-/* Subsector hex map - styled after the classic legacy 2d6 Map. The
+/* Subsector hex map - styled after classic 2d6 sector charts. The
    background sits on the .subsector-overlay (true black); the hex
    shapes contribute only their thin grey outline. Selection draws an
    accent ring; travel zones (Amber / Red) become a coloured stroke
    ring on the hex shape itself rather than a fill, matching the
-   legacy 2d6 Map's visual vocabulary. */
+   sector-map visual vocabulary. */
 .hex-cell .hex-shape {
   stroke: rgba(255, 255, 255, 0.22);
   stroke-width: 0.8;
@@ -1605,7 +1605,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-width: 1.8;
 }
 /* Travel zones render as a separate concentric hex ring drawn inset
-   from the hex outline, matching the canonical legacy 2d6 Map. The
+   from the hex outline, matching the classic sector-map treatment. The
    grey grid stays continuous behind the ring. */
 .hex-zone-ring {
   fill: none;
@@ -1625,7 +1625,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-linecap: round;
 }
 .jump-route-1 {
-  /* Bright green to match the canonical legacy 2d6 Map's main lines. */
+  /* Bright green to match the canonical sector-map main lines. */
   stroke: rgba(78, 200, 102, 0.85);
   stroke-width: 1.6;
 }
@@ -1731,7 +1731,7 @@ label.color input[type="color"]::-webkit-color-swatch {
 .base-naval { fill: #ffffff; }
 .base-scout { fill: rgba(255, 215, 140, 1); }
 .base-research { fill: rgba(170, 230, 255, 1); }
-.base-Aid { fill: rgba(255, 200, 230, 1); }
+.base-aid { fill: rgba(255, 200, 230, 1); }
 
 /* Surface map ------------------------------------------------------*/
 .surface-map {
