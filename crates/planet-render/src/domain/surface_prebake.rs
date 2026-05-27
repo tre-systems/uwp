@@ -455,10 +455,11 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
             let conv_self = dot(plate.drift, dir_to_other);
             let conv_other = dot(other.drift, neg(dir_to_other));
             let convergence = (conv_self + conv_other) * 0.5;
-            // Boundary weight is strongest at the edge where the two
-            // plates' nearest distances are nearly equal.
-            let boundary_w = (1.0 - edge).powf(2.0);
-            h += convergence * 0.55 * boundary_w;
+            // Boundary weight is strongest where two plates meet. A softer
+            // falloff and lower amplitude keep ridges from reading as aliased
+            // grid lines when the atlas is sampled on the close-up globe.
+            let boundary_w = smoothstep_range(0.72, 0.98, 1.0 - edge);
+            h += convergence * 0.34 * boundary_w;
 
             // Multi-octave value noise for texture on top. A second,
             // lower-frequency warped continent signal breaks up plate-shaped
@@ -494,6 +495,7 @@ fn generate_uncached(input: &BakeInput) -> PreBake {
     sea_level = quantile_height(&heightmap, water_fraction);
 
     apply_fluvial_erosion_proxy(&mut heightmap, lon_cells, lat_cells, sea_level, input);
+    soften_heightmap_grid(&mut heightmap, lon_cells, lat_cells);
     sea_level = quantile_height(&heightmap, water_fraction);
 
     // Second pass: moisture and temperature need elevation + sea_level
@@ -657,6 +659,29 @@ fn apply_fluvial_erosion_proxy(
             heightmap[idx] = (heightmap[idx] - carve).clamp(-1.0, 1.0);
         }
     }
+}
+
+/// Gentle cross blur to remove single-texel stairsteps from the lat/lon bake
+/// without washing out continent-scale structure.
+fn soften_heightmap_grid(heightmap: &mut [f32], lon_cells: usize, lat_cells: usize) {
+    let mut scratch = heightmap.to_vec();
+    for i in 0..lat_cells {
+        let i_up = i.saturating_sub(1);
+        let i_dn = (i + 1).min(lat_cells - 1);
+        for j in 0..lon_cells {
+            let j_l = (j + lon_cells - 1) % lon_cells;
+            let j_r = (j + 1) % lon_cells;
+            let idx = i * lon_cells + j;
+            let blurred = (heightmap[idx] * 2.0
+                + heightmap[i * lon_cells + j_l]
+                + heightmap[i * lon_cells + j_r]
+                + heightmap[i_up * lon_cells + j]
+                + heightmap[i_dn * lon_cells + j])
+                / 6.0;
+            scratch[idx] = heightmap[idx] * 0.62 + blurred * 0.38;
+        }
+    }
+    heightmap.copy_from_slice(&scratch);
 }
 
 fn apply_coastline_breakup(
@@ -1030,7 +1055,7 @@ fn soft_plate_elevation(plates: &[Plate], p: [f32; 3]) -> f32 {
     let mut total = 0.0;
     for plate in plates {
         let d = (1.0 - dot(plate.centre, p)).max(0.0);
-        let w = 1.0 / (d + 0.035).powf(1.65);
+        let w = 1.0 / (d + 0.048).powf(1.55);
         weighted += plate.mean_elev * w;
         total += w;
     }

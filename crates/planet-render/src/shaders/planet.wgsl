@@ -258,12 +258,35 @@ fn terrain_field(dir: vec3<f32>) -> f32 {
     return mix(h0, h1, fi);
 }
 
+// Wider footprint for slope normals at close zoom — hides atlas texel stairsteps
+// and sharp tectonic ridges without changing the colour height sample.
+fn terrain_field_smoothed(dir: vec3<f32>, blend: f32) -> f32 {
+    let center = terrain_field(dir);
+    if (blend <= 0.001) {
+        return center;
+    }
+    let helper = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir.y) > 0.95);
+    let tangent = normalize(cross(helper, dir));
+    let bitangent = normalize(cross(dir, tangent));
+    let d = 0.0038 * blend;
+    var acc = center;
+    acc += terrain_field(normalize(dir + tangent * d));
+    acc += terrain_field(normalize(dir - tangent * d));
+    acc += terrain_field(normalize(dir + bitangent * d));
+    acc += terrain_field(normalize(dir - bitangent * d));
+    return acc * 0.2;
+}
+
 fn relief_above_sea(h: f32, sea_h: f32) -> f32 {
+    return relief_above_sea_ramp(h, sea_h, 0.14);
+}
+
+fn relief_above_sea_ramp(h: f32, sea_h: f32, ramp: f32) -> f32 {
     let above = max(h - sea_h, 0.0);
     // Ease the first stretch of coastline into the base sphere so the
     // pre-baked waterline does not create a visible vertical wall on the mesh.
     // Wider ramp hides atlas texel stairsteps at close zoom.
-    return above * smoothstep(0.0, 0.14, above);
+    return above * smoothstep(0.0, ramp, above);
 }
 
 // Sub-texel visual coastline detail. The Rust atlas owns the continental
@@ -748,13 +771,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sea_h = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
     let quality = u.misc.w;
+    let view_dist = length(u.camera_pos.xyz) / max(u.resolution.w, 0.001);
+    let close_zoom = smoothstep(2.8, 1.35, view_dist);
     let raw_h = terrain_field(dir);
     let coast_amp = mix(0.055, 0.075, quality);
     let h = clamp(raw_h + coastline_detail(dir, raw_h, sea_h) * coast_amp, -1.0, 1.0);
     let water_delta = h - sea_h;
     // Continuous land/ocean weight — replaces the old hard threshold that
     // produced single-pixel stairsteps and binary normal switching at coasts.
-    let land_factor = smoothstep(-0.04, 0.04, water_delta);
+    let coast_band = mix(0.04, 0.075, close_zoom);
+    let land_factor = smoothstep(-coast_band, coast_band, water_delta);
     // Normalised height above sea level in roughly [0, 1] regardless of sea_h,
     // so biome thresholds (alpine, snow_alt) keep working at desert worlds
     // (very low sea_h) and water worlds (very high sea_h).
@@ -772,12 +798,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var land_normal = dir;
     var ocean_normal = dir;
     if (quality > 0.45) {
-        let eps = 0.0025;
+        let relief_ramp = mix(0.14, 0.24, close_zoom);
+        let terrain_smooth = close_zoom * 0.9;
+        let eps = mix(0.0025, 0.0050, close_zoom);
         let h0 = h;
-        let ht = terrain_field(normalize(dir + tangent * eps));
-        let hb = terrain_field(normalize(dir + bitangent * eps));
-        let dx = (relief_above_sea(ht, sea_h) - relief_above_sea(h0, sea_h)) * mountain_amp / (eps * above_range);
-        let dy = (relief_above_sea(hb, sea_h) - relief_above_sea(h0, sea_h)) * mountain_amp / (eps * above_range);
+        let ht = terrain_field_smoothed(normalize(dir + tangent * eps), terrain_smooth);
+        let hb = terrain_field_smoothed(normalize(dir + bitangent * eps), terrain_smooth);
+        let dx = (relief_above_sea_ramp(ht, sea_h, relief_ramp) - relief_above_sea_ramp(h0, sea_h, relief_ramp)) * mountain_amp / (eps * above_range);
+        let dy = (relief_above_sea_ramp(hb, sea_h, relief_ramp) - relief_above_sea_ramp(h0, sea_h, relief_ramp)) * mountain_amp / (eps * above_range);
         land_normal = normalize(dir - tangent * dx - bitangent * dy);
         slope = 1.0 - clamp(dot(land_normal, dir), 0.0, 1.0);
         // Fine-scale land detail — perturbs the lit normal so flat plateaus pick
@@ -803,8 +831,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Soft terminator penumbra — real sun discs subtend ~0.5°; widen the band
     // when the camera is close so mesh facets do not read as a jagged cut.
     let n_dot_l_raw = dot(world_normal, sun_dir);
-    let view_dist = length(u.camera_pos.xyz) / max(u.resolution.w, 0.001);
-    let close_zoom = smoothstep(2.8, 1.35, view_dist);
     let term_low = -0.05 - close_zoom * 0.08;
     let term_high = 0.08 + close_zoom * 0.06;
     let n_dot_l = smoothstep(term_low, term_high, n_dot_l_raw);
@@ -922,7 +948,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             // Feather land into shallow water colour over a wider band so
             // the continuous land_factor blend does not reveal atlas stairs.
             let shore_water = mix(u.ocean_color.rgb * 1.50, vec3<f32>(0.35, 0.78, 0.78), 0.32);
-            let shore_feather = 1.0 - smoothstep(0.0, 0.045, water_delta);
+            let shore_feather = 1.0 - smoothstep(0.0, mix(0.045, 0.08, close_zoom), water_delta);
             land_surface = mix(land_surface, shore_water, shore_feather * 0.32);
         }
 
@@ -932,7 +958,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // elevation + low latitude. No biome flag.
         if (veg_richness > 0.10 && u.planet_params.x > 0.20) {
             let river_n = ridged_fbm(dir * 16.0 + u.seed_block.xyz + vec3<f32>(91.0, -17.0, 41.0), 3);
-            let river_line = smoothstep(0.88, 0.96, river_n);
+            let river_line = smoothstep(mix(0.88, 0.83, close_zoom), mix(0.96, 0.92, close_zoom), river_n);
             let in_valley  = 1.0 - smoothstep(0.0, 0.15, slope);
             let lowland    = 1.0 - smoothstep(0.05, 0.40, above_amt_n);
             let temperate  = 1.0 - smoothstep(0.62, 0.85, lat);
