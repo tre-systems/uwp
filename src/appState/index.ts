@@ -251,6 +251,16 @@ export function setSystemSnapshot(system: SolarSystem | null) {
   if (!targetExists(system, detailTarget.value)) {
     detailTarget.value = null
   }
+  // Hex deep links set `systemSeed` to the chart seed, which equals
+  // `system.seed` and would otherwise infer the primary star in Detail.
+  if (
+    system &&
+    selectedHex.value &&
+    detailTarget.value == null &&
+    (params.value.seed >>> 0) === (system.seed >>> 0)
+  ) {
+    focusMainWorldDetail()
+  }
 }
 
 export function setParamsSnapshot(nextParams: Params) {
@@ -514,7 +524,7 @@ function applySubsectorUwp(hexUwp: SubsectorUwp, seed: number): void {
     tech: hexUwp.tech,
   })
   uwp.value = nextUwp
-  setParams({ ...params.value, ...paramsPatchFromUwpDigits(nextUwp), seed })
+  setParams({ ...params.value, ...paramsPatchFromUwpDigits(nextUwp) })
 }
 
 /** Apply the selected subsector hex UWP when the chart seed matches that hex. */

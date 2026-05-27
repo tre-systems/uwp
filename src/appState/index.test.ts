@@ -190,6 +190,29 @@ describe('appState renderer command boundary', () => {
     viewMode.value = initialView
   })
 
+  it('focuses the main world after a hex system loads when params still carry the system seed', () => {
+    const initialParams = { ...params.value }
+    const system = {
+      ...fakeSystem(),
+      seed: 0x12345678,
+      main_world: 0,
+      planets: [
+        fakePlanet({ seed: 0xABCDEF01, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 288 }),
+      ],
+    }
+    setSelectedHex({ col: 16, row: 10 })
+    setParamsSnapshot({ ...initialParams, seed: 0x12345678 })
+
+    setSystemSnapshot(system)
+
+    expect(detailTarget.value).toBeNull()
+    expect(params.value.seed).toBe(0xABCDEF01)
+
+    setSelectedHex(null)
+    setSystemSnapshot(null)
+    setParamsSnapshot(initialParams)
+  })
+
   it('syncs UWP from a deep-linked hex once the subsector loads', () => {
     const initialParams = { ...params.value }
     const initialUwp = { ...uwp.value }
@@ -211,8 +234,6 @@ describe('appState renderer command boundary', () => {
       law: 7,
       tech: 8,
     })
-    expect(params.value.seed).toBe(0x12345678)
-
     setSubsector(null)
     setParamsSnapshot(initialParams)
     uwp.value = initialUwp
@@ -426,7 +447,6 @@ describe('appState renderer command boundary', () => {
       tech: 8,
     })
     expect(received).toMatchObject({
-      seed: 0x12345678,
       planet_radius: 0.5,
       atmosphere_density: 0.18,
       sea_level: 0.2,
