@@ -265,6 +265,22 @@ fn relief_above_sea(h: f32, sea_h: f32) -> f32 {
     return above * smoothstep(0.0, 0.08, above);
 }
 
+// Sub-texel visual coastline detail. The Rust atlas owns the continental
+// masses and water fraction; this perturbation only acts in a narrow band
+// around the sea threshold so large-scale map / globe alignment stays intact
+// while close-up coast and pack-ice edges do not reveal atlas-cell stair steps.
+fn coastline_detail(dir: vec3<f32>, raw_h: f32, sea_h: f32) -> f32 {
+    let band = 1.0 - smoothstep(0.018, 0.185, abs(raw_h - sea_h));
+    if (band <= 0.001) {
+        return 0.0;
+    }
+    let seed = u.seed_block.xyz;
+    let coves = fbm(dir * 18.0 + seed + vec3<f32>(23.0, -71.0, 11.0), 3);
+    let fjords = ridged_fbm(dir * 38.0 + seed + vec3<f32>(-17.0, 101.0, 47.0), 2) - 0.48;
+    let islands = fbm(dir * 72.0 + seed + vec3<f32>(83.0, 5.0, -29.0), 2);
+    return (coves * 0.58 + fjords * 0.32 + islands * 0.10) * band;
+}
+
 // Sample the canonical biome id for a sphere direction. Categorical, so
 // nearest-neighbour — used for biome flags (alpine / snow / desert) and
 // for the slope-rock and lighting masks. Per-cell colour blending uses
@@ -634,16 +650,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let lit_ast = ast * (ambient + base_n_dot_l * 0.95) + u.sand_color.rgb * rim * 0.040;
         return vec4(lit_ast, 1.0);
     }
-    let h = terrain_field(dir);
     let sea_h = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
-    let above_water = h > sea_h;
+    let quality = u.misc.w;
+    let raw_h = terrain_field(dir);
+    let coast_amp = mix(0.045, 0.065, quality);
+    let h = clamp(raw_h + coastline_detail(dir, raw_h, sea_h) * coast_amp, -1.0, 1.0);
+    let water_delta = h - sea_h;
+    let above_water = water_delta > 0.0;
     // Normalised height above sea level in roughly [0, 1] regardless of sea_h,
     // so biome thresholds (alpine, snow_alt) keep working at desert worlds
     // (very low sea_h) and water worlds (very high sea_h).
     let above_range = max(1.0 - sea_h, 0.0001);
     let above_amt = max(h - sea_h, 0.0) / above_range;
-    let quality = u.misc.w;
 
     // Build a tangent frame from the sphere direction so we can do finite-difference
     // gradients on the terrain field. We pick an arbitrary helper vector and project.
@@ -729,7 +748,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // gradient: bright sandy coast → biome interior → rocky highlands.
         // Continuous smoothsteps (not biome flags) so the transition
         // is gradient-driven — no cell-aligned edges.
-        let coast_t = smoothstep(0.0, 0.025, above_amt_n);
+        let coast_t = smoothstep(0.0, 0.035, above_amt_n);
         let alpine_t = smoothstep(0.35, 0.70, above_amt_n);
         // Pull coastline tones toward sand — but the biome already
         // accounts for ice / volcanic via its colour, so this just
@@ -797,6 +816,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let beach = 1.0 - smoothstep(0.0, 0.012, above_amt_n);
             let beach_color = mix(u.sand_color.rgb, vec3<f32>(0.98, 0.92, 0.74), 0.45);
             surface = mix(surface, beach_color, beach * 0.75);
+            // Feather the first few visible pixels of land into shallow
+            // water colour. This hides single-pixel binary thresholding at
+            // the waterline and makes islands read like satellite imagery.
+            let shore_water = mix(u.ocean_color.rgb * 1.50, vec3<f32>(0.35, 0.78, 0.78), 0.32);
+            let shore_feather = 1.0 - smoothstep(0.0, 0.018, water_delta);
+            surface = mix(surface, shore_water, shore_feather * 0.28);
         }
 
         // --- Rivers ---
@@ -840,11 +865,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // cells meeting at a texel boundary. Bright turquoise reef
         // tint where depth is sub-shelf.
         let depth = sea_h - h;
+        let shelf_noise = fbm(dir * 7.0 + u.seed_block.xyz + vec3<f32>(-137.0, 19.0, 61.0), 3);
+        let reef_noise = ridged_fbm(dir * 21.0 + u.seed_block.xyz + vec3<f32>(31.0, -53.0, 127.0), 2) - 0.50;
+        let shelf_band = 1.0 - smoothstep(0.10, 0.72, depth);
+        let visual_depth = max(0.0, depth + (shelf_noise * 0.70 + reef_noise * 0.30) * shelf_band * 0.055);
         let turquoise = mix(u.ocean_color.rgb * 1.55, vec3<f32>(0.35, 0.78, 0.78), 0.35);
         let open_ocean = u.ocean_color.rgb * 0.72;
         let deep = u.ocean_color.rgb * 0.52;
-        var water = mix(turquoise, open_ocean, smoothstep(0.0, 0.10, depth));
-        water = mix(water, deep, smoothstep(0.35, 0.90, depth) * 0.35);
+        let shallow = pow(1.0 - smoothstep(0.0, 0.18, visual_depth), 3.0);
+        let reef_mottle = clamp(0.62 + shelf_noise * 0.25 + reef_noise * 0.22, 0.0, 1.0);
+        var water = open_ocean;
+        // Keep bathymetry subtle. Strong two-tone shelves made the
+        // low-tier atlas read as straight polygons at close zoom; real
+        // ocean colour changes gradually except at tiny reef scales.
+        water = mix(water, turquoise, shallow * (0.12 + reef_mottle * 0.18));
+        water = water * (0.98 + shelf_noise * 0.020 + reef_noise * 0.018);
+        water = mix(water, deep, smoothstep(0.55, 1.05, visual_depth) * 0.12);
         surface = water;
         // Polar pack-ice — continuous latitude blend. No biome flag.
         let ice_lat = u.seed_block.w;

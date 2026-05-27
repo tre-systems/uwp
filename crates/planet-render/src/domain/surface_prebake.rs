@@ -47,12 +47,12 @@ pub const PREBAKE_LAT: usize = 512;
 /// (4 bytes/cell) and the biome/moisture/temp companions scale
 /// linearly with cell count, so weak devices use a smaller atlas while
 /// capable devices use the canonical 1024 x 512 atlas. The low tier is
-/// deliberately higher than CSS-phone resolution: 512 x 256 created
-/// visibly blocky coast and ice boundaries on large tablets when the
-/// renderer downshifted. A 768 x 384 atlas is still much cheaper than
-/// canonical while keeping zoomed globe surfaces presentable.
-pub const PREBAKE_LOW_LON: usize = 768;
-pub const PREBAKE_LOW_LAT: usize = 384;
+/// deliberately close to canonical: 512 x 256 and 768 x 384 both
+/// produced visibly blocky coast / ice boundaries on large tablets once
+/// the camera zoomed in. 960 x 480 still trims upload + bake cost, but
+/// leaves enough samples for a full-viewport globe.
+pub const PREBAKE_LOW_LON: usize = 960;
+pub const PREBAKE_LOW_LAT: usize = 480;
 const LRU_CAPACITY: usize = 4;
 
 /// Map a 0..1 render-quality scalar to a (lon, lat) atlas resolution.
