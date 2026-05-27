@@ -628,7 +628,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         dir = surface_dir_from_screen(in.position.xy, mesh_dir);
     }
     let base_world_normal = normalize((u.model * vec4<f32>(dir, 0.0)).xyz);
-    let base_view_dir = normalize(u.camera_pos.xyz - in.world_pos);
+    let base_radius = u.resolution.w;
+    let analytic_world_pos = (u.model * vec4<f32>(dir * base_radius, 1.0)).xyz;
+    let base_surface_pos = select(in.world_pos, analytic_world_pos, body_kind <= 2.5);
+    let base_view_dir = normalize(u.camera_pos.xyz - base_surface_pos);
     let sun_dir = normalize(u.sun_dir.xyz);
     let base_n_dot_l = max(dot(base_world_normal, sun_dir), 0.0);
     if (body_kind > 1.5 && body_kind < 2.5) {
@@ -686,7 +689,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let detail_a = fbm(dir * 55.0 + u.seed_block.xyz, 2);
         let detail_b = fbm(dir * 55.0 + u.seed_block.xyz + vec3<f32>(13.7, 0.0, 0.0), 2);
         local_normal = normalize(local_normal + tangent * detail_a * 0.025 + bitangent * detail_b * 0.025);
-    } else if (!above_water && quality > 0.45) {
+    } else if (!above_water && quality > 0.55) {
         // Wave shimmer — subtle moving normal perturbation gives the ocean
         // surface life and lets the sun specular scatter into a wider, more
         // believable highlight rather than a single dot.
@@ -704,8 +707,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let world_normal = normalize((u.model * vec4<f32>(local_normal, 0.0)).xyz);
 
+    let surface_radius = base_radius + relief_above_sea(raw_h, sea_h) * mountain_amp * base_radius;
+    let surface_world_pos = (u.model * vec4<f32>(dir * surface_radius, 1.0)).xyz;
     let n_dot_l = max(dot(world_normal, sun_dir), 0.0);
-    let view_dir = normalize(u.camera_pos.xyz - in.world_pos);
+    let view_dir = normalize(u.camera_pos.xyz - surface_world_pos);
 
     // Latitude proxy: |y| component of unrotated direction (poles at top/bottom).
     let lat = abs(dir.y);
@@ -865,22 +870,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // cells meeting at a texel boundary. Bright turquoise reef
         // tint where depth is sub-shelf.
         let depth = sea_h - h;
-        let shelf_noise = fbm(dir * 7.0 + u.seed_block.xyz + vec3<f32>(-137.0, 19.0, 61.0), 3);
-        let reef_noise = ridged_fbm(dir * 21.0 + u.seed_block.xyz + vec3<f32>(31.0, -53.0, 127.0), 2) - 0.50;
-        let shelf_band = 1.0 - smoothstep(0.10, 0.72, depth);
-        let visual_depth = max(0.0, depth + (shelf_noise * 0.70 + reef_noise * 0.30) * shelf_band * 0.055);
         let turquoise = mix(u.ocean_color.rgb * 1.55, vec3<f32>(0.35, 0.78, 0.78), 0.35);
         let open_ocean = u.ocean_color.rgb * 0.72;
-        let deep = u.ocean_color.rgb * 0.52;
-        let shallow = pow(1.0 - smoothstep(0.0, 0.18, visual_depth), 3.0);
-        let reef_mottle = clamp(0.62 + shelf_noise * 0.25 + reef_noise * 0.22, 0.0, 1.0);
-        var water = open_ocean;
-        // Keep bathymetry subtle. Strong two-tone shelves made the
-        // low-tier atlas read as straight polygons at close zoom; real
-        // ocean colour changes gradually except at tiny reef scales.
-        water = mix(water, turquoise, shallow * (0.12 + reef_mottle * 0.18));
-        water = water * (0.98 + shelf_noise * 0.020 + reef_noise * 0.018);
-        water = mix(water, deep, smoothstep(0.55, 1.05, visual_depth) * 0.12);
+        let ocean_grain = fbm(dir * 18.0 + u.seed_block.xyz + vec3<f32>(-137.0, 19.0, 61.0), 2);
+        let shallow = pow(1.0 - smoothstep(0.0, 0.012, depth), 2.0);
+        // Low-power tablet views need clean water more than speculative
+        // bathymetry. Broad depth tint exposed atlas/grid geometry at close
+        // zoom, so only a narrow shore tint remains here.
+        var water = open_ocean * (0.985 + ocean_grain * 0.018);
+        let shallow_tint = select(0.0, shallow * 0.14, quality > 0.55);
+        water = mix(water, turquoise, shallow_tint);
         surface = water;
         // Polar pack-ice — continuous latitude blend. No biome flag.
         let ice_lat = u.seed_block.w;
@@ -898,9 +897,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), 3);
     let dirt_hi  = fbm(dir * 26.0 + u.seed_block.xyz + vec3<f32>(7.0, 53.0, -113.0), 2);
     let warm_dirt = vec3<f32>(1.06, 0.97, 0.86);
-    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * select(0.08, 0.14, above_water);
+    // Keep oceans clean at low quality. Broad low-frequency grain over water
+    // reads as square GPU/noise tiles when the user zooms in; land still gets
+    // enough variation to avoid flat-fill continents.
+    let patch_amt = smoothstep(0.0, 0.4, dirt_low) * select(0.015, 0.14, above_water);
     surface = mix(surface, surface * warm_dirt, patch_amt);
-    surface = surface * (1.0 + dirt_hi * select(0.04, 0.07, above_water));
+    surface = surface * (1.0 + dirt_hi * select(0.012, 0.07, above_water));
 
     // ---------- Cloud noise (3-layer system) ----------
     // Three distinct layers at different altitudes, each with its own scale,
@@ -1003,13 +1005,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // instead of soft cotton-candy fuzz.
     let cloud_low  = mix(0.85, 0.30, coverage);
     let cloud_high = mix(1.02, 0.50, coverage);
-    let cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
+    var cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
+    if (quality <= 0.55) {
+        cloud_density = 0.0;
+    }
 
     // Cast a soft shadow from clouds onto the surface by sampling the cloud
     // field offset toward the sun in local frame. Reuse the same warp so the
     // shadow tracks the actual cloud shape rather than the unwarped field.
     var shadow_factor = 1.0;
-    if (quality > 0.45) {
+    if (quality > 0.55) {
         let cloud_shadow_dir = normalize(dir + sun_dir_local * 0.035) + cloud_warp + swirl_vec + vortex_disp;
         let cloud_p_shadow   = cloud_shadow_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
         let cloud_raw_shadow = fbm(cloud_p_shadow, 4) * 0.5 + 0.5;

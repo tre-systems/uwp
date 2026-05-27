@@ -11,7 +11,7 @@ test('detail and system views render with quality controls', async ({ page }) =>
   await selectQuality(panel, 'Low')
   await expect(panel.locator('.perf-profile')).toContainText('Low')
   await expect(panel.locator('.perf-fps-meta')).toContainText('target 30')
-  await expect(panel.locator('.perf-grid')).toContainText('35%')
+  await expect(panel.locator('.perf-grid')).toContainText('55%')
   const lowCanvas = await canvasSize(panel)
   expect(lowCanvas.width).toBeGreaterThan(0)
   expect(lowCanvas.height).toBeGreaterThan(0)

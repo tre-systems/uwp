@@ -60,8 +60,12 @@ const LOW: RenderProfile = {
   dprCap: 1,
   maxPixels: 1_000_000,
   targetFps: 30,
-  shaderQuality: 0.35,
-  meshQuality: 0.45,
+  shaderQuality: 0.55,
+  // Keep geometry crisp even when pixels/shader work downshift.
+  // Coarse mesh LOD creates visible rectangular patches when users zoom
+  // into the globe on tablets, which is more objectionable than the
+  // modest vertex cost saved by the old 0.45 setting.
+  meshQuality: 1,
 }
 
 const PROFILES: Record<RenderProfileName, RenderProfile> = {

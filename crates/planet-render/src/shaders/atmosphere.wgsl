@@ -133,7 +133,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     let t_start = max(t_atmo.x, 0.0);
     var t_end = select(t_atmo.y, t_planet.x, hit_planet);
-    t_end = min(t_end, scene_dist);
+    // Planet pixels should use the same analytic sphere endpoint as the
+    // scattering ray. The depth texture contains the tessellated cubesphere,
+    // and at close zoom its face/depth quantisation can otherwise tint oceans
+    // as large rectangular patches. Still respect genuinely closer scene
+    // geometry, such as moons or rings in front of the atmosphere shell.
+    let foreground_scene = scene_dist < (t_end - r_planet * 0.05);
+    if (!hit_planet || foreground_scene) {
+        t_end = min(t_end, scene_dist);
+    }
     if (t_end <= t_start) {
         return vec4<f32>(agx(planet_color), 1.0);
     }
