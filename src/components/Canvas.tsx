@@ -12,10 +12,12 @@ import { RendererClient } from '../rendererClient'
 // canvas-agnostic.
 
 const HOVER_THROTTLE_MS = 50
+const PICK_DRAG_THRESHOLD_PX = 8
 
 export function Canvas() {
   const ref = useRef<HTMLCanvasElement>(null)
   const lastHoverPick = useRef<{ x: number; y: number; t: number }>({ x: 0, y: 0, t: 0 })
+  const pointerDown = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const canvas = ref.current!
@@ -49,12 +51,25 @@ export function Canvas() {
 
     function onLeave() {
       setHoverTarget(null)
+      pointerDown.current = null
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (viewMode.value !== 'system' || e.button !== 0) return
+      const { x, y } = canvasPoint(e)
+      pointerDown.current = { x, y }
     }
 
     function onPointerUp(e: PointerEvent) {
       if (viewMode.value !== 'system') return
       if (e.button !== 0) return
+      const start = pointerDown.current
+      pointerDown.current = null
+      if (!start) return
       const { x, y } = canvasPoint(e)
+      const dx = x - start.x
+      const dy = y - start.y
+      if (dx * dx + dy * dy > PICK_DRAG_THRESHOLD_PX * PICK_DRAG_THRESHOLD_PX) return
       const target = pickSystemBody(x, y, performance.now())
       if (target != null) {
         focusSystemTarget(target)
@@ -63,11 +78,13 @@ export function Canvas() {
 
     canvas.addEventListener('pointermove', onMove)
     canvas.addEventListener('pointerleave', onLeave)
+    canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('pointerup', onPointerUp)
 
     return () => {
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerleave', onLeave)
+      canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointerup', onPointerUp)
       setHoverTarget(null)
       client.dispose()

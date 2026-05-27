@@ -1,4 +1,5 @@
 import { Breadcrumb } from './components/Breadcrumb'
+import { ChartShellActions } from './components/ChartShellActions'
 import { Canvas } from './components/Canvas'
 import { ControlPanel } from './components/ControlPanel'
 import { LoadingOverlay } from './components/LoadingOverlay'
@@ -65,6 +66,7 @@ export function App() {
         <HoverTooltip />
       </main>
       <Breadcrumb />
+      <ChartShellActions />
       <ViewModeToggle />
       <ControlPanel />
       <RegionView />

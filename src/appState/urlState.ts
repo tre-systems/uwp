@@ -4,6 +4,7 @@ import { resolvedDetailTarget } from '../navigation/bodyView'
 import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
 import type { SurfaceHexCoord } from '../domain/surfaceMap'
 import {
+  closeRegionView,
   currentSubsector,
   currentSurfaceMap,
   currentSystem,
@@ -13,8 +14,10 @@ import {
   regionHex,
   selectAndFocusSurfaceHex,
   selectedHex,
+  selectedSurfaceCell,
   selectedSurfaceHex,
   selectedSurfacePlanetIndex,
+  setDetailTarget,
   setSelectedHex,
   setSubsectorSeed,
   setSystemSeed,
@@ -44,6 +47,7 @@ interface ParsedState {
   body?: SystemBodyTarget
   surfaceHex?: SurfaceHexCoord
   view?: ViewMode
+  keys: Set<string>
 }
 
 const VALID_VIEWS: readonly ViewMode[] = ['subsector', 'system', 'detail', 'surface']
@@ -58,10 +62,14 @@ export function hasPendingDetailBody(): boolean {
 }
 
 function parseHash(hash: string): ParsedState {
-  const out: ParsedState = {}
+  const keys = new Set<string>()
+  const out: ParsedState = { keys }
   const stripped = hash.replace(/^#/, '')
   if (!stripped) return out
   const params = new URLSearchParams(stripped)
+  for (const key of params.keys()) {
+    keys.add(key)
+  }
   const sub = params.get('sub')
   if (sub) {
     const n = parseSeed(sub)
@@ -138,17 +146,47 @@ function buildHash(): string {
   return params.toString()
 }
 
+/** Write the current chart address into the URL immediately (no debounce). */
+export function flushChartUrlHash(): void {
+  if (typeof window === 'undefined') return
+  const next = `#${buildHash()}`
+  if (window.location.hash !== next) {
+    window.history.replaceState(null, '', next)
+  }
+}
+
 /** Apply the URL hash to live signals. Called once at boot. */
 export function loadUrlState(): void {
   if (typeof window === 'undefined') return
   const parsed = parseHash(window.location.hash)
+  const { keys } = parsed
+
   pendingDetailBody = null
   pendingSurfaceHex = null
+  closeRegionView()
+
   if (parsed.subsectorSeed != null) setSubsectorSeed(parsed.subsectorSeed)
   if (parsed.systemSeed != null) setSystemSeed(parsed.systemSeed)
-  if (parsed.hex) setSelectedHex(parsed.hex)
-  if (parsed.body) pendingDetailBody = parsed.body
-  if (parsed.surfaceHex) pendingSurfaceHex = parsed.surfaceHex
+
+  if (keys.has('hex') && parsed.hex) {
+    setSelectedHex(parsed.hex)
+  } else if (keys.has('hex')) {
+    setSelectedHex(null)
+  }
+
+  if (keys.has('body') && parsed.body) {
+    pendingDetailBody = parsed.body
+  } else if (keys.has('body')) {
+    setDetailTarget(null)
+  }
+
+  if (keys.has('surface') && parsed.surfaceHex) {
+    pendingSurfaceHex = parsed.surfaceHex
+  } else if (keys.has('surface')) {
+    selectedSurfaceHex.value = null
+    selectedSurfaceCell.value = null
+  }
+
   if (parsed.view) setViewMode(parsed.view)
 }
 
@@ -219,10 +257,7 @@ export function installUrlStateMirror(): void {
     if (pending != null) window.clearTimeout(pending)
     pending = window.setTimeout(() => {
       pending = null
-      const next = `#${buildHash()}`
-      if (window.location.hash !== next) {
-        window.history.replaceState(null, '', next)
-      }
+      flushChartUrlHash()
     }, 80)
   })
 

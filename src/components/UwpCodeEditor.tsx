@@ -15,6 +15,14 @@ export function UwpCodeEditor({ codeText, disabled, onCodeChange }: UwpCodeEdito
     setDraftCode(codeText)
   }, [codeText])
 
+  const commit = () => {
+    if (parseUwpDigits(draftCode) != null) {
+      onCodeChange(draftCode)
+    } else {
+      setDraftCode(codeText)
+    }
+  }
+
   return (
     <section>
       <h2>UWP code</h2>
@@ -27,12 +35,19 @@ export function UwpCodeEditor({ codeText, disabled, onCodeChange }: UwpCodeEdito
           spellcheck={false}
           autocapitalize="characters"
           placeholder="A867974-D"
-          onInput={(e) => {
-            const v = (e.currentTarget as HTMLInputElement).value
-            setDraftCode(v)
-            onCodeChange(v)
+          onInput={(e) => setDraftCode((e.currentTarget as HTMLInputElement).value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commit()
+              ;(e.currentTarget as HTMLInputElement).blur()
+            } else if (e.key === 'Escape') {
+              e.stopPropagation()
+              setDraftCode(codeText)
+              ;(e.currentTarget as HTMLInputElement).blur()
+            }
           }}
-          onBlur={() => setDraftCode(codeText)}
         />
       </div>
       <div class="uwp-legend">

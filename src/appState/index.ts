@@ -1,4 +1,4 @@
-import { signal } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
 import { defaultParams, randomizeParams, type Params } from '../params'
 import {
   defaultUwp,
@@ -146,6 +146,13 @@ export const renderPerformance = signal<RenderPerformanceSnapshot>({
 
 let rendererControls: RendererControls | null = null
 
+/** View requested before WASM has produced a system snapshot. */
+let deferredViewMode: ViewMode | null = null
+
+function viewModeNeedsSystem(mode: ViewMode): boolean {
+  return mode === 'system' || mode === 'detail' || mode === 'surface'
+}
+
 export function registerRendererControls(controls: RendererControls | null) {
   rendererControls = controls
 }
@@ -187,6 +194,11 @@ export function resolveViewMode(requested: ViewMode): ViewMode {
 
 export function setViewMode(mode: ViewMode) {
   const resolved = resolveViewMode(mode)
+  if (resolved !== mode && viewModeNeedsSystem(mode)) {
+    deferredViewMode = mode
+  } else if (resolved === mode) {
+    deferredViewMode = null
+  }
   const leavingSurface = viewMode.value === 'surface' && resolved !== 'surface'
   if (resolved === 'surface') {
     refreshSurfaceMap()
@@ -197,6 +209,21 @@ export function setViewMode(mode: ViewMode) {
     closeRegionView()
   }
   viewMode.value = resolved
+}
+
+function applyDeferredViewModeIfReady(): void {
+  const mode = deferredViewMode
+  if (!mode || !currentSystem.value) return
+  deferredViewMode = null
+  setViewMode(mode)
+}
+
+/** Re-apply a view mode that was deferred until the system snapshot exists. */
+export function installDeferredViewMode(): void {
+  effect(() => {
+    currentSystem.value
+    applyDeferredViewModeIfReady()
+  })
 }
 
 export function selectedSurfacePlanetIndex(
@@ -243,8 +270,17 @@ export function setRenderPerformanceSnapshot(snapshot: RenderPerformanceSnapshot
 }
 
 export function setSystemSeed(seed: number) {
+  const next = seed >>> 0
   detailTarget.value = null
-  systemSeed.value = seed
+  const coord = selectedHex.value
+  if (coord) {
+    const sub = currentSubsector.value
+    const hex = sub?.hexes.find((h) => h.coord.col === coord.col && h.coord.row === coord.row)
+    if (!hex || (hex.system_seed >>> 0) !== next) {
+      setSelectedHex(null)
+    }
+  }
+  systemSeed.value = next
 }
 
 export function rerollSystemSeed() {
@@ -266,6 +302,9 @@ export function setSystemSnapshot(system: SolarSystem | null) {
     !hasPendingDetailBody()
   ) {
     focusMainWorldDetail()
+  }
+  if (system) {
+    applyDeferredViewModeIfReady()
   }
 }
 

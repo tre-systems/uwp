@@ -11,9 +11,11 @@ type Status = 'idle' | 'busy' | 'ok' | 'error'
 interface ExportPanelProps {
   disabled: boolean
   allowCard?: boolean
+  /** Toolbar variant beside the panel toggle (no section heading). */
+  compact?: boolean
 }
 
-export function ExportPanel({ disabled, allowCard = true }: ExportPanelProps) {
+export function ExportPanel({ disabled, allowCard = true, compact = false }: ExportPanelProps) {
   const [status, setStatus] = useState<Status>('idle')
   const [message, setMessage] = useState<string | null>(null)
 
@@ -29,6 +31,38 @@ export function ExportPanel({ disabled, allowCard = true }: ExportPanelProps) {
       setStatus('error')
       setMessage(result.error ?? 'Export failed.')
     }
+  }
+
+  if (compact) {
+    return (
+      <div class="export-toolbar" aria-label="Export">
+        <button
+          type="button"
+          class="export-toolbar-btn"
+          disabled={disabled || status === 'busy'}
+          onClick={run('frame')}
+          title="Save PNG frame"
+          aria-label="Save frame"
+        >
+          {status === 'busy' ? '…' : 'PNG'}
+        </button>
+        {allowCard && (
+          <button
+            type="button"
+            class="export-toolbar-btn"
+            disabled={disabled || status === 'busy'}
+            onClick={run('card')}
+            title="Save planet card"
+            aria-label="Save planet card"
+          >
+            Card
+          </button>
+        )}
+        <span class="visually-hidden" aria-live="polite" role="status">
+          {status === 'busy' ? 'Composing PNG' : message ?? ''}
+        </span>
+      </div>
+    )
   }
 
   return (

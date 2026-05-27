@@ -5,6 +5,7 @@ import {
   installPreferencePersistence,
   loadPersistedPreferences,
 } from './appState/persistence'
+import { installDeferredViewMode } from './appState'
 import {
   installUrlStateMirror,
   loadUrlState,
@@ -33,6 +34,7 @@ loadUrlState()
 loadPersistedSubsectorOverrides()
 installPreferencePersistence()
 installUrlStateMirror()
+installDeferredViewMode()
 installSubsectorOverridePersistence()
 installDocumentTitle()
 // Project the default (or persisted) UWP into the visual params so the

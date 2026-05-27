@@ -26,6 +26,7 @@ import {
   selectedSurfaceCell,
   selectedSurfaceHex,
   setSubsector,
+  setSystemSeed,
   setSubsectorHexOverride,
   setSubsectorOverrides,
   setSubsectorRouteOverride,
@@ -175,6 +176,36 @@ describe('appState renderer command boundary', () => {
 
     setSystemSnapshot(null)
     detailTarget.value = null
+    viewMode.value = initialView
+  })
+
+  it('clears a stale subsector hex when the system seed no longer matches', () => {
+    const sub = fakeSubsector()
+    setSubsector(sub)
+    selectHex({ col: 16, row: 10 })
+    expect(selectedHex.value).toEqual({ col: 16, row: 10 })
+
+    setSystemSeed(0xDEADBEEF)
+
+    expect(selectedHex.value).toBeNull()
+
+    setSubsector(null)
+  })
+
+  it('defers system view until the renderer snapshot exists', () => {
+    const initialView = viewMode.value
+    setSystemSnapshot(null)
+    setSelectedHex(null)
+
+    setViewMode('system')
+
+    expect(viewMode.value).toBe('subsector')
+
+    setSystemSnapshot(fakeSystem())
+
+    expect(viewMode.value).toBe('system')
+
+    setSystemSnapshot(null)
     viewMode.value = initialView
   })
 

@@ -52,6 +52,7 @@ export function SeedField({ value, disabled, onChange, 'aria-label': ariaLabel }
             e.preventDefault()
             commit()
           } else if (e.key === 'Escape') {
+            e.stopPropagation()
             setDraft(value.toString(10))
             ;(e.currentTarget as HTMLInputElement).blur()
           }

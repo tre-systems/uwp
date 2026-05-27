@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks'
+import { flushChartUrlHash } from '../appState/urlState'
 
 // Copies the current page URL (including the deep-link hash) to the
 // clipboard. The short success/fail toast lives in-place so the user
@@ -15,6 +16,7 @@ export function ShareButton({ disabled }: ShareButtonProps) {
 
   const onCopy = async () => {
     try {
+      flushChartUrlHash()
       const url = window.location.href
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url)

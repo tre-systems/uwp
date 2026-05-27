@@ -217,6 +217,51 @@ html, body, #app {
   pointer-events: none;
 }
 
+.chart-shell-actions {
+  position: fixed;
+  top: calc(var(--safe-top) + 16px);
+  right: calc(var(--safe-right) + 64px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  pointer-events: auto;
+}
+.chart-shell-actions .share-trigger {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 22, 0.78);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+.export-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.export-toolbar-btn {
+  appearance: none;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 22, 0.78);
+  color: var(--color-text);
+  font-size: var(--type-sm);
+  cursor: pointer;
+}
+.export-toolbar-btn:hover:not(:disabled) {
+  background: rgba(20, 28, 44, 0.88);
+}
+.export-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .panel-toggle {
   position: fixed;
   top: calc(var(--safe-top) + 16px);
@@ -2074,7 +2119,7 @@ label.color input[type="color"]::-webkit-color-swatch {
 .view-mode-toggle {
   position: fixed;
   top: calc(var(--safe-top) + 16px);
-  right: calc(var(--safe-right) + 68px);
+  right: calc(var(--safe-right) + 108px);
   display: inline-flex;
   height: 40px;
   border-radius: 10px;
@@ -2345,6 +2390,16 @@ label.color input[type="color"]::-webkit-color-swatch {
     border-radius: 12px;
   }
   .panel-closed { transform: translateY(calc(-100% - 80px)); }
+  .chart-shell-actions {
+    top: calc(var(--safe-top) + 10px);
+    right: calc(var(--safe-right) + 60px);
+  }
+  .chart-shell-actions .share-trigger,
+  .export-toolbar-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
   .panel-toggle {
     top: calc(var(--safe-top) + 10px);
     right: calc(var(--safe-right) + 8px);
