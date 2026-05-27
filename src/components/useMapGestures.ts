@@ -93,7 +93,6 @@ export function useMapGestures(
       applyZoom(zoom * factor, anchor.x, anchor.y)
     },
     onPointerDown: (e: PointerEvent) => {
-      if (e.pointerType === 'touch') e.preventDefault()
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       // Note: we deliberately do NOT setPointerCapture here. Capturing
       // would steal subsequent click events from inner SVG hex cells,
@@ -111,9 +110,9 @@ export function useMapGestures(
     },
     onPointerMove: (e: PointerEvent) => {
       if (!pointers.current.has(e.pointerId)) return
-      if (e.pointerType === 'touch' && pointers.current.size >= 1) e.preventDefault()
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       if (pointers.current.size === 2 && pinchDist.current != null) {
+        if (e.pointerType === 'touch') e.preventDefault()
         const [a, b] = [...pointers.current.values()]
         const d = Math.hypot(a.x - b.x, a.y - b.y)
         const ratio = d / pinchDist.current
@@ -129,6 +128,7 @@ export function useMapGestures(
         const moveX = Math.abs(e.clientX - lastDrag.current.x)
         const moveY = Math.abs(e.clientY - lastDrag.current.y)
         if (!dragging.current && moveX + moveY < 4) return
+        if (e.pointerType === 'touch') e.preventDefault()
         dragging.current = true
         const el = containerRef.current
         if (!el) return

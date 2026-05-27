@@ -1,7 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import { detailTarget, params, setParamsSnapshot } from '../appState'
-import type { SolarSystem } from '../domain/system'
+import type { BodyType, Planet, SolarSystem } from '../domain/system'
 import { formatBodyViewLabel, resolvedDetailTarget } from './bodyView'
+
+function fakePlanet(overrides: {
+  seed: number
+  body_type: BodyType
+}): Planet {
+  return {
+    orbit_au: 1,
+    eccentricity: 0.01,
+    inclination_deg: 0,
+    radius_earth: 1,
+    mass_earth: 1,
+    temperature_k: 288,
+    body_type: overrides.body_type,
+    phase_rad: 0,
+    day_seconds: 86_400,
+    in_habitable_zone: true,
+    moons: [],
+    seed: overrides.seed,
+    climate: {
+      mean_surface_temp_k: 288,
+      min_surface_temp_k: 268,
+      max_surface_temp_k: 308,
+      greenhouse_k: 12,
+      liquid_water_fraction: 0.5,
+      ice_fraction: 0.1,
+      aridity: 0.3,
+      habitability: 0.7,
+      thermal_inertia: 0.5,
+      mean_rainfall_mm: 700,
+    },
+  }
+}
 
 function fakeSystem(): SolarSystem {
   return {
@@ -11,51 +43,19 @@ function fakeSystem(): SolarSystem {
       radius_solar: 1,
       temperature_k: 5800,
       luminosity_solar: 1,
-      spectral: 'G2V',
-      color_srgb: [1, 1, 1],
+      spectral: 'G',
+      color: [1, 1, 1],
     },
     companion: null,
     planets: [
-      {
-        seed: 0x1111,
-        body_type: 'Rocky',
-        orbit_au: 1,
-        mass_earth: 1,
-        radius_earth: 1,
-        temperature_k: 288,
-        day_seconds: 86400,
-        eccentricity: 0,
-        inclination_deg: 0,
-        climate: {
-          mean_surface_temp_k: 288,
-          liquid_water_fraction: 0.5,
-          habitability: 0.7,
-          ice_fraction: 0.1,
-          aridity: 0.3,
-        },
-        moons: [],
-      },
-      {
-        seed: 0x2222,
-        body_type: 'GasGiant',
-        orbit_au: 5,
-        mass_earth: 300,
-        radius_earth: 11,
-        temperature_k: 150,
-        day_seconds: 36000,
-        eccentricity: 0.01,
-        inclination_deg: 0.5,
-        climate: {
-          mean_surface_temp_k: 150,
-          liquid_water_fraction: 0,
-          habitability: 0,
-          ice_fraction: 0,
-          aridity: 1,
-        },
-        moons: [],
-      },
+      fakePlanet({ seed: 0x1111, body_type: 'Terrestrial' }),
+      fakePlanet({ seed: 0x2222, body_type: 'GasGiant' }),
     ],
     belts: [],
+    hz_inner_au: 0.95,
+    hz_outer_au: 1.4,
+    snow_line_au: 2.7,
+    age_gyr: 4.5,
     main_world: 0,
   }
 }

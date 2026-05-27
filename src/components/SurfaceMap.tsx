@@ -3,6 +3,7 @@ import {
   openRegionView,
   params,
   selectAndFocusSurfaceHex,
+  selectedSurfaceCell,
   selectedSurfacePlanet,
   selectedSurfaceHex,
 } from '../appState'
@@ -23,7 +24,6 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { useMapGestures } from './useMapGestures'
 import { renderSurfaceBackground } from './surfaceMapBackground'
 import { buildIcosahedralSurface, type IcosaHex, type IcosaSurface } from './icosahedralSurface'
-// IcosaSurface re-used by the mobile magnifier clip path.
 import {
   FACES,
   faceFlatVertices,

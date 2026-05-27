@@ -1,5 +1,5 @@
 import { detailTarget, params } from '../appState'
-import type { Params } from '../types'
+import type { Params } from '../params'
 import { systemName } from '../domain/names'
 import type { BodyType, SolarSystem, SystemBodyTarget } from '../domain/system'
 import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
@@ -56,6 +56,7 @@ export function formatBodyViewLabel(
 
 const BODY_TYPE_LABELS: Record<BodyType, string> = {
   Rocky: 'Rocky',
+  Terrestrial: 'Terrestrial',
   SuperEarth: 'Super-Earth',
   MiniNeptune: 'Mini-Neptune',
   GasGiant: 'Gas Giant',

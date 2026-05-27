@@ -2,7 +2,6 @@ import { useEffect } from 'preact/hooks'
 import {
   currentSubsector,
   currentSystem,
-  detailTarget,
   selectedHex,
   selectedSurfacePlanetIndex,
   setViewMode,
