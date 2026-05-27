@@ -78,7 +78,7 @@ export function ViewModeToggle() {
             role="tab"
             aria-selected={isActive}
             aria-label={opt.hint}
-            title={opt.hint}
+            title={opt.mode === 'detail' ? detailLabel : opt.hint}
             disabled={disabled}
             onClick={() => setViewMode(opt.mode)}
           >

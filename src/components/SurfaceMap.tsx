@@ -154,8 +154,10 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
 
   if (!map) {
     return (
-      <div class="surface-map surface-empty">
-        <p>Select a planet to generate a surface map. Stars and belts do not have hex surfaces.</p>
+      <div class="map-gesture-viewport" ref={containerRef}>
+        <div class="surface-map surface-empty">
+          <p>Select a planet to generate a surface map. Stars and belts do not have hex surfaces.</p>
+        </div>
       </div>
     )
   }
@@ -173,11 +175,11 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
     : null
 
   return (
+    <div class="map-gesture-viewport" ref={containerRef}>
     <div
       class="surface-map"
       role="region"
       aria-label={`Surface map, ${(map.ocean_fraction * 100).toFixed(0)}% ocean`}
-      ref={containerRef}
     >
       <svg viewBox={gestures.viewBox} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Surface hex grid (icosahedral net)">
         <FaceClipPaths />
@@ -221,6 +223,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
           surface={surface}
         />
       )}
+    </div>
     </div>
   )
 }

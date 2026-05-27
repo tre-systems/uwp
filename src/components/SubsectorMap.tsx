@@ -106,8 +106,10 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
 
   if (!subsector) {
     return (
-      <div class="subsector-map subsector-empty">
-        <p>Generating subsector…</p>
+      <div class="map-gesture-viewport" ref={containerRef}>
+        <div class="subsector-map subsector-empty">
+          <p>Generating subsector…</p>
+        </div>
       </div>
     )
   }
@@ -130,11 +132,11 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
     subsector.hexes.map((h) => ({ col: h.coord.col, row: h.coord.row })),
   )
   return (
+    <div class="map-gesture-viewport" ref={containerRef}>
     <div
       class="subsector-map"
       role="region"
       aria-label={`Subsector ${subsector.allegiance}, seed ${subsector.seed}`}
-      ref={containerRef}
     >
       <svg
         viewBox={gestures.viewBox}
@@ -237,6 +239,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
           })}
         </g>
       </svg>
+    </div>
     </div>
   )
 }

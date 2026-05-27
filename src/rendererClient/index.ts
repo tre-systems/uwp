@@ -659,6 +659,10 @@ export class RendererClient {
   }
 
   private readonly onWheel = (event: WheelEvent) => {
+    // SVG map overlays sit above the canvas; guard anyway so wheel
+    // never gets swallowed when the GPU view is inactive.
+    const mode = viewMode.value
+    if (mode !== 'system' && mode !== 'detail') return
     event.preventDefault()
     this.planet?.zoom(event.deltaY)
   }

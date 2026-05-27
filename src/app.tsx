@@ -68,9 +68,13 @@ export function App() {
         {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
         <HoverTooltip />
       </main>
-      <Breadcrumb />
-      <ChartShellActions />
-      <ViewModeToggle />
+      <header class="chart-shell-top" aria-label="Chart navigation">
+        <Breadcrumb />
+        <div class="chart-shell-top-end">
+          <ViewModeToggle />
+          <ChartShellActions />
+        </div>
+      </header>
       <ControlPanel />
       <RegionView />
       {status === 'ready' && <OnboardingHint />}

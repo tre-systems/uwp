@@ -222,14 +222,11 @@ html, body, #app {
 }
 
 .chart-shell-actions {
-  position: fixed;
-  top: calc(var(--safe-top) + 16px);
-  right: calc(var(--safe-right) + 64px);
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  z-index: 10;
-  pointer-events: auto;
+  flex: 0 0 auto;
 }
 .chart-shell-actions .share-trigger {
   width: 40px;
@@ -1542,6 +1539,20 @@ label.color input[type="color"]::-webkit-color-swatch {
   to   { opacity: 1; }
 }
 
+/* Full-bleed wheel/pinch target for SVG map overlays. The map graphic
+   is often smaller than the overlay; gestures attach here so scroll
+   zoom works over the whole view, not only on painted hex pixels. */
+.map-gesture-viewport {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
 /* Subsector view ----------------------------------------------------*/
 .subsector-overlay {
   position: absolute;
@@ -1573,7 +1584,6 @@ label.color input[type="color"]::-webkit-color-swatch {
   width: 100%;
   max-width: 1320px;
   color: var(--color-text);
-  touch-action: none;
 }
 .subsector-map svg {
   width: 100%;
@@ -1830,7 +1840,6 @@ label.color input[type="color"]::-webkit-color-swatch {
   width: min(100%, calc((100dvh - var(--safe-top) - var(--safe-bottom) - 140px) * 2.117));
   max-width: 1120px;
   color: var(--color-text);
-  touch-action: none;
 }
 .surface-map svg {
   width: 100%;
@@ -2069,15 +2078,38 @@ label.color input[type="color"]::-webkit-color-swatch {
   letter-spacing: 0.4px;
 }
 
+/* Top chrome: breadcrumb + view toggle + export/share share one row
+   and shrink/truncate instead of overlapping at mid-width viewports. */
+.chart-shell-top {
+  position: fixed;
+  top: calc(var(--safe-top) + 16px);
+  left: calc(var(--safe-left) + 16px);
+  /* Leave room for the panel toggle on the far right. */
+  right: calc(var(--safe-right) + 56px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+  pointer-events: none;
+}
+.chart-shell-top > * {
+  pointer-events: auto;
+}
+.chart-shell-top-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(58vw, 560px);
+}
+
 /* Breadcrumb -------------------------------------------------------*/
 .breadcrumb {
-  position: fixed;
-  top: calc(var(--safe-top) + 20px);
-  left: calc(var(--safe-left) + 16px);
-  /* Cap width so a long sector + hex + system + world chain doesn't run
-     under the view-mode toggle on the right. The intrinsic content is
-     truncated by the crumb's own ellipsis rather than visually clipped. */
-  max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 460px);
+  position: static;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
@@ -2091,8 +2123,6 @@ label.color input[type="color"]::-webkit-color-swatch {
   font-size: var(--type-body);
   letter-spacing: 0.2px;
   box-shadow: var(--shadow-button);
-  z-index: 6;
-  pointer-events: auto;
   overflow: hidden;
 }
 .breadcrumb-list {
@@ -2125,7 +2155,7 @@ label.color input[type="color"]::-webkit-color-swatch {
   border-radius: var(--radius-sm);
   transition: color var(--motion-fast), background var(--motion-fast);
   /* Truncate ugly-long names rather than overflow the pill. */
-  max-width: 200px;
+  max-width: min(200px, 28vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2135,15 +2165,44 @@ label.color input[type="color"]::-webkit-color-swatch {
 .breadcrumb-crumb.muted { color: var(--color-text-muted); }
 .breadcrumb-crumb.muted:hover { color: var(--text-dim); }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
+  .subsector-overlay,
+  .subsector-overlay.panel-open {
+    padding-top: calc(var(--safe-top) + 100px);
+  }
+  .chart-shell-top {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    right: calc(var(--safe-right) + 56px);
+  }
+  .chart-shell-top-end {
+    order: 1;
+    flex: 1 1 100%;
+    max-width: none;
+    justify-content: flex-end;
+  }
   .breadcrumb {
+    order: 2;
+    flex: 1 1 100%;
     font-size: var(--type-sm);
-    top: calc(var(--safe-top) + 62px);
+    padding: 4px 10px;
+  }
+  .breadcrumb-crumb {
+    max-width: min(160px, 40vw);
+  }
+}
+
+@media (max-width: 640px) {
+  .chart-shell-top {
     left: calc(var(--safe-left) + 8px);
     right: calc(var(--safe-right) + 8px);
-    padding: 4px 10px;
+  }
+  .view-mode-toggle {
+    left: 0;
+    right: 0;
+    width: 100%;
     max-width: none;
-    z-index: 12;
   }
 }
 
@@ -2159,11 +2218,12 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 /* View mode toggle -------------------------------------------------*/
 .view-mode-toggle {
-  position: fixed;
-  top: calc(var(--safe-top) + 16px);
-  right: calc(var(--safe-right) + 108px);
+  position: static;
   display: inline-flex;
   height: 40px;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(10, 14, 22, 0.78);
@@ -2171,7 +2231,6 @@ label.color input[type="color"]::-webkit-color-swatch {
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   overflow: hidden;
   box-shadow: var(--shadow-button);
-  z-index: 10;
 }
 .view-mode-segment {
   appearance: none;
@@ -2181,6 +2240,12 @@ label.color input[type="color"]::-webkit-color-swatch {
   font-size: var(--type-body);
   font-family: inherit;
   padding: 0 14px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--motion-fast), color var(--motion-fast);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -2210,9 +2275,6 @@ label.color input[type="color"]::-webkit-color-swatch {
 
 @media (max-width: 640px) {
   .view-mode-toggle {
-    top: calc(var(--safe-top) + 10px);
-    right: calc(var(--safe-right) + 60px);
-    left: calc(var(--safe-left) + 8px);
     height: 44px;
   }
   .view-mode-segment {
@@ -2432,10 +2494,6 @@ label.color input[type="color"]::-webkit-color-swatch {
     border-radius: 12px;
   }
   .panel-closed { transform: translateY(calc(-100% - 80px)); }
-  .chart-shell-actions {
-    top: calc(var(--safe-top) + 10px);
-    right: calc(var(--safe-right) + 60px);
-  }
   .chart-shell-actions .share-trigger,
   .export-toolbar-btn {
     width: 44px;
