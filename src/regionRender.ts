@@ -470,6 +470,7 @@ function buildAtlasHeightmap(input: RegionRenderInput, profile: QualityProfile):
 
   const selected = selectedAtlasCell(atlas, input.selectedCellId, input.hex)
   if (!selected) return null
+  const footprint = regionFootprint(input.hex, selected, atlas)
 
   const w = profile.noiseRes
   const h = profile.noiseRes
@@ -477,29 +478,32 @@ function buildAtlasHeightmap(input: RegionRenderInput, profile: QualityProfile):
   const biome = new Uint8Array(w * h)
   const temperatureK = new Float32Array(w * h)
   const seaLevel = atlas.sea_level_threshold
-  const patch = nearbyAtlasCells(atlas, selected)
+  const patch = nearbyAtlasCells(atlas, footprint)
   const seed = mix32(
     input.worldSeed,
     (selected.id.face << 24) ^ (selected.id.i << 16) ^ (selected.id.j << 8) ^ (selected.id.up ? 0xA5 : 0x5A),
   )
 
-  // Map the local detail frame onto roughly one atlas hex plus a little
-  // shoulder from its neighbours. That lets coastlines, slopes, and biome
-  // transitions enter the region from the same direction they do on the
-  // icosahedral map.
-  const spanX = atlas.hex_radius * 2.45
-  const spanY = atlas.hex_radius * 2.12
-  const selectedIsWater = biomeIsOcean(selected.biome_id)
-  const selectedIsShore = selected.terrain === 'Shoreline'
+  // Map the local detail frame onto the same flat-net footprint the user
+  // clicked. Coarse display hexes are several atlas cells wide, so using
+  // only the centre atlas cell makes a coastline hex render as all water
+  // or all land. Sampling the visual footprint keeps peninsulas and bays
+  // aligned between the map and the modal.
+  const spanX = footprint.radius * 1.95
+  const spanY = footprint.radius * 2.25
+  const selectedBiome = TERRAIN_TO_BIOME[input.hex.terrain] ?? selected.biome_id
+  const selectedIsWater = biomeIsOcean(selectedBiome)
+  const selectedIsShore = input.hex.terrain === 'Shoreline'
+  const coarseFootprint = footprint.radius > atlas.hex_radius * 1.25
   const allowInteriorWater =
-    selectedIsWater || selectedIsShore || input.authoredHydroFraction > 0.72
+    coarseFootprint || selectedIsWater || selectedIsShore || input.authoredHydroFraction > 0.72
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const u = x / Math.max(1, w - 1)
       const v = y / Math.max(1, h - 1)
-      const atlasX = selected.x + (u - 0.5) * spanX
-      const atlasY = selected.y + (v - 0.5) * spanY
+      const atlasX = footprint.x + (u - 0.5) * spanX
+      const atlasY = footprint.y + (v - 0.5) * spanY
       const sample = sampleAtlasPatch(patch, atlasX, atlasY, atlas.hex_radius)
       const idx = y * w + x
 
@@ -539,9 +543,9 @@ function buildAtlasHeightmap(input: RegionRenderInput, profile: QualityProfile):
   // Keep the exact centre snapped close to the selected atlas cell so the
   // inspector, map highlight, and region detail all describe the same place.
   const centreIdx = Math.floor(h / 2) * w + Math.floor(w / 2)
-  data[centreIdx] = selected.elevation_signed
-  biome[centreIdx] = selected.biome_id
-  temperatureK[centreIdx] = selected.temperature_k
+  data[centreIdx] = clamp(input.hex.elevation * 2 - 1, -1, 1)
+  biome[centreIdx] = selectedBiome
+  temperatureK[centreIdx] = input.hex.temperature_k
 
   return { width: w, height: h, data, biome, temperatureK }
 }
@@ -551,6 +555,9 @@ function selectedAtlasCell(
   selectedCellId: SurfaceCellId | null | undefined,
   fallbackHex: SurfaceHex,
 ): SurfaceAtlasCell | null {
+  if (hasNetFootprint(fallbackHex)) {
+    return nearestAtlasCellForNetPoint(atlas, fallbackHex.net_x!, fallbackHex.net_y!)
+  }
   if (selectedCellId) {
     const exact = atlas.cells.find((cell) => sameCellId(cell.id, selectedCellId))
     if (exact) return exact
@@ -559,18 +566,57 @@ function selectedAtlasCell(
     nearestAtlasCellForLegacyCoord(atlas, fallbackHex)
 }
 
-function nearbyAtlasCells(atlas: SurfaceAtlas, selected: SurfaceAtlasCell): SurfaceAtlasCell[] {
-  const radius = atlas.hex_radius * 4.3
+interface AtlasFootprint {
+  x: number
+  y: number
+  radius: number
+}
+
+function regionFootprint(hex: SurfaceHex, selected: SurfaceAtlasCell, atlas: SurfaceAtlas): AtlasFootprint {
+  if (hasNetFootprint(hex)) {
+    return {
+      x: hex.net_x!,
+      y: hex.net_y!,
+      radius: Math.max(atlas.hex_radius, hex.net_radius!),
+    }
+  }
+  return { x: selected.x, y: selected.y, radius: atlas.hex_radius }
+}
+
+function hasNetFootprint(hex: SurfaceHex): boolean {
+  return Number.isFinite(hex.net_x) &&
+    Number.isFinite(hex.net_y) &&
+    Number.isFinite(hex.net_radius) &&
+    (hex.net_radius ?? 0) > 0
+}
+
+function nearbyAtlasCells(atlas: SurfaceAtlas, footprint: AtlasFootprint): SurfaceAtlasCell[] {
+  const radius = Math.max(atlas.hex_radius * 4.3, footprint.radius * 2.8)
   const cells = atlas.cells.filter((cell) => {
-    const dx = cell.x - selected.x
-    const dy = cell.y - selected.y
+    const dx = cell.x - footprint.x
+    const dy = cell.y - footprint.y
     return dx * dx + dy * dy <= radius * radius
   })
   if (cells.length >= 8) return cells
 
   return [...atlas.cells]
-    .sort((a, b) => distSq(a, selected) - distSq(b, selected))
+    .sort((a, b) => distSqPoint(a, footprint) - distSqPoint(b, footprint))
     .slice(0, 24)
+}
+
+function nearestAtlasCellForNetPoint(atlas: SurfaceAtlas, x: number, y: number): SurfaceAtlasCell | null {
+  let best: SurfaceAtlasCell | null = null
+  let bestD2 = Number.POSITIVE_INFINITY
+  for (const cell of atlas.cells) {
+    const dx = cell.x - x
+    const dy = cell.y - y
+    const d2 = dx * dx + dy * dy
+    if (d2 < bestD2) {
+      best = cell
+      bestD2 = d2
+    }
+  }
+  return best
 }
 
 function sampleAtlasPatch(
@@ -646,9 +692,9 @@ function nearestAtlasCellForLegacyCoord(atlas: SurfaceAtlas, hex: SurfaceHex): S
   return best
 }
 
-function distSq(a: SurfaceAtlasCell, b: SurfaceAtlasCell): number {
-  const dx = a.x - b.x
-  const dy = a.y - b.y
+function distSqPoint(cell: SurfaceAtlasCell, point: { x: number; y: number }): number {
+  const dx = cell.x - point.x
+  const dy = cell.y - point.y
   return dx * dx + dy * dy
 }
 

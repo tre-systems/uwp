@@ -35,6 +35,11 @@ export interface SurfaceHex {
   longitude_deg: number
   temperature_k: number
   elevation: number
+  /** Optional flat-net footprint used when this is a visual/coarse
+   *  surface-map hex rather than a native Rust atlas cell. */
+  net_x?: number
+  net_y?: number
+  net_radius?: number
 }
 
 export interface Settlement {

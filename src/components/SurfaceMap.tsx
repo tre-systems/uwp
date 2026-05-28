@@ -307,7 +307,7 @@ function SubHex({ hex, cellKey, hexRadius, selected, onSelectCell }: SubHexProps
   const terrainClass = hex.terrain.toLowerCase()
   const label = `${hex.terrain} · ${hex.latDeg.toFixed(1)}°`
   const coord = coordForHex(hex)
-  const cell = surfaceCellForHex(hex, coord)
+  const cell = surfaceCellForHex(hex, coord, r)
   const pathD = hexPathForCell(hex, r)
   const select = () => {
     onSelectCell(cellKey)
@@ -546,7 +546,7 @@ function coordForHex(h: IcosaHex): SurfaceHexCoord {
   }
 }
 
-function surfaceCellForHex(h: IcosaHex, coord: SurfaceHexCoord): SurfaceHex {
+function surfaceCellForHex(h: IcosaHex, coord: SurfaceHexCoord, hexRadius: number): SurfaceHex {
   return {
     coord,
     cell_id: h.cellId ?? null,
@@ -555,6 +555,9 @@ function surfaceCellForHex(h: IcosaHex, coord: SurfaceHexCoord): SurfaceHex {
     longitude_deg: h.lonDeg,
     temperature_k: h.temperatureK,
     elevation: (h.elevation + 1) * 0.5,
+    net_x: h.x,
+    net_y: h.y,
+    net_radius: h.flatBoundary?.length ? polygonRadius(h.flatBoundary, h.x, h.y) : hexRadius,
   }
 }
 
@@ -608,6 +611,11 @@ function cellFromAtlas(cell: SurfaceAtlasCell): IcosaHex {
     faceIdx: cell.id.face,
     upPointing: cell.id.up,
   }
+}
+
+function polygonRadius(points: Array<[number, number]>, cx: number, cy: number): number {
+  if (!points.length) return 0
+  return points.reduce((sum, [x, y]) => sum + Math.hypot(x - cx, y - cy), 0) / points.length
 }
 
 function sameCellId(a: SurfaceCellId | undefined, b: SurfaceCellId): boolean {
