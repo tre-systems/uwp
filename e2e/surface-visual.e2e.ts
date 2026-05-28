@@ -48,6 +48,15 @@ test.describe('surface convergence regression', () => {
     await surfaceTab.click({ force: true })
     await expect(page.locator('.surface-map')).toBeVisible({ timeout: 15_000 })
 
+    // Keep the overlay at a readable paper-chart density. The terrain
+    // background can stay detailed, but the pickable hex grid should
+    // remain much coarser than the pre-bake.
+    await expect.poll(
+      () => page.locator('.surface-hex').count(),
+      { timeout: 15_000 },
+    ).toBeGreaterThan(700)
+    await expect.poll(() => page.locator('.surface-hex').count()).toBeLessThan(1_400)
+
     // The biome-coloured background is a PNG `<image>` rendered from
     // the shared palette. Wait until its data URL is populated.
     await expect.poll(

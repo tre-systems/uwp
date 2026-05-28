@@ -85,9 +85,8 @@ export interface BuildOptions {
   /** Mean surface temperature in Kelvin. Local temperature drops with
    *  latitude using the same 60 K equator-to-pole spread as Rust. */
   meanTempK: number
-  /** Subdivision per face. N=8 gives 1280 world-level hex cells and
-   *  matches the classic "triangle side size" idea used by legacy 2d6-
-   *  style icosahedral maps. */
+  /** Subdivision per face. Lower values produce the coarse, readable
+   *  chart grid used by classic 2d6-style icosahedral maps. */
   subdivisions: number
 }
 

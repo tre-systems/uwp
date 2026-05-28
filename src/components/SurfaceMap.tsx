@@ -48,7 +48,7 @@ import {
 // clipped by the triangular faces, matching the legacy 2d6 world-map
 // convention rather than exposing the internal triangle subdivision.
 
-const SUBDIVISIONS = 12
+const SUBDIVISIONS = 5
 const MIN_BACKGROUND_WIDTH = 1024
 const DESKTOP_BACKGROUND_WIDTH = 1536
 const TOUCH_BACKGROUND_WIDTH = 1152
