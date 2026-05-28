@@ -15,13 +15,15 @@
 
 // ---------- Noise ----------
 
-fn hash3(p: vec3<f32>) -> vec3<f32> {
-    let q = vec3<f32>(
-        dot(p, vec3<f32>(127.1, 311.7,  74.7)),
-        dot(p, vec3<f32>(269.5, 183.3, 246.1)),
-        dot(p, vec3<f32>(113.5, 271.9, 124.6))
-    );
-    return -1.0 + 2.0 * fract(sin(q) * 43758.5453123);
+fn hash3(p_in: vec3<f32>) -> vec3<f32> {
+    // Dave Hoskins "Hash without Sine" (hash33). The old fract(sin(...)) form
+    // cost 3 transcendentals per call; with noise3 issuing 8 hash3 per sample
+    // and FBM stacking many samples per pixel, those sins dominated fragment
+    // cost on Apple's tile GPUs. This mul/fract/dot form is ~3x cheaper and
+    // keeps the same [-1,1] gradient distribution the value noise expects.
+    var p = fract(p_in * vec3<f32>(0.1031, 0.1030, 0.0973));
+    p = p + dot(p, p.yxz + 33.33);
+    return -1.0 + 2.0 * fract((p.xxy + p.yxx) * p.zyx);
 }
 
 fn noise3(p: vec3<f32>) -> f32 {
@@ -78,9 +80,22 @@ fn ridged_fbm(p_in: vec3<f32>, octaves: i32) -> f32 {
     return v / norm;
 }
 
-// Scalar hash from a 3D integer-ish cell coordinate.
-fn hash3_s(p: vec3<f32>) -> f32 {
-    return fract(sin(dot(p, vec3<f32>(127.1, 311.7, 74.7))) * 43758.5453);
+// FBM octave budget by render quality. HIGH/BALANCED keep full detail; LOW
+// drops one octave and the sub-LOW "minimum" tier drops two. Trimming the
+// octave COUNT (not whole noise layers) keeps continents/clouds coherent on
+// weak GPUs instead of collapsing to flat biome-fill polygons.
+fn q_oct(base: i32, quality: f32) -> i32 {
+    if (quality > 0.62) { return base; }
+    if (quality > 0.45) { return max(base - 1, 1); }
+    return max(base - 2, 1);
+}
+
+// Scalar hash from a 3D coordinate. Sinless (Dave Hoskins hash13) so seed-driven
+// one-shots (storm/vortex placement) don't pay a transcendental each.
+fn hash3_s(p_in: vec3<f32>) -> f32 {
+    var p = fract(p_in * 0.1031);
+    p = p + dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
 }
 
 // Worley-style cratering. For each of the 27 cells near `p` (in cell space),
@@ -904,9 +919,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // biome-flag gating — keeps the transition continuous across
         // adjacent atlas cells.
         if (veg_richness > 0.02) {
-            let zone_n  = fbm(dir * 1.4 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), 5);
-            let patch_n = fbm(dir * 4.2 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), 4);
-            let grain_n = fbm(dir * 13.0 + u.seed_block.xyz + vec3<f32>(-91.0, 31.0, 71.0), 3);
+            let zone_n  = fbm(dir * 1.4 + u.seed_block.xyz + vec3<f32>(193.4, 17.3, -41.0), q_oct(5, quality));
+            let patch_n = fbm(dir * 4.2 + u.seed_block.xyz + vec3<f32>(57.1, -83.2, 119.7), q_oct(4, quality));
+            let grain_n = fbm(dir * 13.0 + u.seed_block.xyz + vec3<f32>(-91.0, 31.0, 71.0), q_oct(3, quality));
             let combined = zone_n * 0.55 + patch_n * 0.30 + grain_n * 0.15;
             let forest_t   = u.land_color.rgb * vec3<f32>(0.55, 0.68, 0.50);
             let grass_t    = u.land_color.rgb * vec3<f32>(1.10, 1.10, 0.90);
@@ -927,10 +942,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Hadley-cell aridity band (~20°-30° lat) + large Sahara-scale
         // patches + interior-continental dryness. Continuous gating
         // on latitude + above_amt — no biome flag.
-        let desert_zone = fbm(dir * 0.9 + u.seed_block.xyz + vec3<f32>(-19.4, 78.1, 31.6), 3) * 0.5 + 0.5;
+        let desert_zone = fbm(dir * 0.9 + u.seed_block.xyz + vec3<f32>(-19.4, 78.1, 31.6), q_oct(3, quality)) * 0.5 + 0.5;
         let lat_arid = smoothstep(0.18, 0.40, lat) * (1.0 - smoothstep(0.55, 0.80, lat));
         let big_desert = smoothstep(0.62, 0.82, desert_zone);
-        let interior_n = fbm(dir * 1.0 + u.seed_block.xyz + vec3<f32>(157.0, -41.0, 89.0), 3);
+        let interior_n = fbm(dir * 1.0 + u.seed_block.xyz + vec3<f32>(157.0, -41.0, 89.0), q_oct(3, quality));
         let interior_dry = smoothstep(0.15, 0.55, interior_n);
         let desert_amt = clamp(lat_arid * 0.45 + big_desert * 0.55 + interior_dry * lat_arid * 0.45, 0.0, 1.0);
         // Inversely proportional to vegetation strength — wet worlds
@@ -945,7 +960,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         // --- Mid-scale tint noise ---
         // Fine procedural variation breaks up uniformity.
-        let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), 3);
+        let tint_n = fbm(dir * 9.0 + u.seed_block.xyz + vec3<f32>(101.3, 47.7, -9.1), q_oct(3, quality));
         land_surface = land_surface * (0.88 + tint_n * 0.24);
 
         // --- Beach strip ---
@@ -982,7 +997,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // FBM jitter (creates peninsular ice shapes — natural
         // Antarctica-like coastline rather than smoothstep ring).
         let ice_lat = u.seed_block.w;
-        let polar_lobe = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), 3) * 0.14;
+        let polar_lobe = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), q_oct(3, quality)) * 0.14;
         let polar_finger = ridged_fbm(dir * 11.0 + u.seed_block.xyz + vec3<f32>(17.0, 31.0, -41.0), 2) * 0.06;
         let polar_off = polar_lobe + polar_finger - 0.03;
         let snow_polar = smoothstep(ice_lat - 0.10 + polar_off, ice_lat + 0.06 + polar_off, lat);
@@ -992,7 +1007,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let dry_world = step(u.planet_params.x, 0.15);
         let snow_alt = smoothstep(0.62 + snow_jitter, 0.86 + snow_jitter, above_amt_n) * (1.0 - dry_world);
         let snow_amt = clamp(snow_alt + snow_polar * (1.0 - dry_world), 0.0, 1.0);
-        let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), 3) * 0.5 + 0.5;
+        let ice_detail = fbm(dir * 14.0 + u.seed_block.xyz + vec3<f32>(91.0, 17.0, -33.0), q_oct(3, quality)) * 0.5 + 0.5;
         let crack_n = ridged_fbm(dir * 22.0 + u.seed_block.xyz + vec3<f32>(41.0, 113.0, -57.0), 2);
         let ice_cracks = smoothstep(0.86, 0.96, crack_n);
         let ice_tone = u.snow_color.rgb * (0.85 + ice_detail * 0.25) * (1.0 - ice_cracks * 0.55);
@@ -1013,7 +1028,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         water = mix(water, turquoise, shallow_tint);
         ocean_surface = water;
         let ice_lat = u.seed_block.w;
-        let sea_lobe = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), 3) * 0.14;
+        let sea_lobe = fbm(dir * 3.5 + u.seed_block.xyz + vec3<f32>(0.0, 0.0, 503.1), q_oct(3, quality)) * 0.14;
         let sea_finger = ridged_fbm(dir * 11.0 + u.seed_block.xyz + vec3<f32>(17.0, 31.0, -41.0), 2) * 0.06;
         let sea_off = sea_lobe + sea_finger - 0.03;
         let polar = smoothstep(ice_lat - 0.08 + sea_off, ice_lat + 0.05 + sea_off, lat);
@@ -1026,7 +1041,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Subtle global noise for satellite-photo realism. Strength biased
     // toward LAND so oceans stay clean. No global desaturation —
     // ISS / Blue Marble photos show vivid greens / browns / blues.
-    let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), 3);
+    let dirt_low = fbm(dir * 2.2 + u.seed_block.xyz + vec3<f32>(311.0, -47.0, 89.0), q_oct(3, quality));
     let dirt_hi  = fbm(dir * 26.0 + u.seed_block.xyz + vec3<f32>(7.0, 53.0, -113.0), 2);
     let warm_dirt = vec3<f32>(1.06, 0.97, 0.86);
     // Keep oceans clean at low quality. Broad low-frequency grain over water
@@ -1067,14 +1082,25 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // fraction of the cost (no finite-difference curl, just one extra fbm
     // for the rotation angle).
     let warp_seed = u.seed_block.xyz;
-    let cloud_warp = vec3<f32>(
-        fbm(dir * 1.7 + warp_seed + vec3<f32>(31.0,   0.0,   0.0), 3),
-        fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,  91.0,   0.0), 3),
-        fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,   0.0,  47.0), 3),
-    ) * 0.10;
+    // Clouds only contribute above LOW quality. Compute NONE of the cloud-field
+    // FBM (warp + swirl + deck) below that, instead of building the deck and
+    // discarding it — that discarded deck was the largest unconditional cost in
+    // this shader. cloud_low/high stay in outer scope for the shadow taps below.
+    let clouds_on = quality > 0.55;
+    let cloud_low  = mix(0.82, 0.28, coverage);
+    let cloud_high = mix(1.05, 0.55, coverage);
+
+    var cloud_warp = vec3<f32>(0.0);
+    if (clouds_on) {
+        cloud_warp = vec3<f32>(
+            fbm(dir * 1.7 + warp_seed + vec3<f32>(31.0,   0.0,   0.0), 3),
+            fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,  91.0,   0.0), 3),
+            fbm(dir * 1.7 + warp_seed + vec3<f32>( 0.0,   0.0,  47.0), 3),
+        ) * 0.10;
+    }
 
     var swirl_vec = vec3<f32>(0.0);
-    if (quality > 0.50) {
+    if (clouds_on) {
         // Curl-like rotational warp: build a tangent frame at `dir`, rotate the
         // offset by a per-location angle drawn from a low-frequency fbm. Gives
         // the deck the cyclonic swirl real weather systems have (storms,
@@ -1127,19 +1153,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     // -- Main cumulus deck (lowest visible layer) --
     // Domain-warped fbm + ridged_fbm gives the deck billowy cumulus tops
-    // rather than uniform fuzz.
-    let main_dir = dir + cloud_warp + swirl_vec + vortex_disp;
-    let cloud_p = main_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
-    let cloud_smooth = fbm(cloud_p, 5) * 0.5 + 0.5;
-    let cloud_billow = ridged_fbm(cloud_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 3);
-    let cloud_raw = cloud_smooth * 0.55 + cloud_billow * 0.45;
-    // Slightly wider smoothstep band — softer cloud edges cast gentler
-    // surface shadows instead of hard aliased cutouts on coastlines.
-    let cloud_low  = mix(0.82, 0.28, coverage);
-    let cloud_high = mix(1.05, 0.55, coverage);
-    var cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
-    if (quality <= 0.55) {
-        cloud_density = 0.0;
+    // rather than uniform fuzz. Skipped wholesale below LOW (clouds_on) so the
+    // deck FBM is never computed only to be thrown away.
+    var cloud_density = 0.0;
+    if (clouds_on) {
+        let main_dir = dir + cloud_warp + swirl_vec + vortex_disp;
+        let cloud_p = main_dir * band_warp * cloud_freq + cloud_off + vec3<f32>(time * 0.015, 0.0, 0.0);
+        let cloud_smooth = fbm(cloud_p, 5) * 0.5 + 0.5;
+        let cloud_billow = ridged_fbm(cloud_p * 1.8 + vec3<f32>(7.0, -3.0, 11.0), 3);
+        let cloud_raw = cloud_smooth * 0.55 + cloud_billow * 0.45;
+        cloud_density = smoothstep(cloud_low, cloud_high, cloud_raw);
     }
 
     // Cast a soft shadow from clouds onto the surface by sampling the cloud
@@ -1329,8 +1352,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Latitudinal habitability — fewer cities at the poles.
         let habit_lat = 1.0 - smoothstep(0.55, 0.95, lat);
         // Two noise scales — large clusters then individual lights inside them.
-        let cluster_n = fbm(dir * 6.0  + u.seed_block.xyz + vec3<f32>(307.1, 53.7, 11.3), 4) * 0.5 + 0.5;
-        let pixel_n   = fbm(dir * 24.0 + u.seed_block.xyz + vec3<f32>(13.2, 91.7, 217.3), 3) * 0.5 + 0.5;
+        let cluster_n = fbm(dir * 6.0  + u.seed_block.xyz + vec3<f32>(307.1, 53.7, 11.3), q_oct(4, quality)) * 0.5 + 0.5;
+        let pixel_n   = fbm(dir * 24.0 + u.seed_block.xyz + vec3<f32>(13.2, 91.7, 217.3), q_oct(3, quality)) * 0.5 + 0.5;
         let clustered = smoothstep(0.48, 0.70, cluster_n);
         let dotted    = smoothstep(0.45, 0.82, pixel_n);
         // Habitability gate — cities don't form on Himalayan peaks, in the

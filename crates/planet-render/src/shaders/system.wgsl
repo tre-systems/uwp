@@ -74,14 +74,24 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     return o;
 }
 
-fn hash11(x: f32) -> f32 { return fract(sin(x * 12.9898 + 78.233) * 43758.5453); }
+// Sinless hashes (Dave Hoskins "Hash without Sine"). value_noise3 issues 8
+// hash31 per sample, so dropping the transcendental here is the dominant
+// per-pixel win in system view (star/planet surfaces, granulation, spots).
+fn hash11(x: f32) -> f32 {
+    var p = fract(x * 0.1031);
+    p = p * (p + 33.33);
+    p = p * (p + p);
+    return fract(p);
+}
 fn hash21(p: vec2<f32>) -> f32 {
     var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
     p3 = p3 + dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
-fn hash31(p: vec3<f32>) -> f32 {
-    return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
+fn hash31(p_in: vec3<f32>) -> f32 {
+    var p = fract(p_in * 0.1031);
+    p = p + dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
 }
 
 // Smooth value noise — trilinear interp over hash31 lattice. Output [0, 1].
@@ -106,7 +116,20 @@ fn value_noise3(p: vec3<f32>) -> f32 {
     return mix(nxy0, nxy1, s.z);
 }
 
-fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
+// Trim FBM octaves on low-end render profiles (u.misc.w = render_quality).
+// HIGH/BALANCED keep full detail; LOW drops one octave, the sub-LOW "minimum"
+// tier drops two. Baked into fbm3/ridged_fbm3 so every system-view surface
+// scales without per-call-site changes — all of them are small-disc decoration
+// that tolerates fewer octaves cleanly. This is the system view's only quality
+// knob; previously it ran full cost at full resolution on every device.
+fn q_oct(base: i32, quality: f32) -> i32 {
+    if (quality > 0.62) { return base; }
+    if (quality > 0.45) { return max(base - 1, 1); }
+    return max(base - 2, 1);
+}
+
+fn fbm3(p_in: vec3<f32>, octaves_in: i32) -> f32 {
+    let octaves = q_oct(octaves_in, u.misc.w);
     var p = p_in;
     var sum = 0.0;
     var amp = 0.5;
@@ -120,7 +143,8 @@ fn fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
     return sum / norm;
 }
 
-fn ridged_fbm3(p_in: vec3<f32>, octaves: i32) -> f32 {
+fn ridged_fbm3(p_in: vec3<f32>, octaves_in: i32) -> f32 {
+    let octaves = q_oct(octaves_in, u.misc.w);
     var p = p_in;
     var sum = 0.0;
     var amp = 0.55;

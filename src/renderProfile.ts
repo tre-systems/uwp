@@ -1,4 +1,4 @@
-export type RenderProfileName = 'high' | 'balanced' | 'low'
+export type RenderProfileName = 'high' | 'balanced' | 'low' | 'minimum'
 
 export interface RenderProfile {
   name: RenderProfileName
@@ -64,14 +64,30 @@ const LOW: RenderProfile = {
   // Keep geometry crisp even when pixels/shader work downshift.
   // Coarse mesh LOD creates visible rectangular patches when users zoom
   // into the globe on tablets, which is more objectionable than the
-  // modest vertex cost saved by the old 0.45 setting.
+  // modest vertex cost saved by the old 0.45 setting. This tier targets
+  // low-end tablets — phones use MINIMUM, which decouples the mesh budget.
   meshQuality: 1,
+}
+
+// Phone-class floor. The globe mesh is the dominant cost on a small DPR-1
+// screen, so this tier cuts it hard (detail.rs maps meshQuality < 0.45 to a
+// fixed 192-res cubesphere with no zoom-rebuild) while keeping relief normals
+// (shaderQuality > 0.45) so continents still read in 3D. Also the target of
+// the frame-time downshifter when LOW is still too slow.
+const MINIMUM: RenderProfile = {
+  name: 'minimum',
+  dprCap: 1,
+  maxPixels: 800_000,
+  targetFps: 30,
+  shaderQuality: 0.5,
+  meshQuality: 0.4,
 }
 
 const PROFILES: Record<RenderProfileName, RenderProfile> = {
   high: HIGH,
   balanced: BALANCED,
   low: LOW,
+  minimum: MINIMUM,
 }
 
 const DEFAULT_DOWNSHIFT_OPTIONS: Required<FrameTimeDownshiftOptions> = {
@@ -103,7 +119,7 @@ export function detectRenderProfile(hints = browserRenderHints()): RenderProfile
   }
 
   let pressure = 0
-  if (isiPhone) pressure += 4
+  if (isiPhone) pressure += 5
   else if (isiPad) pressure += 2
   if (touch && minSide < 700) pressure += 2
   else if (touch) pressure += 1
@@ -117,6 +133,7 @@ export function detectRenderProfile(hints = browserRenderHints()): RenderProfile
     else if (hints.deviceMemory <= 4) pressure += 1
   }
 
+  if (pressure >= 5) return MINIMUM
   if (pressure >= 4) return LOW
   if (pressure >= 2) return BALANCED
   return HIGH
@@ -127,13 +144,14 @@ export function renderProfileByName(name: RenderProfileName): RenderProfile {
 }
 
 export function shouldThrottleRenderProfile(profile: RenderProfile): boolean {
-  return profile.name === 'low' && profile.targetFps < 59
+  return (profile.name === 'low' || profile.name === 'minimum') && profile.targetFps < 59
 }
 
 export function lowerRenderProfile(profile: RenderProfile): RenderProfile {
   if (profile.name === 'high') return BALANCED
   if (profile.name === 'balanced') return LOW
-  return LOW
+  if (profile.name === 'low') return MINIMUM
+  return MINIMUM
 }
 
 export function createFrameTimeDownshiftState(profile: RenderProfile): FrameTimeDownshiftState {
@@ -149,7 +167,7 @@ export function nextRenderProfileForFrameTime(
   frameTimeMs: number,
   options: FrameTimeDownshiftOptions = {},
 ): FrameTimeDownshiftResult {
-  if (!Number.isFinite(frameTimeMs) || frameTimeMs <= 0 || state.profile.name === 'low') {
+  if (!Number.isFinite(frameTimeMs) || frameTimeMs <= 0 || state.profile.name === 'minimum') {
     return { state, changed: false }
   }
 

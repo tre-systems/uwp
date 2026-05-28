@@ -33,8 +33,14 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     return o;
 }
 
+// Sinless hashes (Dave Hoskins "Hash without Sine"). The background draws every
+// detail frame and its value_noise3 issues 8 hash31 per sample, so the old
+// fract(sin(...)) form added avoidable transcendental load behind the planet.
 fn hash11(x: f32) -> f32 {
-    return fract(sin(x * 12.9898 + 78.233) * 43758.5453);
+    var p = fract(x * 0.1031);
+    p = p * (p + 33.33);
+    p = p * (p + p);
+    return fract(p);
 }
 
 fn hash21(p: vec2<f32>) -> f32 {
@@ -43,8 +49,10 @@ fn hash21(p: vec2<f32>) -> f32 {
     return fract((p3.x + p3.y) * p3.z);
 }
 
-fn hash31(p: vec3<f32>) -> f32 {
-    return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
+fn hash31(p_in: vec3<f32>) -> f32 {
+    var p = fract(p_in * 0.1031);
+    p = p + dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
 }
 
 // Smooth value noise — trilinear interp over hash31 lattice. Output [0, 1].

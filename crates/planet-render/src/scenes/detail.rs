@@ -231,7 +231,7 @@ fn quantile_height(heightmap: &[f32], water_fraction: f32) -> f32 {
 
 pub fn mesh_resolution(quality: f32) -> u32 {
     if quality < 0.55 {
-        160
+        192
     } else if quality < 0.85 {
         320
     } else {
@@ -254,10 +254,13 @@ pub fn zoom_closeness(camera_distance: f32, planet_radius: f32) -> f32 {
 /// reveal mesh facets at extreme zoom.
 pub fn mesh_resolution_for_view(quality: f32, camera_distance: f32, planet_radius: f32) -> u32 {
     let base = mesh_resolution(quality);
+    // Phone-class meshes stay fixed: re-tessellating the cubesphere mid-pinch is
+    // itself a main-thread stall, and a 192-res limb already reads as round.
+    if quality < 0.55 {
+        return base;
+    }
     let closeness = zoom_closeness(camera_distance, planet_radius);
-    let max_boost = if quality < 0.55 {
-        PLANET_RES_MID
-    } else if quality < 0.85 {
+    let max_boost = if quality < 0.85 {
         PLANET_RES_NEAR
     } else {
         PLANET_RES_CLOSE

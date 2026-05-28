@@ -22,7 +22,7 @@ describe('detectRenderProfile', () => {
     }).name).toBe('high')
   })
 
-  it('drops iPhone-class devices to the low profile', () => {
+  it('drops iPhone-class devices to the minimum profile', () => {
     expect(detectRenderProfile({
       width: 393,
       height: 852,
@@ -31,7 +31,7 @@ describe('detectRenderProfile', () => {
       maxTouchPoints: 5,
       coarsePointer: true,
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
-    }).name).toBe('low')
+    }).name).toBe('minimum')
   })
 
   it('uses the balanced profile for larger touch tablets', () => {
@@ -73,7 +73,7 @@ describe('detectRenderProfile', () => {
 })
 
 describe('canvasPixelSize', () => {
-  it('caps low-profile iPhone pixels close to CSS resolution', () => {
+  it('caps minimum-profile iPhone pixels close to CSS resolution', () => {
     const profile = detectRenderProfile({
       width: 393,
       height: 852,
@@ -124,9 +124,11 @@ describe('render profile frame pacing', () => {
     expect(shouldThrottleRenderProfile(renderProfileByName('balanced'))).toBe(false)
   })
 
-  it('keeps low quality as the only intentionally throttled profile', () => {
+  it('throttles the low and minimum profiles to their reduced frame cadence', () => {
     expect(renderProfileByName('low').targetFps).toBe(30)
     expect(shouldThrottleRenderProfile(renderProfileByName('low'))).toBe(true)
+    expect(renderProfileByName('minimum').targetFps).toBe(30)
+    expect(shouldThrottleRenderProfile(renderProfileByName('minimum'))).toBe(true)
   })
 })
 
@@ -202,14 +204,25 @@ describe('nextRenderProfileForFrameTime', () => {
     expect(result.state.profile.name).toBe('low')
   })
 
-  it('does not downshift below the low profile', () => {
+  it('can step a low profile down to minimum', () => {
     const initial = createFrameTimeDownshiftState(renderProfileByName('low'))
     const result = nextRenderProfileForFrameTime(initial, 120, {
       warmupFrames: 0,
       consecutiveSlowFrames: 1,
     })
 
+    expect(result.changed).toBe(true)
+    expect(result.state.profile.name).toBe('minimum')
+  })
+
+  it('does not downshift below the minimum profile', () => {
+    const initial = createFrameTimeDownshiftState(renderProfileByName('minimum'))
+    const result = nextRenderProfileForFrameTime(initial, 120, {
+      warmupFrames: 0,
+      consecutiveSlowFrames: 1,
+    })
+
     expect(result.changed).toBe(false)
-    expect(result.state.profile.name).toBe('low')
+    expect(result.state.profile.name).toBe('minimum')
   })
 })

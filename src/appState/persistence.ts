@@ -25,7 +25,7 @@ interface Persisted {
 }
 
 const VIEW_MODES: readonly ViewMode[] = ['subsector', 'system', 'detail', 'surface']
-const QUALITY_MODES: readonly RenderQualityMode[] = ['auto', 'low', 'balanced', 'high']
+const QUALITY_MODES: readonly RenderQualityMode[] = ['auto', 'low', 'balanced', 'high', 'minimum']
 
 function safeRead(): Persisted | null {
   if (typeof localStorage === 'undefined') return null

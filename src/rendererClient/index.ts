@@ -55,6 +55,20 @@ declare global {
   }
 }
 
+// Idle frame-rate cap. Drifting clouds and waves read fine at 30fps, so the
+// full profile target is reserved for active interaction (drag / pinch / zoom)
+// where cadence is what makes the view feel responsive. LOW / MINIMUM already
+// sit at 30fps, so this only relaxes the idle cadence on the higher tiers.
+const IDLE_FPS = 30
+// Keep rendering at the interaction rate for a short tail after the last input
+// so flick-drags and successive zoom steps don't dip to the idle cadence
+// between events.
+const INTERACTION_KEEPALIVE_MS = 600
+// Clamp the per-frame delta so returning from a backgrounded tab (rAF paused
+// for seconds) neither jumps the cloud/orbit clock forward nor feeds the
+// frame-time downshifter a false "slow frame" spike.
+const MAX_FRAME_MS = 100
+
 export class RendererClient {
   private planet: Planet | null = null
   private animationFrame = 0
@@ -79,6 +93,7 @@ export class RendererClient {
   private fpsSampleFrames = 0
   private lastFps = 0
   private lastFrameMs = 0
+  private lastInteractionMs = 0
   private surfacePrebakeCache: {
     planetIndex: number
     seed: number
@@ -424,12 +439,19 @@ export class RendererClient {
         this.animationFrame = requestAnimationFrame(loop)
         return
       }
-      const minFrameMs = shouldThrottleRenderProfile(this.profile) ? 1000 / this.profile.targetFps : 0
+      const interacting = time - this.lastInteractionMs < INTERACTION_KEEPALIVE_MS
+      // While interacting, run at the profile target (uncapped vsync on the
+      // higher tiers, the explicit 30fps cap on LOW / MINIMUM). While idle,
+      // cap every tier at IDLE_FPS so a planet left drifting doesn't burn the
+      // GPU at full refresh rate.
+      const interactingCapFps = shouldThrottleRenderProfile(this.profile) ? this.profile.targetFps : 0
+      const capFps = interacting ? interactingCapFps : Math.min(this.profile.targetFps, IDLE_FPS)
+      const minFrameMs = capFps > 0 ? 1000 / capFps : 0
       if (minFrameMs > 0 && time - lastRenderMs < minFrameMs) {
         this.animationFrame = requestAnimationFrame(loop)
         return
       }
-      const frameTimeMs = lastRenderMs > 0 ? time - lastRenderMs : 0
+      const frameTimeMs = lastRenderMs > 0 ? Math.min(time - lastRenderMs, MAX_FRAME_MS) : 0
       lastRenderMs = time
 
       if (!this.simInitialised) {
@@ -454,7 +476,10 @@ export class RendererClient {
         this.animationFrame = 0
         return
       }
-      this.sampleFrameTime(frameTimeMs)
+      // Only judge frames we tried to render at full speed; idle-capped frames
+      // sit at ~IDLE_FPS by construction and would read as "slow" against a
+      // 60fps target, tripping a spurious quality downshift.
+      if (interacting) this.sampleFrameTime(frameTimeMs)
       this.sampleFps(time)
       this.animationFrame = requestAnimationFrame(loop)
     }
@@ -601,6 +626,7 @@ export class RendererClient {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
+    this.lastInteractionMs = performance.now()
     this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     this.lastPointer = { x: event.clientX, y: event.clientY }
     try {
@@ -621,6 +647,7 @@ export class RendererClient {
 
   private readonly onPointerMove = (event: PointerEvent) => {
     if (!this.activePointers.has(event.pointerId)) return
+    this.lastInteractionMs = performance.now()
     this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
 
     if (this.activePointers.size >= 2 && this.pinchDistance != null) {
@@ -664,6 +691,7 @@ export class RendererClient {
     const mode = viewMode.value
     if (mode !== 'system' && mode !== 'detail') return
     event.preventDefault()
+    this.lastInteractionMs = performance.now()
     this.planet?.zoom(event.deltaY)
   }
 }

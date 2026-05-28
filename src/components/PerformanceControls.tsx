@@ -10,6 +10,7 @@ const QUALITY_OPTIONS: Array<{ mode: RenderQualityMode; label: string; hint: str
   { mode: 'high', label: 'High', hint: 'Maximum visual quality' },
   { mode: 'balanced', label: 'Balanced', hint: 'Smooth on most hardware' },
   { mode: 'low', label: 'Low', hint: 'Best chance to stay above 30 fps' },
+  { mode: 'minimum', label: 'Minimum', hint: 'Lightest load for phones and weak GPUs' },
 ]
 
 interface PerformanceControlsProps {
