@@ -2,6 +2,23 @@
 
 Guidance for coding agents working in this repository.
 
+## Default Completion Workflow
+
+For user-requested code, design, or documentation changes, assume the work is
+not complete until it is committed, pushed, deployed, and verified on the live
+site unless the user explicitly says not to.
+
+- Run the relevant local checks before committing. Use the full verification
+  suite when the change can affect production behavior.
+- Commit with a concise message that describes the shipped change.
+- Push the branch and watch the CI/deploy run to completion.
+- Verify the deployed build on <https://uwp.tre.systems>. For UI-visible
+  changes, exercise the affected view in the live browser and capture evidence
+  that it looks right. For non-UI changes, confirm the live app still loads and
+  is serving the expected build.
+- If the live site is wrong, keep iterating through fix, test, commit, push, and
+  live verification until it is correct or a real blocker appears.
+
 ## Current Status
 
 **Planned work is complete.** Every roadmap section below has a v1
