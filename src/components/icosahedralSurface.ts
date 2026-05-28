@@ -26,7 +26,7 @@ export interface IcosaHex {
   /** Flat-net pixel position of this hex cell's centre. */
   x: number
   y: number
-  /** Optional precomputed pointy-top hex boundary from Rust. */
+  /** Pointy-top hex outline in the flat net. Atlas cells clip this by face. */
   flatBoundary?: Array<[number, number]>
   /** Sphere position in degrees, for tooltips / region drill-down. */
   latDeg: number

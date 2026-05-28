@@ -382,8 +382,6 @@ function RouteOverrideControls({
   routes: JumpRoute[]
 }) {
   const sortedRoutes = routes.slice().sort((a, b) => {
-    const visibleDelta = Number(isRouteVisible(b)) - Number(isRouteVisible(a))
-    if (visibleDelta !== 0) return visibleDelta
     const kindDelta = routeKindRank(b) - routeKindRank(a)
     if (kindDelta !== 0) return kindDelta
     return hexLabel(routeNeighbor(a, hex.coord)).localeCompare(hexLabel(routeNeighbor(b, hex.coord)))

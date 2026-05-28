@@ -115,7 +115,7 @@ async function openApp(page: Page) {
     consoleErrors.push(error.message)
   })
 
-  await page.goto('/')
+  await page.goto('/#view=detail')
   await expect(page.locator('.planet-canvas')).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('.error-overlay')).toHaveCount(0)
   await expect.poll(() => consoleErrors, { message: 'No browser console/page errors' }).toEqual([])

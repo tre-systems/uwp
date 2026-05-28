@@ -1864,6 +1864,25 @@ label.color input[type="color"]::-webkit-color-swatch {
   opacity: 1;
   pointer-events: none;
 }
+.surface-guide-lines {
+  pointer-events: none;
+}
+.surface-guide-lines rect {
+  fill: none;
+  stroke: rgba(235, 242, 250, 0.30);
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+}
+.surface-guide-lines line {
+  stroke: rgba(235, 242, 250, 0.22);
+  stroke-width: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+.surface-guide-lines .surface-equator-guide {
+  stroke: rgba(235, 242, 250, 0.42);
+  stroke-width: 0.85;
+  stroke-dasharray: 6 6;
+}
 .surface-hex { cursor: pointer; }
 .surface-hit-area {
   fill: rgba(255, 255, 255, 0.02);
@@ -1895,8 +1914,8 @@ label.color input[type="color"]::-webkit-color-swatch {
    and settlements remain the first read. */
 .surface-fold-lines polygon {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.18);
-  stroke-width: 0.9;
+  stroke: rgba(255, 255, 255, 0.34);
+  stroke-width: 1.05;
   stroke-linejoin: round;
   pointer-events: none;
   vector-effect: non-scaling-stroke;

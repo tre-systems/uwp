@@ -3,6 +3,7 @@ import {
   FACES,
   faceFlatVertices,
   iterFaceSubCells,
+  netToFaceBary,
   netToSphere,
   TRI_HEIGHT,
   TRI_SIDE,
@@ -28,6 +29,7 @@ describe('icosahedral surface net', () => {
         y: (a.y + b.y + c.y) / 3,
       }
       expect(netToSphere(p.x, p.y)?.face).toBe(i)
+      expect(netToFaceBary(p.x, p.y)?.faceIdx).toBe(i)
     }
   })
 
@@ -51,6 +53,13 @@ describe('icosahedral surface net', () => {
     const centreDistance = Math.hypot(up!.flat.x - down!.flat.x, up!.flat.y - down!.flat.y)
     const hexRadius = (TRI_SIDE / subdivisions) / 3
     expect(centreDistance).toBeCloseTo(Math.sqrt(3) * hexRadius, 6)
+  })
+
+  it('returns barycentric coordinates for points inside the connected net', () => {
+    const p = netToFaceBary(2.75 * TRI_SIDE, 1.5 * TRI_HEIGHT)
+    expect(p).not.toBeNull()
+    expect((p!.u + p!.v + p!.w)).toBeCloseTo(1, 6)
+    expect(Math.min(p!.u, p!.v, p!.w)).toBeGreaterThanOrEqual(-1e-5)
   })
 })
 

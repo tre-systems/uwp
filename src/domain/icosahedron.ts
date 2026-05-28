@@ -170,28 +170,17 @@ export function faceSphereVertices(face: Face): [Vec3, Vec3, Vec3] {
 /** Map a flat-net point (x, y) to a spherical point. Returns null if
  *  the point is outside the net (the zigzag region around the cells). */
 export function netToSphere(x: number, y: number): { lat: number; lon: number; face: number } | null {
-  if (x < 0 || x > NET_WIDTH || y < 0 || y > NET_HEIGHT) return null
-  const p2 = { x, y }
-  let faceIdx = -1
-  let bary: Bary | null = null
-  for (let i = 0; i < FACES.length; i++) {
-    const flat = faceFlatVertices(FACES[i])
-    const b = barycentric2D(p2, flat[0], flat[1], flat[2])
-    if (b.u >= -1e-5 && b.v >= -1e-5 && b.w >= -1e-5) {
-      faceIdx = i
-      bary = b
-      break
-    }
-  }
-  if (faceIdx < 0 || !bary) return null
-  const sph = faceSphereVertices(FACES[faceIdx])
+  const located = netToFaceBary(x, y)
+  if (!located) return null
+  const sph = faceSphereVertices(FACES[located.faceIdx])
+  const bary = { u: located.u, v: located.v, w: located.w }
   const p = barycentricMix3D(bary, sph[0], sph[1], sph[2])
   const len = Math.hypot(p.x, p.y, p.z) || 1
   const nx = p.x / len, ny = p.y / len, nz = p.z / len
   return {
     lat: Math.asin(Math.max(-1, Math.min(1, ny))),
     lon: Math.atan2(nz, nx),
-    face: faceIdx,
+    face: located.faceIdx,
   }
 }
 
@@ -235,6 +224,51 @@ interface Bary {
   u: number
   v: number
   w: number
+}
+
+export interface FaceBary {
+  faceIdx: number
+  u: number
+  v: number
+  w: number
+}
+
+const FACE_FLAT_BOUNDS: readonly { minX: number; maxX: number; minY: number; maxY: number }[] =
+  FACES.map((face) => {
+    const flat = faceFlatVertices(face)
+    return {
+      minX: Math.min(flat[0].x, flat[1].x, flat[2].x),
+      maxX: Math.max(flat[0].x, flat[1].x, flat[2].x),
+      minY: Math.min(flat[0].y, flat[1].y, flat[2].y),
+      maxY: Math.max(flat[0].y, flat[1].y, flat[2].y),
+    }
+  })
+
+/** Locate a flat-net point inside one face and return its barycentric
+ * coordinates. This is the cheap geometry primitive for atlas lookups:
+ * callers that already have net-space pixels should not have to scan every
+ * serialized surface cell to find the matching face subdivision. */
+export function netToFaceBary(x: number, y: number): FaceBary | null {
+  if (x < 0 || x > NET_WIDTH || y < 0 || y > NET_HEIGHT) return null
+  const p2 = { x, y }
+  const eps = 1e-5
+  for (let i = 0; i < FACES.length; i++) {
+    const bounds = FACE_FLAT_BOUNDS[i]
+    if (
+      x < bounds.minX - eps ||
+      x > bounds.maxX + eps ||
+      y < bounds.minY - eps ||
+      y > bounds.maxY + eps
+    ) {
+      continue
+    }
+    const flat = faceFlatVertices(FACES[i])
+    const b = barycentric2D(p2, flat[0], flat[1], flat[2])
+    if (b.u >= -eps && b.v >= -eps && b.w >= -eps) {
+      return { faceIdx: i, u: b.u, v: b.v, w: b.w }
+    }
+  }
+  return null
 }
 
 function barycentric2D(p: Vec2, a: Vec2, b: Vec2, c: Vec2): Bary {

@@ -8,7 +8,9 @@ import {
   selectedSurfaceHex,
 } from '../appState'
 import {
+  buildSurfaceAtlasLookup,
   hexCoordLabel,
+  surfaceAtlasCellAtNetPoint,
   terrainLabel,
   type SurfaceMap as SurfaceMapDTO,
   type SurfaceHex,
@@ -42,9 +44,9 @@ import {
 // zig-zag belt, then five south-cap faces. The background image is the
 // Rust pre-bake projected through that same net, so continents wrap
 // continuously across shared face edges. Each face is subdivided N
-// times into smaller triangles; each sub-triangle becomes one pickable
-// atlas cell. Cuts remain only on the outside boundary, as expected for
-// an unfolded d20-style legacy 2d6 world map.
+// times into pickable atlas cells. The visible cells are pointy-top hexes
+// clipped by the triangular faces, matching the legacy 2d6 world-map
+// convention rather than exposing the internal triangle subdivision.
 
 const SUBDIVISIONS = 12
 const MIN_BACKGROUND_WIDTH = 1024
@@ -83,24 +85,26 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
   const meanTempK = surfacePlanet?.climate.mean_surface_temp_k ?? surfacePlanet?.temperature_k ?? 288
   const iceFraction = surfacePlanet?.climate.ice_fraction ?? 0.0
   const prebake = useMemo(() => {
-    if (!map || map.atlas) return null
+    if (!map) return null
     return getSurfacePrebake()
-  }, [map?.atlas, map?.seed, seaLevelParam, iceLatitudeDeg, atmosphereDensity, vegetationRichness, meanTempK])
+  }, [map?.seed, seaLevelParam, iceLatitudeDeg, atmosphereDensity, vegetationRichness, meanTempK])
 
   // Rebuild the icosahedral hex set whenever the inputs that drive
   // terrain / sea level / temperature change. Done synchronously in a
   // useMemo so the UI repaints atomically.
   const surface = useMemo(() => {
-    if (map?.atlas) return surfaceFromAtlas(map.atlas)
-    if (!prebake) return null
-    return buildIcosahedralSurface({
-      prebake,
-      waterFraction: seaLevelParam,
-      iceFraction,
-      meanTempK,
-      subdivisions: SUBDIVISIONS,
-    })
-  }, [map?.atlas, prebake, seaLevelParam, iceFraction, meanTempK])
+    if (!map) return null
+    if (prebake) {
+      return surfaceFromPrebake(prebake, map.atlas ?? null, {
+        waterFraction: seaLevelParam,
+        iceFraction,
+        meanTempK,
+        subdivisions: SUBDIVISIONS,
+      })
+    }
+    if (map.atlas) return surfaceFromAtlas(map.atlas)
+    return null
+  }, [map, prebake, seaLevelParam, iceFraction, meanTempK])
 
   // Rendered background, recomputed alongside the surface. The render
   // is async + chunked so the UI thread stays responsive on slower
@@ -117,10 +121,10 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       width: surfaceBackgroundWidth(containerRef.current),
       paletteBase,
     }
-    const paint = map.atlas
-      ? renderSurfaceBackgroundFromAtlas(map.atlas, bgOpts, controller.signal)
-      : prebake
-        ? renderSurfaceBackground(prebake, bgOpts, controller.signal)
+    const paint = prebake
+      ? renderSurfaceBackground(prebake, bgOpts, controller.signal)
+      : map.atlas
+        ? renderSurfaceBackgroundFromAtlas(map.atlas, bgOpts, controller.signal)
         : Promise.resolve(null)
     void paint
       .then((url) => {
@@ -161,7 +165,6 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
       </div>
     )
   }
-
   const sel = selectedSurfaceHex.value
   const selectedCell = selectedSurfaceCell.value
   const coarsePointer = typeof window !== 'undefined' &&
@@ -197,6 +200,7 @@ export function SurfaceMap({ map }: SurfaceMapProps) {
             aria-hidden="true"
           />
         )}
+        <SurfaceGuideLines />
         {/* Surface cells act as an interactive atlas grid over the rendered
             pre-bake. Keep them visually quiet; the background carries the
             photoreal terrain, the cells provide classic 2d6 picking. */}
@@ -257,29 +261,33 @@ function SurfaceCells({
   onSelectCell: (key: string) => void
 }) {
   const selectedCoordKey = selectedHex ? coordOfSel(selectedHex) : null
+  const hexesByFace = useMemo(() => {
+    const groups: IcosaHex[][] = Array.from({ length: FACES.length }, () => [])
+    for (const hex of surface.hexes) groups[hex.faceIdx]?.push(hex)
+    return groups
+  }, [surface])
+
   return (
     <g class="surface-grid-layer">
-      {FACES.map((_, faceIdx) => (
+      {hexesByFace.map((faceHexes, faceIdx) => (
         <g key={faceIdx} clip-path={`url(#${SURFACE_FACE_CLIP_ID}-${faceIdx})`}>
-          {surface.hexes
-            .filter((h) => h.faceIdx === faceIdx)
-            .map((h, i) => {
-              const cellKey = keyOfHex(h)
-              return (
-                <SubHex
-                  key={`${faceIdx}-${i}`}
-                  hex={h}
-                  cellKey={cellKey}
-                  hexRadius={surface.hexRadius}
-                  selected={
-                    selectedCellKey
-                      ? cellKey === selectedCellKey
-                      : !!selectedCoordKey && coordOfHex(h) === selectedCoordKey
-                  }
-                  onSelectCell={onSelectCell}
-                />
-              )
-            })}
+          {faceHexes.map((h, i) => {
+            const cellKey = keyOfHex(h)
+            return (
+              <SubHex
+                key={`${faceIdx}-${i}`}
+                hex={h}
+                cellKey={cellKey}
+                hexRadius={surface.hexRadius}
+                selected={
+                  selectedCellKey
+                    ? cellKey === selectedCellKey
+                    : !!selectedCoordKey && coordOfHex(h) === selectedCoordKey
+                }
+                onSelectCell={onSelectCell}
+              />
+            )
+          })}
         </g>
       ))}
     </g>
@@ -350,6 +358,20 @@ function FoldLines() {
   )
 }
 
+function SurfaceGuideLines() {
+  const lines = Array.from({ length: 12 }, (_, i) => (i + 1) * SVG_H / 13)
+  const equatorY = SVG_H / 2
+  return (
+    <g class="surface-guide-lines" aria-hidden="true">
+      <rect x={0} y={0} width={SVG_W} height={SVG_H} />
+      {lines.map((y, i) => (
+        <line key={i} x1={0} y1={y} x2={SVG_W} y2={y} />
+      ))}
+      <line class="surface-equator-guide" x1={0} y1={equatorY} x2={SVG_W} y2={equatorY} />
+    </g>
+  )
+}
+
 // ---------- markers ----------
 
 function SurfaceHexMagnifier({
@@ -364,8 +386,9 @@ function SurfaceHexMagnifier({
     ? surface.hexes.find((h) => sameCellId(h.cellId, hex.cell_id!))
     : null
   const r = 52
-  const path = atlasHex?.flatBoundary?.length === 6
-    ? `M${atlasHex.flatBoundary.map(([x, y]) => `${((x - atlasHex.x) * 4.2 + r).toFixed(1)},${((y - atlasHex.y) * 4.2 + r).toFixed(1)}`).join(' L')}Z`
+  const magnifierVerts = atlasHex?.flatBoundary
+  const path = magnifierVerts && magnifierVerts.length >= 3
+    ? `M${magnifierVerts.map(([x, y]) => `${((x - atlasHex!.x) * 4.2 + r).toFixed(1)},${((y - atlasHex!.y) * 4.2 + r).toFixed(1)}`).join(' L')}Z`
     : hexPath(r, r, r * 0.92)
   return (
     <div class="surface-hex-magnifier" aria-live="polite">
@@ -460,9 +483,13 @@ function hexPath(cx: number, cy: number, r: number): string {
 
 function hexPathForCell(hex: IcosaHex, r: number): string {
   if (hex.flatBoundary?.length === 6) {
-    return `M${hex.flatBoundary.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' L')}Z`
+    return polygonPath(hex.flatBoundary)
   }
   return hexPath(hex.x, hex.y, r)
+}
+
+function polygonPath(verts: Array<[number, number]>): string {
+  return `M${verts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' L')}Z`
 }
 
 // ---------- terrain styling ----------
@@ -501,7 +528,7 @@ function coordOfHex(h: IcosaHex): string {
 }
 
 function keyOfHex(h: IcosaHex): string {
-  if (h.cellId) return cellIdKey(h.cellId)
+  if (h.cellId) return `${cellIdKey(h.cellId)}:${h.x.toFixed(3)}:${h.y.toFixed(3)}`
   return `${h.faceIdx}:${h.upPointing ? 1 : 0}:${h.x.toFixed(3)}:${h.y.toFixed(3)}`
 }
 
@@ -537,6 +564,31 @@ function surfaceFromAtlas(atlas: SurfaceAtlas): IcosaSurface {
     seaLevel: 0,
     hexRadius: atlas.hex_radius,
     subdivisions: atlas.resolution,
+  }
+}
+
+function surfaceFromPrebake(
+  prebake: NonNullable<ReturnType<typeof getSurfacePrebake>>,
+  atlas: SurfaceAtlas | null,
+  opts: {
+    waterFraction: number
+    iceFraction: number
+    meanTempK: number
+    subdivisions: number
+  },
+): IcosaSurface {
+  const surface = buildIcosahedralSurface({ prebake, ...opts })
+  if (!atlas) return surface
+
+  const lookup = buildSurfaceAtlasLookup(atlas)
+  return {
+    ...surface,
+    hexes: surface.hexes.map((hex) => {
+      const atlasCell = surfaceAtlasCellAtNetPoint(atlas, lookup, hex.x, hex.y)
+      return atlasCell
+        ? { ...hex, cellId: atlasCell.id, coord: atlasCell.coord }
+        : hex
+    }),
   }
 }
 

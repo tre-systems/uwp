@@ -12,7 +12,11 @@
 // agrees pixel-for-pixel with the globe shader and the region view.
 
 import { netToSphere, NET_WIDTH, NET_HEIGHT } from '../domain/icosahedron'
-import type { SurfaceAtlas, SurfaceAtlasCell } from '../domain/surfaceMap'
+import {
+  buildSurfaceAtlasLookup,
+  surfaceAtlasCellAtNetPoint,
+  type SurfaceAtlas,
+} from '../domain/surfaceMap'
 import {
   biomeColorLinear,
   biomeIsIce,
@@ -278,6 +282,7 @@ export async function renderSurfaceBackgroundFromAtlas(
   const elev = new Float32Array(width * height)
   const biomeBuf = new Uint8Array(width * height)
   const inside = new Uint8Array(width * height)
+  const cellsById = buildSurfaceAtlasLookup(atlas)
   const CHUNK_ROWS = 64
 
   for (let yStart = 0; yStart < height; yStart += CHUNK_ROWS) {
@@ -287,11 +292,10 @@ export async function renderSurfaceBackgroundFromAtlas(
       for (let x = 0; x < width; x++) {
         const netX = x / scaleNetToPx
         const netY = y / scaleNetToPx
-        const proj = netToSphere(netX, netY)
+        const cell = surfaceAtlasCellAtNetPoint(atlas, cellsById, netX, netY)
         const idx = y * width + x
-        if (!proj) continue
+        if (!cell) continue
         inside[idx] = 1
-        const cell = nearestAtlasCell(atlas.cells, proj.lat, proj.lon)
         elev[idx] = cell.elevation_signed
         biomeBuf[idx] = cell.biome_id
       }
@@ -357,23 +361,6 @@ export async function renderSurfaceBackgroundFromAtlas(
 
   ctx.putImageData(img, 0, 0)
   return canvas.toDataURL('image/png')
-}
-
-function nearestAtlasCell(cells: SurfaceAtlasCell[], latRad: number, lonRad: number): SurfaceAtlasCell {
-  let best = cells[0]
-  let bestDot = -2
-  const sinLat = Math.sin(latRad)
-  const cosLat = Math.cos(latRad)
-  for (const cell of cells) {
-    const clat = (cell.latitude_deg * Math.PI) / 180
-    const clon = (cell.longitude_deg * Math.PI) / 180
-    const dot = sinLat * Math.sin(clat) + cosLat * Math.cos(clat) * Math.cos(lonRad - clon)
-    if (dot > bestDot) {
-      bestDot = dot
-      best = cell
-    }
-  }
-  return best
 }
 
 // Heightmap-only fallback used when the prebake doesn't carry biome ids
