@@ -6,7 +6,12 @@ test('detail and system views render with quality controls', async ({ page }) =>
   const panel = await openPanel(page)
   await expect(panel.getByText('Performance', { exact: false })).toBeVisible()
   await expect(panel.locator('.perf-profile')).toContainText('auto')
-  await expect.poll(() => fpsValue(panel), { message: 'FPS should be reported' }).toBeGreaterThan(0)
+  await expect
+    .poll(() => fpsValue(panel), {
+      message: 'FPS should be reported',
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(0)
 
   await selectQuality(panel, 'Low')
   await expect(panel.locator('.perf-profile')).toContainText('Low')
@@ -43,7 +48,7 @@ for (const viewport of [
 
     await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
     await expect(page.locator('.subsector-map')).toBeVisible()
-    await expect(page.locator('[data-coord="1610"]')).toBeVisible()
+    await expect(page.locator('[data-coord="1610"]')).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('.subsector-seam')).toHaveCount(1)
     await expect(page.locator('.polity-borders')).toHaveCount(1)
     await expect.poll(() => page.locator('.polity-border-line').count()).toBeGreaterThan(0)

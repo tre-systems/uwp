@@ -4,6 +4,9 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
   timeout: 60_000,
+  // These smoke tests exercise WebGPU plus WASM generation. Running them in
+  // parallel can starve frame timing and map generation on CI/local hooks.
+  workers: 1,
   expect: {
     timeout: 10_000,
   },
