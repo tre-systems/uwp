@@ -366,6 +366,43 @@ html, body, #app {
 }
 .sys-export-row button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.sys-import-row { margin-top: 6px; flex-wrap: wrap; }
+.sys-import-row button,
+.sys-import-panel button {
+  font-size: 11px;
+  padding: 4px 10px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.sys-import-row button:hover:not(:disabled),
+.sys-import-panel button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.sys-import-row button:disabled,
+.sys-import-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+.sys-import-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.sys-import-label { font-size: 11px; color: var(--text-dim); }
+.sys-import-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+.sys-import-status { font-size: 11px; color: var(--text-dim); }
+.sys-source-tag { color: var(--color-accent, #7db4ff); font-weight: 500; }
+
 .time-scrubber {
   display: flex;
   align-items: center;

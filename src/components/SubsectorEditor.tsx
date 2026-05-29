@@ -4,6 +4,7 @@ import {
   generatedSubsectorHex,
   getSubsectorHexOverride,
   getSubsectorRouteOverride,
+  importSubsector,
   rerollSubsectorSeed,
   selectedHex,
   clearSubsectorRouteOverride,
@@ -15,6 +16,7 @@ import {
   showJumpRoutes,
   subsectorDensity,
   subsectorSeed,
+  subsectorSource,
 } from '../appState'
 import { SeedField } from './SeedField'
 import { useState } from 'preact/hooks'
@@ -28,6 +30,7 @@ import {
   routeNeighbor,
   routesForHex,
   routeDisplayKind,
+  parseSectorData,
   subsectorHexCount,
   subsectorToText,
   uwpToCode,
@@ -66,7 +69,10 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   return (
     <>
       <section>
-        <h2>{sub ? `${systemName(seed)} Sector` : 'Subsector'}</h2>
+        <h2>
+          {sub ? `${systemName(seed)} Sector` : 'Subsector'}
+          {subsectorSource.value === 'imported' && <span class="sys-source-tag"> · Imported</span>}
+        </h2>
         <dl class="sys-meta">
           <div class="sys-meta-row">
             <dt>Polities</dt>
@@ -134,6 +140,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
           />
         </div>
         {sub && <SubsectorExportRow subsector={sub} disabled={disabled} />}
+        <SubsectorImportRow disabled={disabled} />
       </section>
 
       {sub && selectedDetail && <HexDetailSection subsector={sub} hex={selectedDetail} />}
@@ -217,6 +224,61 @@ function SubsectorExportRow({ subsector, disabled }: { subsector: Subsector; dis
       <button type="button" onClick={download} disabled={disabled} title="Download as .tab file">
         Download .tab
       </button>
+    </div>
+  )
+}
+
+function SubsectorImportRow({ disabled }: { disabled: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [result, setResult] = useState<string | null>(null)
+
+  const runImport = () => {
+    const { subsector, errors, worldCount, format } = parseSectorData(text)
+    if (!subsector) {
+      setResult(`No worlds found — paste T5SS .tab or classic .sec data.${errors.length ? ` (${errors.length} unparsed lines)` : ''}`)
+      return
+    }
+    importSubsector(subsector)
+    const skipped = errors.length ? `, ${errors.length} skipped` : ''
+    setResult(`Imported ${worldCount} worlds (${format})${skipped}.`)
+    setText('')
+    setOpen(false)
+  }
+
+  if (!open) {
+    return (
+      <div class="sys-actions sys-import-row">
+        <button type="button" onClick={() => setOpen(true)} disabled={disabled} title="Paste sector / subsector data to import">
+          Import…
+        </button>
+        {result && <span class="sys-import-status" role="status">{result}</span>}
+      </div>
+    )
+  }
+  return (
+    <div class="sys-import-panel">
+      <label class="sys-import-label" for="sector-import-textarea">
+        Paste T5SS tab-delimited or classic .sec data
+      </label>
+      <textarea
+        id="sector-import-textarea"
+        class="sys-import-textarea"
+        value={text}
+        onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+        rows={6}
+        spellcheck={false}
+        placeholder={'Hex\tName\tUWP\tBases\tRemarks\tZone\tPBG\tAllegiance\n0101\tRegina\tA788899-A\t…'}
+      />
+      <div class="sys-actions">
+        <button type="button" onClick={runImport} disabled={disabled || text.trim().length === 0}>
+          Import
+        </button>
+        <button type="button" onClick={() => { setOpen(false); setResult(null) }}>
+          Cancel
+        </button>
+      </div>
+      {result && <span class="sys-import-status" role="status">{result}</span>}
     </div>
   )
 }

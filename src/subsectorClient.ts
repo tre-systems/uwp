@@ -12,6 +12,7 @@ import {
   setSubsector,
   subsectorDensity,
   subsectorSeed,
+  subsectorSource,
   syncUwpFromSelectedHex,
 } from './appState'
 import { withChartWork, yieldToPaint } from './appState/chartWork'
@@ -28,6 +29,7 @@ let densityDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let lastRefreshSeed = subsectorSeed.value
 
 function applySubsector(sub: Subsector, selected: typeof selectedHex.value): void {
+  subsectorSource.value = 'generated'
   const previousSelected = selected
     ? currentSubsector.value?.hexes.find((h) => h.coord.col === selected.col && h.coord.row === selected.row)
     : null

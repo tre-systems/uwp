@@ -104,6 +104,8 @@ export const subsectorSeed = signal<number>(0xC0FFEE)
 export const subsectorDensity = signal<number>(0.5)
 const generatedSubsector = signal<Subsector | null>(null)
 export const currentSubsector = signal<Subsector | null>(null)
+/** Whether the current grid was procedurally generated or imported from text. */
+export const subsectorSource = signal<'generated' | 'imported'>('generated')
 export const selectedHex = signal<HexCoord | null>(null)
 export const showJumpRoutes = signal<boolean>(true)
 export const subsectorOverrides = signal<SubsectorOverrides>({})
@@ -329,6 +331,18 @@ export function setSubsector(sub: Subsector | null) {
   currentSubsector.value = sub
     ? applySubsectorOverrides(sub, subsectorOverrides.value, subsectorRouteOverrides.value)
     : null
+}
+
+/**
+ * Replace the current grid with an imported one (parsed from pasted text).
+ * Clears any selection and flags the source as imported. It deliberately does
+ * not touch `subsectorSeed`, so the import persists until the user explicitly
+ * regenerates.
+ */
+export function importSubsector(sub: Subsector) {
+  subsectorSource.value = 'imported'
+  selectedHex.value = null
+  setSubsector(sub)
 }
 
 export function setSubsectorSeed(seed: number) {
