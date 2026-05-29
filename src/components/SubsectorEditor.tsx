@@ -56,7 +56,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
   const commRoutesCount = routes.filter((route) => route.communication).length
   const tradeRoutesCount = routes.filter((route) => route.trade).length
   const polities = sub ? politySummaries(sub) : []
-  const total = sub ? subsectorHexCount(sub) : 16 * 10
+  const total = sub ? subsectorHexCount(sub) : 8 * 10
   const selectedDetail = sub && sel
     ? sub.hexes.find((h) => h.coord.col === sel.col && h.coord.row === sel.row) ?? null
     : null

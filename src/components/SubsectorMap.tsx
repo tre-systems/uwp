@@ -43,7 +43,7 @@ const ROW_STEP = HEX_H
 const PAD_X = HEX_R * 1.1
 const PAD_Y = HEX_H * 0.85
 
-const DEFAULT_COLS = 16
+const DEFAULT_COLS = 8
 const DEFAULT_ROWS = 10
 
 interface XY { x: number; y: number }

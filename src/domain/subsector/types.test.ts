@@ -34,12 +34,12 @@ function subsector(hexes: SubsectorHex[]): Subsector {
   return {
     seed: 1,
     density: 0.5,
-    columns: 16,
+    columns: 8,
     rows: 10,
     allegiance: 'ImDi',
     allegiances: [
-      { code: 'ImDi', name: 'Imperial Diocese', capital: { col: 4, row: 5 }, color_index: 0 },
-      { code: 'NaVa', name: 'Navis Verge', capital: { col: 13, row: 5 }, color_index: 1 },
+      { code: 'ImDi', name: 'Imperial Diocese', capital: { col: 3, row: 5 }, color_index: 0 },
+      { code: 'NaVa', name: 'Navis Verge', capital: { col: 7, row: 5 }, color_index: 1 },
     ],
     hexes,
     jump_routes: [],

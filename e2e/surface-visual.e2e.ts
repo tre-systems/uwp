@@ -41,7 +41,9 @@ test.describe('surface convergence regression', () => {
     await expect(page.locator('.subsector-map')).toBeVisible({ timeout: 30_000 })
     const firstOccupied = page.locator('.hex-occupied').first()
     await firstOccupied.waitFor({ state: 'visible' })
-    await firstOccupied.click({ force: true })
+    // The first occupied hex can be a corner outside the pan/zoom viewport, so
+    // dispatch the click directly rather than relying on a pointer hit.
+    await firstOccupied.evaluate((el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     const surfaceTab = page.getByRole('tab', { name: /cepheus hex world map/i })
     await expect(surfaceTab).toBeEnabled({ timeout: 15_000 })

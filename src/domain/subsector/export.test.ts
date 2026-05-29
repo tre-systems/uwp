@@ -41,7 +41,7 @@ function subsector(hexes: SubsectorHex[], jump_routes: JumpRoute[] = []): Subsec
   return {
     seed: 0xFEEDFACE,
     density: 0.5,
-    columns: 16,
+    columns: 8,
     rows: 10,
     allegiance: 'ImDi',
     allegiances: [
@@ -60,10 +60,10 @@ describe('subsectorToText', () => {
     const lines = text.trim().split('\n')
     // 6 banner comments + blank + header + divider + 1 data row
     expect(lines).toHaveLength(10)
-    expect(lines[1]).toBe('# Dimensions: 16 x 10')
+    expect(lines[1]).toBe('# Dimensions: 8 x 10')
     expect(lines[2]).toBe('# Dominant allegiance: ImDi')
     expect(lines[3]).toMatch(/^# Polities: ImDi=Imperial Diocese@0306\(1\/1\), Na=Neutral Border@0805\(0\/0\), NaVa=Navis Verge@1305\(0\/0\)$/)
-    expect(lines[4]).toBe('# Hexes occupied: 1 / 160')
+    expect(lines[4]).toBe('# Hexes occupied: 1 / 80')
     expect(lines[5]).toBe('# Routes: 0 communications, 0 trade')
     expect(lines[7]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
     expect(lines[8]).toMatch(/^-+\s+-+\s+-+/)
@@ -76,12 +76,12 @@ describe('subsectorToText', () => {
 
   it('sorts hexes by col then row', () => {
     const out = subsectorToText(
-      subsector([hex(16, 10), hex(1, 9), hex(9, 1)]),
+      subsector([hex(8, 10), hex(1, 9), hex(7, 1)]),
     )
     const dataLines = out.trim().split('\n').slice(9)
     expect(dataLines[0]).toContain('0109')
-    expect(dataLines[1]).toContain('0901')
-    expect(dataLines[2]).toContain('1610')
+    expect(dataLines[1]).toContain('0701')
+    expect(dataLines[2]).toContain('0810')
   })
 
   it('formats red/amber zones and base combinations', () => {

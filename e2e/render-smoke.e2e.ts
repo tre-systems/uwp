@@ -42,33 +42,40 @@ for (const viewport of [
   { name: 'desktop', size: { width: 1280, height: 820 } },
   { name: 'mobile', size: { width: 390, height: 844 } },
 ] as const) {
-  test(`subsector map renders a two-subsector strip and opens right-hand systems on ${viewport.name}`, async ({ page }) => {
+  test(`subsector map renders an 8x10 hex grid and opens a system on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport.size)
     await openApp(page)
 
     await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
     await expect(page.locator('.subsector-map')).toBeVisible()
-    await expect(page.locator('[data-coord="1610"]')).toBeVisible({ timeout: 30_000 })
-    await expect(page.locator('.subsector-seam')).toHaveCount(1)
+    // Wait for the 8x10 grid to populate, then drive selection + overrides off
+    // any occupied hex.
+    await expect(page.locator('.hex-occupied').first()).toBeVisible({ timeout: 30_000 })
+    // A single standard subsector is 8 columns wide, so it has no internal seam.
+    await expect(page.locator('.subsector-seam')).toHaveCount(0)
     await expect(page.locator('.polity-borders')).toHaveCount(1)
     await expect.poll(() => page.locator('.polity-border-line').count()).toBeGreaterThan(0)
     await expect.poll(() => page.locator('.polity-capital').count()).toBeGreaterThan(0)
     await expect.poll(() => page.locator('.hex-empty[data-allegiance]').count()).toBeGreaterThan(0)
 
-    const rightHandCoord = await page.locator('.hex-occupied').evaluateAll((nodes) => {
+    const targetCoord = await page.locator('.hex-occupied').evaluateAll((nodes) => {
       const coords = nodes
         .map((node) => (node as SVGElement).dataset.coord ?? '')
-        .filter((coord) => Number(coord.slice(0, 2)) >= 9)
+        .filter((coord) => /^\d{4}$/.test(coord))
         .sort()
       return coords[0] ?? null
     })
-    expect(rightHandCoord).toMatch(/^(09|1[0-6])\d{2}$/)
+    expect(targetCoord).toMatch(/^0[1-8](0[1-9]|10)$/)
 
-    await page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`).click()
+    // Dispatch the click directly: the picked hex can sit outside the pan/zoom
+    // viewport (e.g. a corner hex), which would block a real pointer click.
+    await page
+      .locator(`.hex-occupied[data-coord="${targetCoord}"]`)
+      .evaluate((el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await expect(page.getByRole('tab', { name: /overview of the current solar system/i })).toHaveAttribute('aria-selected', 'true')
 
     await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
-    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveClass(/hex-selected/)
+    await expect(page.locator(`.hex-occupied[data-coord="${targetCoord}"]`)).toHaveClass(/hex-selected/)
 
     const panel = await openPanel(page)
     await expect(panel.locator('dt').filter({ hasText: /^Polities$/ })).toBeVisible()
@@ -77,13 +84,13 @@ for (const viewport of [
     await expect(panel.locator('dt').filter({ hasText: /^Routes$/ })).toBeVisible()
 
     await panel.getByLabel('Override travel zone').selectOption('Red')
-    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .zone-ring-red`)).toHaveCount(1)
+    await expect(page.locator(`.hex-occupied[data-coord="${targetCoord}"] .zone-ring-red`)).toHaveCount(1)
     await expect(panel.locator('.zone-tag-red')).toHaveText('Red')
 
     await panel.getByRole('checkbox', { name: 'Research' }).check()
     await panel.getByRole('checkbox', { name: 'Aid' }).check()
-    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-research`)).toHaveCount(1)
-    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"] .base-aid`)).toHaveCount(1)
+    await expect(page.locator(`.hex-occupied[data-coord="${targetCoord}"] .base-research`)).toHaveCount(1)
+    await expect(page.locator(`.hex-occupied[data-coord="${targetCoord}"] .base-aid`)).toHaveCount(1)
 
     const allegianceSelect = panel.getByLabel('Override allegiance')
     const nextAllegiance = await allegianceSelect.evaluate((select) => {
@@ -91,7 +98,7 @@ for (const viewport of [
       return [...el.options].find((option) => option.value !== el.value)?.value ?? el.value
     })
     await allegianceSelect.selectOption(nextAllegiance)
-    await expect(page.locator(`.hex-occupied[data-coord="${rightHandCoord}"]`)).toHaveAttribute('aria-label', new RegExp(`allegiance ${nextAllegiance}`))
+    await expect(page.locator(`.hex-occupied[data-coord="${targetCoord}"]`)).toHaveAttribute('aria-label', new RegExp(`allegiance ${nextAllegiance}`))
 
     const routeId = await page.locator('.jump-route').first().getAttribute('data-route')
     expect(routeId).toMatch(/^\d{4}-\d{4}$/)
@@ -102,12 +109,16 @@ for (const viewport of [
     await expect(page.getByRole('tab', { name: /overview of the current solar system/i })).toHaveAttribute('aria-selected', 'true')
     await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
 
+    // Hiding a route via its override removes exactly one line from the map;
+    // resetting restores it. Panel rows are ordered by neighbour hex, not the
+    // map's draw order, so assert on the count delta rather than a specific id.
     const routeControls = panel.locator('fieldset.route-override-row').first()
     await expect(routeControls).toBeVisible()
+    const shownBefore = await page.locator('.jump-route').count()
     await routeControls.getByLabel('Show').uncheck()
-    await expect(page.locator(`.jump-route[data-route="${routeId}"]`)).toHaveCount(0)
+    await expect.poll(() => page.locator('.jump-route').count()).toBe(shownBefore - 1)
     await routeControls.getByRole('button', { name: /reset route/i }).click()
-    await expect(page.locator(`.jump-route[data-route="${routeId}"]`)).toHaveCount(1)
+    await expect.poll(() => page.locator('.jump-route').count()).toBe(shownBefore)
   })
 }
 

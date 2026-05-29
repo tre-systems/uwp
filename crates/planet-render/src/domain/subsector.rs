@@ -1,9 +1,10 @@
 //! Cepheus Engine subsector generator.
 //!
-//! A local campaign strip is two adjacent Cepheus subsectors: a 16-column ×
-//! 10-row hex grid of star systems. Each occupied hex carries its main world's
-//! UWP, bases, trade-zone, and presence flags (gas giant, asteroid belt) so
-//! the SVG map can render without re-running system generation.
+//! A subsector is a standard Cepheus Engine 8-column × 10-row hex grid of
+//! star systems. Each occupied hex carries its main world's UWP, bases,
+//! trade-zone, and presence flags (gas giant, asteroid belt) so the SVG map
+//! can render without re-running system generation. (Stage 2 stitches 16 of
+//! these into a 32×40 sector.)
 //!
 //! Determinism: a per-hex sub-seed is derived from
 //! `hash(subsector_seed, col, row)` so any single hex can be regenerated
@@ -28,11 +29,10 @@ use serde::{Deserialize, Serialize};
 
 use super::system::{self, BodyType, SolarSystem};
 
-/// Local map grid extents. One classic subsector is 8 columns × 10 rows; the
-/// app shows two side by side so the first screen has useful travel context.
-pub const SUBSECTOR_COLS: u8 = 16;
+/// Local map grid extents. A standard Cepheus Engine subsector is 8 columns
+/// × 10 rows (80 hexes).
+pub const SUBSECTOR_COLS: u8 = 8;
 pub const SUBSECTOR_ROWS: u8 = 10;
-pub const CLASSIC_SUBSECTOR_COLS: u8 = 8;
 const COMMUNICATION_ROUTE_THRESHOLD: i32 = 8;
 const TRADE_PROMOTES_COMMUNICATION_THRESHOLD: u8 = 8;
 const JUMP_2_COMMUNICATION_DM: i32 = -2;
@@ -367,19 +367,19 @@ fn generate_allegiances(seed: u32) -> Vec<Allegiance> {
         Allegiance {
             code: names[a].0.to_string(),
             name: names[a].1.to_string(),
-            capital: HexCoord::new(3 + (seed as u8 % 3), 3 + ((seed >> 8) as u8 % 5)),
+            capital: HexCoord::new(2 + (seed as u8 % 2), 3 + ((seed >> 8) as u8 % 5)),
             color_index: 0,
         },
         Allegiance {
             code: names[b].0.to_string(),
             name: names[b].1.to_string(),
-            capital: HexCoord::new(12 + ((seed >> 16) as u8 % 3), 3 + ((seed >> 24) as u8 % 5)),
+            capital: HexCoord::new(6 + ((seed >> 16) as u8 % 2), 3 + ((seed >> 24) as u8 % 5)),
             color_index: 1,
         },
         Allegiance {
             code: "Na".to_string(),
             name: "Neutral Border".to_string(),
-            capital: HexCoord::new(CLASSIC_SUBSECTOR_COLS, 5),
+            capital: HexCoord::new(4, 5),
             color_index: 2,
         },
     ]
@@ -1016,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn allegiances_are_assigned_across_the_two_subsector_strip() {
+    fn allegiances_are_assigned_across_the_subsector() {
         let sub = generate(1, 1.0);
 
         assert_eq!(sub.allegiances.len(), 3);
@@ -1036,7 +1036,7 @@ mod tests {
             assert_eq!(hex.allegiance, cell.allegiance);
         }
         let left = sub.hex_at(HexCoord::new(1, 1)).expect("left hex");
-        let right = sub.hex_at(HexCoord::new(16, 10)).expect("right hex");
+        let right = sub.hex_at(HexCoord::new(8, 10)).expect("right hex");
         assert_ne!(left.allegiance, right.allegiance);
     }
 
@@ -1243,8 +1243,8 @@ mod tests {
         let sub = generate(1, 1.0);
         let total = (SUBSECTOR_COLS as usize) * (SUBSECTOR_ROWS as usize);
         assert_eq!(sub.hexes.len(), total);
-        assert_eq!(total, 160);
-        assert!(sub.hex_at(HexCoord::new(16, 10)).is_some());
+        assert_eq!(total, 80);
+        assert!(sub.hex_at(HexCoord::new(8, 10)).is_some());
     }
 
     #[test]
@@ -1275,9 +1275,9 @@ mod tests {
     }
 
     #[test]
-    fn jump_routes_cross_two_subsector_boundary_and_mark_comms() {
+    fn jump_routes_link_adjacent_qualifying_ports_and_mark_comms() {
         let a = route_test_hex_with_uwp(
-            8,
+            6,
             5,
             Uwp {
                 starport: 'A',
@@ -1286,7 +1286,7 @@ mod tests {
             },
         );
         let b = route_test_hex_with_uwp(
-            9,
+            7,
             5,
             Uwp {
                 starport: 'B',
@@ -1294,18 +1294,19 @@ mod tests {
                 ..default_route_uwp()
             },
         );
-        let c = route_test_hex(10, 5, 'D');
+        let c = route_test_hex(8, 5, 'D');
         let routes = compute_jump_routes(&[a, b, c]);
 
-        let seam = routes
+        let link = routes
             .iter()
-            .find(|r| r.from == HexCoord::new(8, 5) && r.to == HexCoord::new(9, 5))
-            .expect("A/B seam route");
-        assert_eq!(seam.jump, 1);
-        assert!(seam.communication);
+            .find(|r| r.from == HexCoord::new(6, 5) && r.to == HexCoord::new(7, 5))
+            .expect("A/B link route");
+        assert_eq!(link.jump, 1);
+        assert!(link.communication);
+        // The D-port neighbour does not qualify for a route.
         assert!(!routes
             .iter()
-            .any(|r| { r.from == HexCoord::new(9, 5) && r.to == HexCoord::new(10, 5) }));
+            .any(|r| { r.from == HexCoord::new(7, 5) && r.to == HexCoord::new(8, 5) }));
     }
 
     #[test]
@@ -1528,7 +1529,7 @@ mod tests {
     }
 
     #[test]
-    fn default_route_density_stays_playable_for_two_subsector_maps() {
+    fn default_route_density_stays_playable_for_subsector_maps() {
         let mut raw_routes = 0usize;
         let mut communication_routes = 0usize;
         let mut trade_routes = 0usize;
@@ -1549,16 +1550,18 @@ mod tests {
         let average_communication = communication_routes as f32 / SAMPLE_SEEDS as f32;
         let average_trade = trade_routes as f32 / SAMPLE_SEEDS as f32;
 
+        // Bounds re-derived from a 32-seed sample at the 8×10 subsector size
+        // (observed raw≈5.75, comm≈3.84, trade≈2.91).
         assert!(
-            (7.0..=16.0).contains(&average_raw),
+            (4.0..=8.0).contains(&average_raw),
             "average raw jump routes should stay map-readable, got {average_raw}"
         );
         assert!(
-            (5.0..=11.0).contains(&average_communication),
+            (2.5..=5.5).contains(&average_communication),
             "average communication routes should remain selective, got {average_communication}"
         );
         assert!(
-            (3.0..=8.0).contains(&average_trade),
+            (1.5..=4.5).contains(&average_trade),
             "average trade routes should remain visible but not dominant, got {average_trade}"
         );
         assert!(
