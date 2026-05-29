@@ -247,9 +247,13 @@ export function selectedSurfacePlanet(): Planet | null {
 
 export function selectedSurfaceTargetLabel(): string {
   const system = currentSystem.value
-  const target = resolvedDetailTarget(system)
-  if (!system || !target) return 'No planet selected'
-  return formatBodyViewLabel(system, target)
+  if (!system) return 'No planet selected'
+  // The surface is always shown for a concrete world — the explicitly targeted
+  // planet, or the main world by default — so name that body rather than
+  // depending on a strict detail target (which is null until one is picked).
+  const index = selectedSurfacePlanetIndex(system)
+  if (index == null) return 'No planet selected'
+  return formatBodyViewLabel(system, { kind: 'planet', index })
 }
 
 export function setSystemTimeSpeed(speed: number) {

@@ -11,6 +11,8 @@ import type { RefObject } from 'preact'
 export interface MapGestures {
   viewBox: string
   reset: () => void
+  /** Frame a rectangle (in source/viewBox units): zoom to fit it and centre it. */
+  focusRect: (x: number, y: number, w: number, h: number) => void
   /** True once after a pan/pinch gesture — consume on click to avoid mis-picks. */
   consumeClickSuppression: () => boolean
 }
@@ -175,6 +177,18 @@ export function useMapGestures(
       offsetRef.current = { x: 0, y: 0 }
       setZoom(1)
       setOffset({ x: 0, y: 0 })
+    },
+    focusRect: (x, y, w, h) => {
+      // Fit the rect with a little margin, then centre it, clamped in-bounds.
+      const z = clamp(Math.min(srcW / (w * 1.12), srcH / (h * 1.12)), 1, 6)
+      const visW = srcW / z
+      const visH = srcH / z
+      const nx = clamp(x + w / 2 - visW / 2, 0, Math.max(0, srcW - visW))
+      const ny = clamp(y + h / 2 - visH / 2, 0, Math.max(0, srcH - visH))
+      zoomRef.current = z
+      offsetRef.current = { x: nx, y: ny }
+      setZoom(z)
+      setOffset({ x: nx, y: ny })
     },
     consumeClickSuppression: () => {
       const suppressed = suppressClick.current

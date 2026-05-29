@@ -55,6 +55,10 @@ for (const viewport of [
     // horizontal dividers, plus 16 A–P labels.
     await expect(page.locator('.subsector-seam')).toHaveCount(6)
     await expect(page.locator('.subsector-letter')).toHaveCount(16)
+    // The map renders once: a single legend, and one A–P quick-jump bar of 16
+    // subsector buttons + an "All" button.
+    await expect(page.locator('.subsector-legend')).toHaveCount(1)
+    await expect(page.locator('.subsector-jump-btn')).toHaveCount(17)
     await expect(page.locator('.polity-borders')).toHaveCount(1)
     await expect.poll(() => page.locator('.polity-border-line').count()).toBeGreaterThan(0)
     await expect.poll(() => page.locator('.polity-capital').count()).toBeGreaterThan(0)

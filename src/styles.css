@@ -1616,6 +1616,7 @@ label.color input[type="color"]::-webkit-color-swatch {
    is often smaller than the overlay; gestures attach here so scroll
    zoom works over the whole view, not only on painted hex pixels. */
 .map-gesture-viewport {
+  position: relative;
   flex: 1 1 auto;
   width: 100%;
   height: 100%;
@@ -1625,6 +1626,84 @@ label.color input[type="color"]::-webkit-color-swatch {
   justify-content: center;
   touch-action: none;
 }
+
+/* A–P quick-jump bar: tap a letter to frame that subsector. */
+.subsector-jump {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(10, 14, 22, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 3;
+}
+.subsector-jump-btn {
+  appearance: none;
+  min-width: 22px;
+  padding: 3px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.subsector-jump-btn:hover { background: rgba(110, 164, 255, 0.28); color: #fff; }
+.subsector-jump-all { grid-column: span 4; }
+
+/* Collapsible map key. */
+.subsector-legend {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  z-index: 3;
+  font-size: 11px;
+}
+.subsector-legend-toggle {
+  appearance: none;
+  padding: 4px 10px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.subsector-legend-body {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  background: rgba(10, 14, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.78);
+  max-width: 220px;
+}
+.subsector-legend-body li { display: flex; align-items: center; gap: 6px; }
+.legend-glyph { display: inline-block; min-width: 16px; text-align: center; font-weight: 700; }
+.legend-port { color: rgba(170, 230, 255, 1); }
+.legend-gas, .legend-belt { color: rgba(255, 255, 255, 0.85); }
+.subsector-legend .base-naval { color: #ffffff; }
+.subsector-legend .base-scout { color: rgba(255, 215, 140, 1); }
+.subsector-legend .base-research { color: rgba(170, 230, 255, 1); }
+.subsector-legend .base-aid { color: rgba(255, 200, 230, 1); }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; }
+.legend-amber { color: rgba(255, 190, 90, 1); }
+.legend-red { color: rgba(255, 110, 110, 1); }
+.legend-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid currentColor; }
+.legend-trade { color: rgba(120, 220, 160, 1); }
+.legend-comm { color: rgba(150, 190, 255, 1); }
 
 /* Subsector view ----------------------------------------------------*/
 .subsector-overlay {
@@ -2594,8 +2673,10 @@ label.color input[type="color"]::-webkit-color-swatch {
   .panel {
     width: calc(100% - 16px);
     right: calc(var(--safe-right) + 8px);
-    top: calc(var(--safe-top) + 64px);
-    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 80px);
+    /* Clear the stacked tabs + breadcrumb chrome (~95px tall) so the panel
+       header no longer overlaps the breadcrumb bar. */
+    top: calc(var(--safe-top) + 104px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 120px);
     border-radius: 12px;
   }
   .panel-closed { transform: translateY(calc(-100% - 80px)); }

@@ -19,7 +19,7 @@ import {
   type SubsectorHex,
   type TravelZone,
 } from '../domain/subsector'
-import { useRef } from 'preact/hooks'
+import { useRef, useState } from 'preact/hooks'
 import { hexName, subsectorHexNames } from '../domain/names'
 import { useMapGestures } from './useMapGestures'
 
@@ -265,6 +265,55 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
         </g>
       </svg>
     </div>
+    {showBlocks && (
+      <div class="subsector-jump" role="group" aria-label="Jump to subsector">
+        {subBlocks.map((b) => {
+          const a = hexCenter(b.col_min, b.row_min)
+          const c = hexCenter(b.col_max, b.row_max)
+          return (
+            <button
+              key={b.letter}
+              type="button"
+              class="subsector-jump-btn"
+              title={`Frame subsector ${b.letter}`}
+              onClick={() => gestures.focusRect(a.x - HEX_R, a.y - HEX_H / 2, c.x - a.x + 2 * HEX_R, c.y - a.y + HEX_H)}
+            >
+              {b.letter}
+            </button>
+          )
+        })}
+        <button type="button" class="subsector-jump-btn subsector-jump-all" title="Show the whole sector" onClick={gestures.reset}>
+          All
+        </button>
+      </div>
+    )}
+    <SubsectorLegend />
+    </div>
+  )
+}
+
+// A collapsible key for the map glyphs. Defaults closed so it doesn't clutter
+// the chart; the symbols match the hex markers (★ Naval, △ Scout, ◆ Research,
+// ◯ Aid bases; starport letter; travel-zone rings; route colours).
+function SubsectorLegend() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div class={`subsector-legend${open ? ' open' : ''}`}>
+      <button type="button" class="subsector-legend-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? 'Hide key' : 'Key'}
+      </button>
+      {open && (
+        <ul class="subsector-legend-body">
+          <li><span class="legend-glyph legend-port">A–E</span> Starport class (X = none)</li>
+          <li><span class="legend-glyph base-naval">★</span> Naval base</li>
+          <li><span class="legend-glyph base-scout">△</span> Scout base</li>
+          <li><span class="legend-glyph base-research">◆</span> Research base</li>
+          <li><span class="legend-glyph base-aid">◯</span> Aid base</li>
+          <li><span class="legend-glyph legend-gas">◍</span> Gas giant · <span class="legend-glyph legend-belt">⋯</span> Belt</li>
+          <li><span class="legend-swatch legend-amber" /> Amber · <span class="legend-swatch legend-red" /> Red zone</li>
+          <li><span class="legend-line legend-trade" /> Trade · <span class="legend-line legend-comm" /> Comms route</li>
+        </ul>
+      )}
     </div>
   )
 }
