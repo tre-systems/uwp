@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detailTarget, params, setParamsSnapshot } from '../appState'
+import { defaultParams } from '../params'
 import type { BodyType, Planet, SolarSystem } from '../domain/system'
 import { formatBodyViewLabel, resolvedDetailTarget } from './bodyView'
 
@@ -63,27 +63,17 @@ function fakeSystem(): SolarSystem {
 describe('resolvedDetailTarget', () => {
   it('uses detailTarget when set', () => {
     const system = fakeSystem()
-    detailTarget.value = { kind: 'planet', index: 1 }
-    expect(resolvedDetailTarget(system)).toEqual({ kind: 'planet', index: 1 })
-    detailTarget.value = null
+    expect(resolvedDetailTarget(system, { kind: 'planet', index: 1 }, defaultParams)).toEqual({ kind: 'planet', index: 1 })
   })
 
   it('infers the focused planet from params.seed when detailTarget is cleared', () => {
     const system = fakeSystem()
-    const initial = { ...params.value }
-    detailTarget.value = null
-    setParamsSnapshot({ ...initial, seed: 0x2222 })
-    expect(resolvedDetailTarget(system)).toEqual({ kind: 'planet', index: 1 })
-    setParamsSnapshot(initial)
+    expect(resolvedDetailTarget(system, null, { ...defaultParams, seed: 0x2222 })).toEqual({ kind: 'planet', index: 1 })
   })
 
   it('prefers the main world when appearance seed matches the system seed', () => {
     const system = fakeSystem()
-    const initial = { ...params.value }
-    detailTarget.value = null
-    setParamsSnapshot({ ...initial, seed: system.seed >>> 0 })
-    expect(resolvedDetailTarget(system)).toEqual({ kind: 'planet', index: 0 })
-    setParamsSnapshot(initial)
+    expect(resolvedDetailTarget(system, null, { ...defaultParams, seed: system.seed >>> 0 })).toEqual({ kind: 'planet', index: 0 })
   })
 })
 

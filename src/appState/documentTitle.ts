@@ -1,7 +1,7 @@
 import { effect } from '@preact/signals'
-import { currentSystem, subsectorSeed, systemSeed, uwp, uwpToCode, viewMode } from './index'
+import { currentSystem, resolvedDetailTarget, subsectorSeed, systemSeed, uwp, uwpToCode, viewMode } from './index'
 import { systemName } from '../domain/names'
-import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { formatBodyViewLabel } from '../navigation/bodyView'
 import { isMainWorldTarget } from '../systemVisualMapping'
 
 // Mirror the current chart selection into document.title so a user with

@@ -86,6 +86,16 @@ export interface SurfaceMap {
   cities: Settlement[]
 }
 
+export interface SurfacePrebake {
+  lon_cells: number
+  lat_cells: number
+  heightmap: Float32Array | number[]
+  /** Per-cell canonical biome id (matches Rust BiomeId enum). Present
+   *  when the renderer client wrapped a fresh prebake. */
+  biome_id?: Uint8Array | number[]
+  sea_level_threshold?: number
+}
+
 export function terrainLabel(t: Terrain): string {
   switch (t) {
     case 'Ocean': return 'Ocean'

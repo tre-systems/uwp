@@ -3,6 +3,7 @@ import {
   currentSubsector,
   currentSystem,
   regionHex,
+  resolvedDetailTarget,
   selectedHex,
   selectedSurfacePlanetIndex,
   setViewMode,
@@ -11,7 +12,7 @@ import {
 } from '../appState'
 import { hexLabel } from '../domain/subsector'
 import { hexName, systemName } from '../domain/names'
-import { formatBodyViewLabel, formatSurfaceCrumbLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { formatBodyViewLabel, formatSurfaceCrumbLabel } from '../navigation/bodyView'
 
 // Persistent top-of-canvas indicator showing where the user is in the
 // Subsector / System / Main World hierarchy. Each crumb is clickable

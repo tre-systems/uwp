@@ -1,6 +1,5 @@
 import { effect, untracked } from '@preact/signals'
 import type { SystemBodyTarget } from '../domain/system'
-import { resolvedDetailTarget } from '../navigation/bodyView'
 import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
 import type { SurfaceHexCoord } from '../domain/surfaceMap'
 import {
@@ -17,6 +16,7 @@ import {
   focusMainWorldDetail,
   focusSystemTarget,
   regionHex,
+  resolvedDetailTarget,
   selectAndFocusSurfaceHex,
   selectedHex,
   selectedSurfaceCell,
@@ -29,6 +29,7 @@ import {
   setSubsectorRouteOverrides,
   setSubsectorSeed,
   setSystemSeed,
+  setUrlStatePendingDetailBody,
   setViewMode,
   subsectorDensity,
   subsectorOverrides,
@@ -69,10 +70,6 @@ const VALID_VIEWS: readonly ViewMode[] = ['subsector', 'system', 'detail', 'surf
 let pendingDetailBody: SystemBodyTarget | null = null
 /** Surface hex from the URL hash, applied once the surface map is available. */
 let pendingSurfaceHex: SurfaceHexCoord | null = null
-
-export function hasPendingDetailBody(): boolean {
-  return pendingDetailBody != null
-}
 
 function parseHash(hash: string): ParsedState {
   const keys = new Set<string>()
@@ -203,6 +200,7 @@ export function loadUrlState(): void {
 
   pendingDetailBody = null
   pendingSurfaceHex = null
+  setUrlStatePendingDetailBody(false)
   closeRegionView()
 
   if (parsed.subsectorSeed != null) setSubsectorSeed(parsed.subsectorSeed)
@@ -226,6 +224,7 @@ export function loadUrlState(): void {
 
   if (keys.has('body') && parsed.body) {
     pendingDetailBody = parsed.body
+    setUrlStatePendingDetailBody(true)
   } else if (keys.has('body')) {
     setDetailTarget(null)
   }
@@ -254,6 +253,7 @@ function applyPendingDetailBody(): void {
   const body = pendingDetailBody
   if (!sys || !body) return
   pendingDetailBody = null
+  setUrlStatePendingDetailBody(false)
   if (!targetExists(sys, body)) return
   if (isMainWorldTarget(sys, body)) {
     focusMainWorldDetail()

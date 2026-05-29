@@ -1,12 +1,13 @@
 import { useEffect } from 'preact/hooks'
 import {
   currentSystem,
+  resolvedDetailTarget,
   selectedSurfacePlanetIndex,
   setViewMode,
   viewMode,
   type ViewMode,
 } from '../appState'
-import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { formatBodyViewLabel } from '../navigation/bodyView'
 
 // Four-state segmented control. Detail and Surface stay disabled until a
 // system loads (and Surface additionally requires a selected planet) so

@@ -1,4 +1,3 @@
-import { detailTarget, params } from '../appState'
 import type { Params } from '../params'
 import { systemName } from '../domain/names'
 import type { BodyType, SolarSystem, SystemBodyTarget } from '../domain/system'
@@ -7,11 +6,12 @@ import { isMainWorldTarget, targetExists } from '../systemVisualMapping'
 /** Resolve which system body the detail renderer is showing. */
 export function resolvedDetailTarget(
   system: SolarSystem | null,
-  target: SystemBodyTarget | null = detailTarget.value,
+  target: SystemBodyTarget | null,
+  params: Params,
 ): SystemBodyTarget | null {
   if (!system) return null
   if (target && targetExists(system, target)) return target
-  return inferDetailTargetFromParams(system, params.value)
+  return inferDetailTargetFromParams(system, params)
 }
 
 function inferDetailTargetFromParams(
@@ -42,7 +42,7 @@ function inferDetailTargetFromParams(
 
 export function formatBodyViewLabel(
   system: SolarSystem | null,
-  target: SystemBodyTarget | null = resolvedDetailTarget(system),
+  target: SystemBodyTarget | null,
 ): string {
   if (!system || !target) return 'Main World'
   if (target.kind === 'planet') {
@@ -75,7 +75,7 @@ function bodyTypeShortLabel(body: BodyType): string {
 
 export function formatSurfaceCrumbLabel(
   system: SolarSystem | null,
-  target: SystemBodyTarget | null = resolvedDetailTarget(system),
+  target: SystemBodyTarget | null,
 ): string {
   if (!system || !target || target.kind !== 'planet') return 'Surface'
   const planet = system.planets[target.index]

@@ -1,5 +1,5 @@
 import { effect, untracked } from '@preact/signals'
-import { Planet, generateSurfacePrebake, generateSurfacePrebakeFull } from '../../pkg/planet_render'
+import { Planet } from '../../pkg/planet_render'
 import {
   currentSystem,
   params,
@@ -35,14 +35,7 @@ import type { Params } from '../params'
 import type { SolarSystem, SystemBodyTarget } from '../domain/system'
 import type { SurfaceMap } from '../domain/surfaceMap'
 import { ensureWasmReady } from '../wasm'
-
-interface SurfacePrebakeSnapshot {
-  lon_cells: number
-  lat_cells: number
-  heightmap: Float32Array
-  biome_id?: Uint8Array
-  sea_level_threshold: number
-}
+import { SurfacePrebakeCache, type SurfacePrebakeSnapshot } from './surfacePrebake'
 
 declare global {
   interface Window {
@@ -94,15 +87,7 @@ export class RendererClient {
   private lastFps = 0
   private lastFrameMs = 0
   private lastInteractionMs = 0
-  private surfacePrebakeCache: {
-    planetIndex: number
-    seed: number
-    waterFraction: number
-    iceLatitude: number
-    meanTempK: number
-    vegetationRichness: number
-    bake: SurfacePrebakeSnapshot
-  } | null = null
+  private readonly surfacePrebakeCache = new SurfacePrebakeCache()
   private terrainParamsTimer: ReturnType<typeof setTimeout> | null = null
   private surfaceMapTimer: ReturnType<typeof setTimeout> | null = null
   private lastCommittedParams: Params | null = null
@@ -226,11 +211,6 @@ export class RendererClient {
   }
 
   getSurfacePrebake(planetIndex?: number | null): SurfacePrebakeSnapshot | null {
-    // The Rust surface_map::generate path uses params.seed (the visual
-    // appearance seed) - NOT the selected planet's per-body seed - when
-    // it calls surface_prebake::generate. The background here has to
-    // use the same seed or the rendered continents won't line up with
-    // the hex grid's terrain classifications.
     const planet = this.planet
     if (!planet) return null
     const selectedPlanetIndex = planetIndex ?? selectedSurfacePlanetIndex()
@@ -238,111 +218,11 @@ export class RendererClient {
     const system = currentSystem.value
     const selectedPlanet = system?.planets[selectedPlanetIndex] ?? null
     if (!selectedPlanet) return null
-    const seed = params.value.seed >>> 0
-    const waterFraction = params.value.sea_level
-    const iceLatitude = params.value.ice_latitude
-    const vegetationRichness = params.value.vegetation_richness
-    // Pull the selected planet's mean surface temperature from the latest
-    // system snapshot so biome classification on the painted background
-    // matches what the renderer's atlas produces for the globe.
-    const meanTempK = effectiveSurfaceMeanTempK(
-      selectedPlanet.climate?.mean_surface_temp_k ?? selectedPlanet.temperature_k ?? 288,
-      params.value.atmosphere_density,
-    )
-    const cached = this.surfacePrebakeCache
-    if (
-      cached &&
-      cached.planetIndex === selectedPlanetIndex &&
-      cached.seed === seed &&
-      Math.abs(cached.waterFraction - waterFraction) < 0.0005 &&
-      Math.abs(cached.iceLatitude - iceLatitude) < 0.0005 &&
-      Math.abs(cached.meanTempK - meanTempK) < 0.05 &&
-      Math.abs(cached.vegetationRichness - vegetationRichness) < 0.0005
-    ) {
-      return cached.bake
-    }
-    try {
-      // Prefer the climate-aware bridge; it produces biome ids that
-      // match the renderer atlas + Rust surface_map exactly.
-      const bake = generateSurfacePrebakeFull(
-        seed,
-        waterFraction,
-        iceLatitude,
-        meanTempK,
-        vegetationRichness,
-      ) as {
-        lon_cells: number
-        lat_cells: number
-        heightmap: Float32Array | number[]
-        biome_id?: Uint8Array | number[]
-        sea_level?: number
-      }
-      const heightmap = bake.heightmap instanceof Float32Array
-        ? bake.heightmap
-        : Float32Array.from(bake.heightmap)
-      const biome_id = bake.biome_id instanceof Uint8Array
-        ? bake.biome_id
-        : bake.biome_id
-          ? Uint8Array.from(bake.biome_id)
-          : undefined
-      // The Rust pre-bake now ships its own sea_level threshold; prefer
-      // that over recomputing the quantile here so the JS map and the
-      // Rust surface_map agree to the bit.
-      const sea_level_threshold = typeof bake.sea_level === 'number'
-        ? bake.sea_level
-        : quantileHeight(heightmap, waterFraction)
-      const snapshot: SurfacePrebakeSnapshot = {
-        lon_cells: bake.lon_cells,
-        lat_cells: bake.lat_cells,
-        heightmap,
-        biome_id,
-        sea_level_threshold,
-      }
-      this.surfacePrebakeCache = {
-        planetIndex: selectedPlanetIndex,
-        seed,
-        waterFraction,
-        iceLatitude,
-        meanTempK,
-        vegetationRichness,
-        bake: snapshot,
-      }
-      return snapshot
-    } catch (err) {
-      console.warn('generateSurfacePrebakeFull failed', err)
-      // Fallback to the legacy two-arg signature; surface still
-      // renders, just with Earth-default biome classification.
-      try {
-        const bake = generateSurfacePrebake(seed, waterFraction) as {
-          lon_cells: number
-          lat_cells: number
-          heightmap: Float32Array | number[]
-          biome_id?: Uint8Array | number[]
-          sea_level?: number
-        }
-        const heightmap = bake.heightmap instanceof Float32Array
-          ? bake.heightmap
-          : Float32Array.from(bake.heightmap)
-        const biome_id = bake.biome_id instanceof Uint8Array
-          ? bake.biome_id
-          : bake.biome_id
-            ? Uint8Array.from(bake.biome_id)
-            : undefined
-        const sea_level_threshold = typeof bake.sea_level === 'number'
-          ? bake.sea_level
-          : quantileHeight(heightmap, waterFraction)
-        return {
-          lon_cells: bake.lon_cells,
-          lat_cells: bake.lat_cells,
-          heightmap,
-          biome_id,
-          sea_level_threshold,
-        }
-      } catch (err2) {
-        console.warn('generateSurfacePrebake fallback failed', err2)
-        return null
-      }
-    }
+    return this.surfacePrebakeCache.get({
+      planetIndex: selectedPlanetIndex,
+      selectedPlanet,
+      params: params.value,
+    })
   }
 
   private renderParams() {
@@ -694,21 +574,6 @@ export class RendererClient {
     this.lastInteractionMs = performance.now()
     this.planet?.zoom(event.deltaY)
   }
-}
-
-function quantileHeight(heightmap: Float32Array, q: number): number {
-  if (heightmap.length === 0) return 0
-  const sorted = Array.from(heightmap)
-  sorted.sort((a, b) => a - b)
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(q * sorted.length)))
-  return sorted[idx] ?? 0
-}
-
-function effectiveSurfaceMeanTempK(baseMeanTempK: number, atmosphereDensity: number): number {
-  const warmthFromAtm = atmosphereDensity * 30
-  return Number.isFinite(baseMeanTempK) && baseMeanTempK > 0
-    ? baseMeanTempK + warmthFromAtm * 0.3
-    : 270 + warmthFromAtm
 }
 
 function isSystemBodyTarget(value: unknown): value is SystemBodyTarget {

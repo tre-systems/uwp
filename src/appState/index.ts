@@ -23,10 +23,9 @@ import {
   type SubsectorOverrides,
   type SubsectorUwp,
 } from '../domain/subsector'
-import type { SurfaceHex, SurfaceHexCoord, SurfaceMap } from '../domain/surfaceMap'
+import type { SurfaceHex, SurfaceHexCoord, SurfaceMap, SurfacePrebake } from '../domain/surfaceMap'
 import type { RenderProfileName } from '../renderProfile'
-import { formatBodyViewLabel, resolvedDetailTarget } from '../navigation/bodyView'
-import { hasPendingDetailBody } from './urlState'
+import { formatBodyViewLabel, resolvedDetailTarget as resolveDetailTargetFromState } from '../navigation/bodyView'
 import { withChartWork } from './chartWork'
 import { generateSurfaceMapInWorker, wasmComputeAvailable } from '../wasmCompute'
 import {
@@ -53,16 +52,6 @@ export interface RenderPerformanceSnapshot {
   shaderQuality: number
   pixelWidth: number
   pixelHeight: number
-}
-
-export interface SurfacePrebake {
-  lon_cells: number
-  lat_cells: number
-  heightmap: Float32Array | number[]
-  /** Per-cell canonical biome id (matches Rust BiomeId enum). Present
-   *  when the renderer client wrapped a fresh prebake. */
-  biome_id?: Uint8Array | number[]
-  sea_level_threshold?: number
 }
 
 export interface RendererControls {
@@ -148,6 +137,7 @@ export const renderPerformance = signal<RenderPerformanceSnapshot>({
 })
 
 let rendererControls: RendererControls | null = null
+let urlStatePendingDetailBody = false
 
 /** View requested before WASM has produced a system snapshot. */
 let deferredViewMode: ViewMode | null = null
@@ -305,7 +295,7 @@ export function setSystemSnapshot(system: SolarSystem | null) {
     selectedHex.value &&
     detailTarget.value == null &&
     (params.value.seed >>> 0) === (system.seed >>> 0) &&
-    !hasPendingDetailBody()
+    !urlStatePendingDetailBody
   ) {
     focusMainWorldDetail()
   }
@@ -316,6 +306,17 @@ export function setSystemSnapshot(system: SolarSystem | null) {
 
 export function setParamsSnapshot(nextParams: Params) {
   params.value = nextParams
+}
+
+export function resolvedDetailTarget(
+  system: SolarSystem | null = currentSystem.value,
+  target: SystemBodyTarget | null = detailTarget.value,
+): SystemBodyTarget | null {
+  return resolveDetailTargetFromState(system, target, params.value)
+}
+
+export function setUrlStatePendingDetailBody(pending: boolean): void {
+  urlStatePendingDetailBody = pending
 }
 
 export function rerollPlanet(index: number) {

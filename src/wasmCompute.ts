@@ -1,7 +1,6 @@
 import type { Subsector } from './domain/subsector'
-import type { SurfaceMap } from './domain/surfaceMap'
+import type { SurfaceMap, SurfacePrebake } from './domain/surfaceMap'
 import type { Planet } from './domain/system'
-import type { SurfacePrebake } from './appState'
 
 type Pending<T> = {
   resolve: (value: T) => void

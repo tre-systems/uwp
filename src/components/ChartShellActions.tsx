@@ -1,5 +1,4 @@
-import { currentSystem, rendererStatus, viewMode } from '../appState'
-import { resolvedDetailTarget } from '../navigation/bodyView'
+import { currentSystem, rendererStatus, resolvedDetailTarget, viewMode } from '../appState'
 import { ExportPanel } from './ExportPanel'
 import { ShareButton } from './ShareButton'
 

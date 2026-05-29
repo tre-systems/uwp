@@ -6,6 +6,7 @@ import {
   params,
   randomizeUwp,
   resetUwp,
+  resolvedDetailTarget,
   setUwpField,
   setUwpFromCode,
   systemSeed,
@@ -28,7 +29,7 @@ import { PerformanceControls } from './PerformanceControls'
 import { UwpCodeEditor } from './UwpCodeEditor'
 import { ViewControls } from './ViewControls'
 import { WorldProfileEditor } from './WorldProfileEditor'
-import { formatBodyViewLabel, formatSurfaceCrumbLabel, resolvedDetailTarget } from '../navigation/bodyView'
+import { formatBodyViewLabel, formatSurfaceCrumbLabel } from '../navigation/bodyView'
 import { isMainWorldTarget } from '../systemVisualMapping'
 import { systemName } from '../domain/names'
 
