@@ -8,11 +8,14 @@ import {
   populationLabel,
   routeOverrideKey,
   subsectorOverrideKey,
+  uwpDigitChar,
+  uwpToCode,
   visibleRoutes,
   type JumpRoute,
   type Subsector,
   type SubsectorHex,
 } from './types'
+import { parseUwpStrict } from '../../uwp'
 
 function hex(col: number, row: number, allegiance: string): SubsectorHex {
   return {
@@ -249,5 +252,21 @@ describe('applySubsectorOverrides', () => {
         visible: false,
       },
     })).toBe(sub)
+  })
+})
+
+describe('uwpToCode (extended hex)', () => {
+  it('encodes values above 15 with I/O-skipping ehex', () => {
+    expect(uwpDigitChar(15)).toBe('F')
+    expect(uwpDigitChar(16)).toBe('G')
+    expect(uwpDigitChar(18)).toBe('J') // not "I"
+    expect(uwpDigitChar(23)).toBe('P') // not "O"
+    expect(uwpDigitChar(33)).toBe('Z')
+  })
+
+  it('round-trips parseUwpStrict -> uwpToCode across the full ehex range', () => {
+    for (const code of ['A867974-D', 'BG8A9C9-H', 'X000000-0', 'E9D7553-Z']) {
+      expect(uwpToCode(parseUwpStrict(code)!)).toBe(code)
+    }
   })
 })

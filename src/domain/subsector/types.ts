@@ -2,6 +2,8 @@
 // must match the Rust struct so `serde_wasm_bindgen::to_value` round-trips
 // straight into these interfaces.
 
+import { intToEhex } from '../../uwp'
+
 export interface HexCoord {
   col: number
   row: number
@@ -393,10 +395,11 @@ function clampRouteScore(value: number): number {
   return Math.max(0, Math.min(9, Math.round(value)))
 }
 
-// Cepheus pseudo-hex digit rendering: 0-9 then A-F for 10-15.
+// Extended-hex digit rendering: 0-9 then A-Z skipping I and O (values 0-33).
+// Matches values 0-15 to the classic 0-F exactly, and extends correctly for
+// imported high tech / population codes. See intToEhex.
 export function uwpDigitChar(value: number): string {
-  if (value < 10) return String(value)
-  return String.fromCharCode('A'.charCodeAt(0) + value - 10)
+  return intToEhex(value)
 }
 
 export function uwpToCode(u: SubsectorUwp): string {

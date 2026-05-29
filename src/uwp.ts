@@ -143,3 +143,65 @@ function finiteClamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
   return Math.max(min, Math.min(max, value))
 }
+
+// --- Extended hex ("ehex") + strict UWP parsing -------------------------
+//
+// Imported survey data uses the full extended-hex alphabet (0-9 then A-Z
+// with I and O skipped, encoding values 0-33) so codes like high tech levels
+// or populations round-trip. The lenient `parseUwpDigits` above is for live
+// panel editing and only understands 0-F; import and canonical export route
+// through the strict helpers here instead.
+
+const EHEX_ALPHABET = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+
+/** Decode a single ehex character to its 0-33 value, or -1 if invalid. */
+export function ehexToInt(ch: string): number {
+  return ch.length === 1 ? EHEX_ALPHABET.indexOf(ch.toUpperCase()) : -1
+}
+
+/** Encode a value (0-33) to its ehex character, clamped into the alphabet. */
+export function intToEhex(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  const v = Math.max(0, Math.min(EHEX_ALPHABET.length - 1, Math.round(value)))
+  return EHEX_ALPHABET[v]
+}
+
+/** A fully-decoded UWP (ehex digits resolved to numbers). */
+export interface UwpFields {
+  starport: string
+  size: number
+  atm: number
+  hydro: number
+  pop: number
+  gov: number
+  law: number
+  tech: number
+}
+
+// Starport A-E (primary) / F-H, Y (secondary) / X (none) / ? (unknown);
+// six ehex body digits; a hyphen; one ehex tech digit. '?' is allowed in any
+// digit slot for partially-surveyed worlds.
+const EHEX_DIGIT = '[0-9A-HJ-NP-Z?]'
+const D = `(${EHEX_DIGIT})`
+const STRICT_UWP_RE = new RegExp(`^([A-HXY?])${D}${D}${D}${D}${D}${D}-${D}$`)
+
+/**
+ * Strict full-UWP parser for imported survey data. Decodes the complete ehex
+ * range (0-33), unlike the lenient editor-facing `parseUwpDigits` (hex 0-F).
+ * An unknown digit '?' decodes to 0; malformed input returns null.
+ */
+export function parseUwpStrict(code: string): UwpFields | null {
+  const m = STRICT_UWP_RE.exec(code.trim().toUpperCase())
+  if (!m) return null
+  const d = (ch: string): number => (ch === '?' ? 0 : ehexToInt(ch))
+  return {
+    starport: m[1],
+    size: d(m[2]),
+    atm: d(m[3]),
+    hydro: d(m[4]),
+    pop: d(m[5]),
+    gov: d(m[6]),
+    law: d(m[7]),
+    tech: d(m[8]),
+  }
+}

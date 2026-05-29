@@ -94,8 +94,8 @@ pub struct Pbg {
 }
 
 impl Uwp {
-    /// Render as the canonical "A867974-D" string. Digits 10-15 use the
-    /// classic pseudo-hex letters A-F.
+    /// Render as the canonical "A867974-D" string. Digits use extended hex:
+    /// 0-9 then A-Z skipping I and O (so 0-15 read as the classic 0-F).
     pub fn to_code(self) -> String {
         format!(
             "{}{}{}{}{}{}{}-{}",
@@ -111,12 +111,11 @@ impl Uwp {
     }
 }
 
+/// Extended-hex ("ehex") digit: 0-9 then A-Z with I and O skipped, encoding
+/// values 0-33. Values 0-15 render as the classic 0-F.
 fn digit(value: u8) -> char {
-    match value {
-        0..=9 => (b'0' + value) as char,
-        10..=35 => (b'A' + value - 10) as char,
-        _ => 'F',
-    }
+    const EHEX: &[u8; 34] = b"0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    EHEX[(value as usize).min(EHEX.len() - 1)] as char
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1099,6 +1098,22 @@ mod tests {
             tech: 13,
         };
         assert_eq!(u.to_code(), "A867974-D");
+    }
+
+    #[test]
+    fn uwp_to_code_uses_extended_hex_skipping_i_and_o() {
+        // Values above 15 must skip I and O: 16->G, 17->H, 18->J, 23->P, 33->Z.
+        let u = Uwp {
+            starport: 'B',
+            size: 16,
+            atm: 17,
+            hydro: 18,
+            pop: 22,
+            gov: 23,
+            law: 30,
+            tech: 33,
+        };
+        assert_eq!(u.to_code(), "BGHJNPW-Z");
     }
 
     #[test]
