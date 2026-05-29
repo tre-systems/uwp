@@ -1,3 +1,5 @@
+import type { Subsector } from './subsector/types'
+
 // Deterministic, pronounceable system / hex name generator.
 //
 // Seed -> CV-CV-CV pattern from a small consonant + vowel inventory so
@@ -93,4 +95,41 @@ export function uniqueHexNames(
     map.set(`${col},${row}`, candidate)
   }
   return map
+}
+
+// Per-subsector cache of the canonical {col,row} -> display-name map, keyed by
+// the subsector object identity. A regenerate or an override edit produces a
+// fresh object (see applySubsectorOverrides), which naturally invalidates this.
+const subsectorNameCache = new WeakMap<Subsector, Map<string, string>>()
+
+/**
+ * THE single source of truth for hex display names. Returns a deduplicated
+ * `${col},${row}` -> name map for every occupied hex: an imported hex keeps its
+ * explicit `name`; every other hex gets the deterministic deduped CV name. The
+ * map, breadcrumb, hex panel, and exporter all resolve through here so one
+ * world never shows two different names. Memoized per subsector so sector-scale
+ * grids (1280 hexes) don't recompute the name table on every render.
+ */
+export function subsectorHexNames(subsector: Subsector): Map<string, string> {
+  const cached = subsectorNameCache.get(subsector)
+  if (cached) return cached
+  const deduped = uniqueHexNames(
+    subsector.seed,
+    subsector.hexes.map((h) => h.coord),
+  )
+  const names = new Map<string, string>()
+  for (const h of subsector.hexes) {
+    const key = `${h.coord.col},${h.coord.row}`
+    names.set(key, h.name ?? deduped.get(key) ?? hexName(subsector.seed, h.coord.col, h.coord.row))
+  }
+  subsectorNameCache.set(subsector, names)
+  return names
+}
+
+/** Canonical display name for a single hex (see {@link subsectorHexNames}). */
+export function resolveHexName(subsector: Subsector, coord: { col: number; row: number }): string {
+  return (
+    subsectorHexNames(subsector).get(`${coord.col},${coord.row}`)
+    ?? hexName(subsector.seed, coord.col, coord.row)
+  )
 }

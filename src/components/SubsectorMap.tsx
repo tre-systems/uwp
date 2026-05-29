@@ -20,7 +20,7 @@ import {
   type TravelZone,
 } from '../domain/subsector'
 import { useRef } from 'preact/hooks'
-import { hexName, uniqueHexNames } from '../domain/names'
+import { hexName, subsectorHexNames } from '../domain/names'
 import { useMapGestures } from './useMapGestures'
 
 // Subsector map styled after classic 2d6 sector charts: pure black field,
@@ -124,13 +124,9 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   const polityByCoord = new Map(cells.map((cell) => [`${cell.coord.col},${cell.coord.row}`, cell]))
   const capitalCells = cells.filter((cell) => cell.capital)
   const borders = polityBorders(subsector)
-  // Pre-compute names that are guaranteed unique across the subsector so
-  // the visible map doesn't repeat the same world name on multiple hexes
-  // (a quirk of the splitmix32 + small CV inventory).
-  const nameMap = uniqueHexNames(
-    seed,
-    subsector.hexes.map((h) => ({ col: h.coord.col, row: h.coord.row })),
-  )
+  // Canonical, deduplicated, memoized name table shared with the breadcrumb
+  // and hex panel so a world reads the same everywhere (see subsectorHexNames).
+  const nameMap = subsectorHexNames(subsector)
   return (
     <div class="map-gesture-viewport" ref={containerRef}>
     <div

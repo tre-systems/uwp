@@ -1,11 +1,13 @@
 import type { ComponentChildren } from 'preact'
 import { useState } from 'preact/hooks'
 import {
+  currentSubsector,
   detailTarget,
   focusSystemTarget,
   params,
   rerollPlanet,
   rerollSystemSeed,
+  selectedHex,
   setSystemSeed,
   setSystemTimeSpeed,
   systemTimeSpeed,
@@ -13,7 +15,7 @@ import {
 } from '../appState'
 import { deriveTradeCodes, tradeCodeName, type TradeCode } from '../domain/cepheus'
 import type { AsteroidBelt, Planet, SolarSystem } from '../domain/system'
-import { systemName } from '../domain/names'
+import { resolveHexName, systemName } from '../domain/names'
 import { BodyTypeIcon, bodyTypeLabel } from './Icon'
 import { BodyInspector } from './BodyInspector'
 import { SeedField } from './SeedField'
@@ -34,7 +36,11 @@ export function SystemEditor({ system, disabled }: SystemEditorProps) {
   // represent the user-edited main world. Once the renderer-side main-world
   // reconciliation lands these will track the generated world automatically.
   const tradeCodes = deriveTradeCodes(uwp.value)
-  const name = systemName(system.seed)
+  // The system shares its hex's canonical name when reached via a subsector,
+  // matching the map / breadcrumb / title (see resolveHexName).
+  const sub = currentSubsector.value
+  const sel = selectedHex.value
+  const name = sub && sel ? resolveHexName(sub, sel) : systemName(system.seed)
   // For the user, the "main world" is the one they're authoring in the
   // UWP/Detail editor, not the unrelated rocky body the climate model
   // happened to pick. Surface those values directly so the System and

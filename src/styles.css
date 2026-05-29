@@ -2162,7 +2162,9 @@ label.color input[type="color"]::-webkit-color-swatch {
 /* Breadcrumb -------------------------------------------------------*/
 .breadcrumb {
   position: static;
-  flex: 1 1 0;
+  /* basis auto (not 0) so the breadcrumb — which already ellipsizes — gives
+     space back to the view tabs under pressure instead of starving them. */
+  flex: 1 1 auto;
   min-width: 0;
   max-width: none;
   display: inline-flex;
@@ -2295,9 +2297,12 @@ label.color input[type="color"]::-webkit-color-swatch {
   font-size: var(--type-body);
   font-family: inherit;
   padding: 0 14px;
-  flex: 1 1 0;
+  /* Size each tab to its label so short labels ("Subsector", "Surface") never
+     clip on desktop; the mobile @media block restores equal-width tabs. The
+     max-width guard only bites a pathologically long Detail body label. */
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 9.5rem;
+  max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1,5 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { hexName, systemName } from './names'
+import { hexName, resolveHexName, subsectorHexNames, systemName } from './names'
+import type { Subsector, SubsectorHex } from './subsector/types'
+
+function makeHex(col: number, row: number, name: string | null = null): SubsectorHex {
+  return {
+    coord: { col, row },
+    system_seed: (((col << 8) | row) ^ 0x5bd1e995) >>> 0,
+    uwp: { starport: 'A', size: 7, atm: 8, hydro: 8, pop: 8, gov: 9, law: 9, tech: 12 },
+    bases: { naval: false, scout: false, research: false, aid: false },
+    travel_zone: 'Green',
+    allegiance: 'Im',
+    gas_giant: false,
+    belts: false,
+    population: 1000,
+    pbg: { population_multiplier: 1, belts: 0, gas_giants: 0 },
+    name,
+  }
+}
+
+function makeSubsector(hexes: SubsectorHex[]): Subsector {
+  return {
+    seed: 0xFEEDFACE,
+    density: 0.5,
+    columns: 8,
+    rows: 10,
+    allegiance: 'Im',
+    allegiances: [],
+    hexes,
+    jump_routes: [],
+  }
+}
 
 describe('name generator', () => {
   it('is deterministic for the same seed', () => {
@@ -38,5 +68,35 @@ describe('name generator', () => {
       expect(name.length).toBeGreaterThan(2)
       expect(name.length).toBeLessThanOrEqual(24)
     }
+  })
+})
+
+describe('resolveHexName (single source of truth)', () => {
+  it('resolves to the same name the shared table holds (map/breadcrumb/panel agree)', () => {
+    const sub = makeSubsector([makeHex(1, 1), makeHex(2, 3), makeHex(8, 10)])
+    const table = subsectorHexNames(sub)
+    for (const h of sub.hexes) {
+      expect(resolveHexName(sub, h.coord)).toBe(table.get(`${h.coord.col},${h.coord.row}`))
+    }
+  })
+
+  it('is deterministic across subsector instances with the same seed + hexes', () => {
+    const a = makeSubsector([makeHex(3, 4)])
+    const b = makeSubsector([makeHex(3, 4)])
+    expect(resolveHexName(a, { col: 3, row: 4 })).toBe(resolveHexName(b, { col: 3, row: 4 }))
+  })
+
+  it('prefers an explicit (imported) hex name over the generated one', () => {
+    const sub = makeSubsector([makeHex(1, 1, 'Aramis')])
+    expect(resolveHexName(sub, { col: 1, row: 1 })).toBe('Aramis')
+  })
+
+  it('gives every occupied hex a unique name across a full subsector', () => {
+    const hexes: SubsectorHex[] = []
+    for (let col = 1; col <= 8; col++) {
+      for (let row = 1; row <= 10; row++) hexes.push(makeHex(col, row))
+    }
+    const names = [...subsectorHexNames(makeSubsector(hexes)).values()]
+    expect(new Set(names).size).toBe(names.length)
   })
 })

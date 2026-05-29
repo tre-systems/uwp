@@ -38,7 +38,7 @@ import {
   type TravelZone,
 } from '../domain/subsector'
 import { deriveTradeCodes, tradeCodeName } from '../domain/cepheus'
-import { systemName } from '../domain/names'
+import { resolveHexName, systemName } from '../domain/names'
 
 interface SubsectorEditorProps {
   disabled: boolean
@@ -236,7 +236,7 @@ function HexDetailSection({ subsector, hex }: { subsector: Subsector; hex: Subse
   if (hex.bases.scout) baseList.push('Scout')
   if (hex.bases.research) baseList.push('Research')
   if (hex.bases.aid) baseList.push('Aid')
-  const name = systemName(hex.system_seed)
+  const name = resolveHexName(subsector, hex.coord)
   const allegiance = allegianceForCode(subsector, hex.allegiance)
   const generatedHex = generatedSubsectorHex(hex.coord)
   const override = getSubsectorHexOverride(subsector.seed, hex.coord)

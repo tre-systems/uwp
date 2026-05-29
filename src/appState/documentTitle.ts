@@ -1,6 +1,6 @@
 import { effect } from '@preact/signals'
-import { currentSystem, resolvedDetailTarget, subsectorSeed, systemSeed, uwp, uwpToCode, viewMode } from './index'
-import { systemName } from '../domain/names'
+import { currentSubsector, currentSystem, resolvedDetailTarget, selectedHex, subsectorSeed, systemSeed, uwp, uwpToCode, viewMode } from './index'
+import { resolveHexName, systemName } from '../domain/names'
 import { formatBodyViewLabel } from '../navigation/bodyView'
 import { isMainWorldTarget } from '../systemVisualMapping'
 
@@ -12,7 +12,12 @@ const BASE_TITLE = 'UWP - Cepheus star-system generator'
 
 function compose(): string {
   const mode = viewMode.value
-  const sysName = systemName(systemSeed.value)
+  const sub = currentSubsector.value
+  const sel = selectedHex.value
+  // A selected hex and its system share one canonical name (see resolveHexName),
+  // so the tab title matches the map / breadcrumb / panel. Fall back to the
+  // system seed only for a standalone system opened directly by seed.
+  const sysName = sub && sel ? resolveHexName(sub, sel) : systemName(systemSeed.value)
   const sectorName = `${systemName(subsectorSeed.value)} Sector`
   if (mode === 'subsector') return `${sectorName} — UWP`
   if (mode === 'system') return `${sysName} system — UWP`

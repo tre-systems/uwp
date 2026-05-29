@@ -11,7 +11,7 @@ import {
   viewMode,
 } from '../appState'
 import { hexLabel } from '../domain/subsector'
-import { hexName, systemName } from '../domain/names'
+import { resolveHexName, systemName } from '../domain/names'
 import { formatBodyViewLabel, formatSurfaceCrumbLabel } from '../navigation/bodyView'
 
 // Persistent top-of-canvas indicator showing where the user is in the
@@ -52,8 +52,11 @@ export function Breadcrumb() {
   // top crumb reads as a place ("Thrame Sector") rather than a hex code.
   const subsectorLabel = sub ? `${systemName(seed)} Sector` : 'Subsector'
   const hexLabelText = sel ? hexLabel(sel) : null
-  const hexNameText = sel ? hexName(seed, sel.col, sel.row) : null
-  const systemLabel = sys ? systemName(sys.seed) : 'System'
+  // A hex and the system it contains are the same place, so they resolve to one
+  // canonical name (matching the map + panel). Fall back to the system seed only
+  // when there is no subsector context (a standalone system opened by seed).
+  const hexNameText = sub && sel ? resolveHexName(sub, sel) : null
+  const systemLabel = sub && sel ? resolveHexName(sub, sel) : sys ? systemName(sys.seed) : 'System'
   const bodyLabel = formatBodyViewLabel(sys, target)
   const surfaceLabel = formatSurfaceCrumbLabel(sys, target)
 
