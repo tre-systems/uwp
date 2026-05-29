@@ -144,6 +144,19 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   // Canonical, deduplicated, memoized name table shared with the breadcrumb
   // and hex panel so a world reads the same everywhere (see subsectorHexNames).
   const nameMap = subsectorHexNames(subsector)
+
+  // Viewport culling + level-of-detail, applied only to a full sector (1280
+  // hexes). The hex loop re-runs on every pan/zoom frame (the viewBox is
+  // reactive), so we render only the hexes currently in view, and draw light
+  // hexes (outline + fill + system dot) until zoomed in far enough for the
+  // labels and glyphs to be legible. A single 8×10 subsector is small, so it
+  // always renders in full with no culling.
+  const [vbX, vbY, vbW, vbH] = gestures.viewBox.split(' ').map(Number)
+  const detailed = !showBlocks || svgWidth / (vbW || svgWidth) >= 2.2
+  const cullMargin = HEX_H * 1.5
+  const inView = (x: number, y: number): boolean =>
+    !showBlocks ||
+    (x >= vbX - cullMargin && x <= vbX + vbW + cullMargin && y >= vbY - cullMargin && y <= vbY + vbH + cullMargin)
   return (
     <div class="map-gesture-viewport" ref={containerRef}>
     <div
@@ -218,6 +231,8 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
         )}
         {Array.from({ length: columns }, (_, i) => i + 1).flatMap((col) =>
           Array.from({ length: rows }, (_, j) => j + 1).map((row) => {
+            const { x, y } = hexCenter(col, row)
+            if (!inView(x, y)) return null
             const key = `${col},${row}`
             const hex = hexByCoord.get(key) ?? null
             const polityCell = polityByCoord.get(key) ?? null
@@ -226,7 +241,6 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
               : polityCell
                 ? allegianceForCode(subsector, polityCell.allegiance)
                 : null
-            const { x, y } = hexCenter(col, row)
             const isSelected = !!sel && sel.col === col && sel.row === row
             return (
               <HexCell
@@ -236,6 +250,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
                 cx={x}
                 cy={y}
                 hex={hex}
+                detailed={detailed}
                 selected={isSelected}
                 subsectorSeed={seed}
                 displayName={nameMap.get(key)}
@@ -324,6 +339,9 @@ interface HexCellProps {
   cx: number
   cy: number
   hex: SubsectorHex | null
+  /** When false (zoomed-out sector overview), draw a light hex without the
+   *  unreadable labels/glyphs. */
+  detailed: boolean
   selected: boolean
   subsectorSeed: number
   displayName?: string
@@ -338,6 +356,7 @@ function HexCell({
   cx,
   cy,
   hex,
+  detailed,
   selected,
   subsectorSeed,
   displayName,
@@ -347,6 +366,9 @@ function HexCell({
 }: HexCellProps) {
   const label = `${col.toString().padStart(2, '0')}${row.toString().padStart(2, '0')}`
   const fullCoord: HexCoord = { col, row }
+  // The selected hex always shows full detail (you've clicked to inspect it),
+  // even at the zoomed-out overview where other hexes stay light.
+  const showDetail = detailed || selected
   if (!hex) {
     const territoryLabel = polityAllegiance
       ? `Hex ${label}: ${polityName ?? polityAllegiance} territory (no system)`
@@ -375,9 +397,11 @@ function HexCell({
           />
         )}
         <path d={hexPath(cx, cy, HEX_R)} class="hex-shape" />
-        <text x={cx} y={cy - HEX_R * 0.55} class="hex-label" text-anchor="middle">
-          {label}
-        </text>
+        {showDetail && (
+          <text x={cx} y={cy - HEX_R * 0.55} class="hex-label" text-anchor="middle">
+            {label}
+          </text>
+        )}
       </g>
     )
   }
@@ -425,55 +449,54 @@ function HexCell({
         />
       )}
 
-      {/* Hex coordinate, top edge, very small dim grey. */}
-      <text x={cx} y={cy - HEX_R * 0.62} class="hex-label" text-anchor="middle">
-        {label}
-      </text>
-
-      {/* Base symbols across the upper third of the hex. */}
-      <BaseMarkers cx={cx} cy={cy} bases={hex.bases} />
-
-      {/* Starport letter above the system dot. */}
-      <text
-        x={cx}
-        y={cy - HEX_R * 0.10}
-        class={`hex-starport${isRed ? ' hex-starport-warn' : ''}`}
-        text-anchor="middle"
-      >
-        {hex.uwp.starport}
-      </text>
-
-      {/* System marker: filled circle (or a hollow ring for X-class). */}
+      {/* System marker: filled circle. The one detail kept at every zoom so
+          you can see where worlds are across the whole sector. */}
       <circle cx={cx} cy={cy + HEX_R * 0.10} r={3.2} class="hex-system-dot" />
 
-      {/* World name below the dot. */}
-      <text
-        x={cx}
-        y={cy + HEX_R * 0.45}
-        class={`hex-name${isRed ? ' hex-name-warn' : ''}`}
-        text-anchor="middle"
-      >
-        {name}
-      </text>
+      {showDetail && (
+        <>
+          {/* Hex coordinate, top edge, very small dim grey. */}
+          <text x={cx} y={cy - HEX_R * 0.62} class="hex-label" text-anchor="middle">
+            {label}
+          </text>
 
-      {/* Gas-giant glyph: hollow ring to the right of the system dot,
-          matching the sector-map "GG" indicator. */}
-      {hex.gas_giant && (
-        <circle
-          cx={cx + HEX_R * 0.42}
-          cy={cy + HEX_R * 0.10}
-          r={2.4}
-          class="hex-gas-giant"
-        />
-      )}
+          {/* Base symbols across the upper third of the hex. */}
+          <BaseMarkers cx={cx} cy={cy} bases={hex.bases} />
 
-      {/* Asteroid belt glyph: small dot cluster to the left of the dot. */}
-      {hex.belts && (
-        <g class="hex-belt-glyph" aria-hidden="true">
-          <circle cx={cx - HEX_R * 0.40} cy={cy + HEX_R * 0.08} r={0.9} />
-          <circle cx={cx - HEX_R * 0.33} cy={cy + HEX_R * 0.18} r={0.7} />
-          <circle cx={cx - HEX_R * 0.46} cy={cy + HEX_R * 0.20} r={0.6} />
-        </g>
+          {/* Starport letter above the system dot. */}
+          <text
+            x={cx}
+            y={cy - HEX_R * 0.10}
+            class={`hex-starport${isRed ? ' hex-starport-warn' : ''}`}
+            text-anchor="middle"
+          >
+            {hex.uwp.starport}
+          </text>
+
+          {/* World name below the dot. */}
+          <text
+            x={cx}
+            y={cy + HEX_R * 0.45}
+            class={`hex-name${isRed ? ' hex-name-warn' : ''}`}
+            text-anchor="middle"
+          >
+            {name}
+          </text>
+
+          {/* Gas-giant glyph: hollow ring to the right of the system dot. */}
+          {hex.gas_giant && (
+            <circle cx={cx + HEX_R * 0.42} cy={cy + HEX_R * 0.10} r={2.4} class="hex-gas-giant" />
+          )}
+
+          {/* Asteroid belt glyph: small dot cluster to the left of the dot. */}
+          {hex.belts && (
+            <g class="hex-belt-glyph" aria-hidden="true">
+              <circle cx={cx - HEX_R * 0.40} cy={cy + HEX_R * 0.08} r={0.9} />
+              <circle cx={cx - HEX_R * 0.33} cy={cy + HEX_R * 0.18} r={0.7} />
+              <circle cx={cx - HEX_R * 0.46} cy={cy + HEX_R * 0.20} r={0.6} />
+            </g>
+          )}
+        </>
       )}
     </g>
   )

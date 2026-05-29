@@ -10,7 +10,8 @@
   "scripts": {
     "build:wasm": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --release",
     "build:wasm:dev": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --dev",
-    "dev": "npm run build:wasm:dev && vite",
+    "build:wasm:profiling": "wasm-pack build crates/planet-render --target web --out-dir ../../pkg --profiling",
+    "dev": "npm run build:wasm:profiling && vite",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview",
     "ip:check": "node scripts/check-ip-guardrails.mjs",
