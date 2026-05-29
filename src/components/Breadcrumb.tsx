@@ -10,7 +10,7 @@ import {
   subsectorSeed,
   viewMode,
 } from '../appState'
-import { hexLabel } from '../domain/subsector'
+import { hexLabel, subsectorAt } from '../domain/subsector'
 import { resolveHexName, systemName } from '../domain/names'
 import { formatBodyViewLabel, formatSurfaceCrumbLabel } from '../navigation/bodyView'
 
@@ -51,6 +51,10 @@ export function Breadcrumb() {
   // Treat the subsector seed like any other system seed for naming so the
   // top crumb reads as a place ("Thrame Sector") rather than a hex code.
   const subsectorLabel = sub ? `${systemName(seed)} Sector` : 'Subsector'
+  // When the grid is a full sector, surface which lettered 8×10 subsector the
+  // selected hex sits in, for orientation.
+  const inSector = (sub?.subsectors?.length ?? 0) > 1
+  const subBlock = inSector && sub && sel ? subsectorAt(sub, sel) : null
   const hexLabelText = sel ? hexLabel(sel) : null
   // A hex and the system it contains are the same place, so they resolve to one
   // canonical name (matching the map + panel). Fall back to the system seed only
@@ -69,6 +73,14 @@ export function Breadcrumb() {
       onClick: () => setViewMode('subsector'),
     },
   ]
+  if (subBlock && mode !== 'subsector') {
+    crumbs.push({
+      label: `Subsector ${subBlock.letter}`,
+      active: false,
+      onClick: () => setViewMode('subsector'),
+      muted: true,
+    })
+  }
   if (hexLabelText && hexNameText && mode !== 'subsector') {
     crumbs.push({
       label: `${hexNameText} · ${hexLabelText}`,

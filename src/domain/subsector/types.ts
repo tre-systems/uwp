@@ -109,6 +109,14 @@ export interface JumpRoute {
   visible?: boolean
 }
 
+export interface SubsectorMeta {
+  letter: string
+  col_min: number
+  col_max: number
+  row_min: number
+  row_max: number
+}
+
 export interface Subsector {
   seed: number
   density: number
@@ -119,6 +127,17 @@ export interface Subsector {
   polity_cells?: PolityCell[]
   hexes: SubsectorHex[]
   jump_routes: JumpRoute[]
+  /** Lettered 8×10 sub-blocks: 1 entry for a subsector, 16 (A–P) for a sector. */
+  subsectors?: SubsectorMeta[]
+}
+
+/** Which lettered subsector contains a sector-relative hex coordinate. */
+export function subsectorAt(sub: Pick<Subsector, 'subsectors'>, coord: HexCoord): SubsectorMeta | null {
+  return (
+    sub.subsectors?.find(
+      (s) => coord.col >= s.col_min && coord.col <= s.col_max && coord.row >= s.row_min && coord.row <= s.row_max,
+    ) ?? null
+  )
 }
 
 export function subsectorHexCount(subsector: Pick<Subsector, 'columns' | 'rows'>): number {

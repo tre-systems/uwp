@@ -2,6 +2,7 @@
 import init, {
   createSubsectorBuilder,
   finishSubsectorBuilder,
+  generateSector,
   generateSurfaceMapFromPlanet,
   generateSurfacePrebakeFull,
   stepSubsectorBuilder,
@@ -17,6 +18,12 @@ type WorkerRequest =
       seed: number
       density: number
       cellsPerStep: number
+    }
+  | {
+      id: number
+      kind: 'sector'
+      seed: number
+      density: number
     }
   | {
       id: number
@@ -73,6 +80,10 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       switch (msg.kind) {
         case 'subsector':
           result = await runSubsector(msg.seed, msg.density, msg.cellsPerStep)
+          break
+        case 'sector':
+          // 1280 hexes in one shot — fine off the UI thread.
+          result = generateSector(msg.seed >>> 0, msg.density) as Subsector
           break
         case 'surfacePrebakeFull':
           result = generateSurfacePrebakeFull(

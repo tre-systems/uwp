@@ -69,6 +69,15 @@ export function generateSubsectorInWorker(
   }))
 }
 
+export function generateSectorInWorker(seed: number, density: number): Promise<Subsector> {
+  return runJob<Subsector>((id) => ({
+    id,
+    kind: 'sector',
+    seed: seed >>> 0,
+    density,
+  }))
+}
+
 export function generateSurfacePrebakeFullInWorker(
   seed: number,
   waterFraction: number,

@@ -1,8 +1,8 @@
 import { effect } from '@preact/signals'
 import {
-  createSubsectorBuilder,
+  createSectorBuilder,
   finishSubsectorBuilder,
-  generateSubsector,
+  generateSector,
   stepSubsectorBuilder,
 } from '../pkg/planet_render'
 import {
@@ -16,7 +16,7 @@ import {
 } from './appState'
 import { withChartWork, yieldToPaint } from './appState/chartWork'
 import type { Subsector } from './domain/subsector'
-import { generateSubsectorInWorker, wasmComputeAvailable } from './wasmCompute'
+import { generateSectorInWorker, wasmComputeAvailable } from './wasmCompute'
 import { ensureWasmReady } from './wasm'
 
 // Subsector generation is independent of the GPU renderer (no shader,
@@ -52,17 +52,20 @@ async function refreshOnMainThread(generation: number): Promise<void> {
 
   if (wasmComputeAvailable()) {
     try {
-      const sub = await generateSubsectorInWorker(seed, density, 4)
+      const sub = await generateSectorInWorker(seed, density)
       if (generation !== refreshGeneration) return
       applySubsector(sub, selected)
       return
     } catch (err) {
-      console.warn('subsector worker failed, falling back to main thread', err)
+      console.warn('sector worker failed, falling back to main thread', err)
     }
   }
 
-  const builder = createSubsectorBuilder(seed >>> 0, density)
-  const cellsPerStep = 4
+  // Main-thread fallback: step the 1280-hex sector in chunks, yielding to paint
+  // between chunks so the UI stays responsive (a larger step than the old 80-
+  // hex subsector keeps the total step count modest).
+  const builder = createSectorBuilder(seed >>> 0, density)
+  const cellsPerStep = 64
   while (!stepSubsectorBuilder(builder, cellsPerStep)) {
     await yieldToPaint()
     if (generation !== refreshGeneration) return
@@ -83,7 +86,7 @@ async function refresh(): Promise<void> {
 async function refreshSyncFallback(generation: number): Promise<void> {
   await ensureWasmReady()
   if (generation !== refreshGeneration) return
-  const sub = generateSubsector(subsectorSeed.value, subsectorDensity.value) as Subsector
+  const sub = generateSector(subsectorSeed.value, subsectorDensity.value) as Subsector
   if (generation !== refreshGeneration) return
   applySubsector(sub, selectedHex.value)
 }

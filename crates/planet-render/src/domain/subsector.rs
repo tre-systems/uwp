@@ -33,6 +33,10 @@ use super::system::{self, BodyType, SolarSystem};
 /// × 10 rows (80 hexes).
 pub const SUBSECTOR_COLS: u8 = 8;
 pub const SUBSECTOR_ROWS: u8 = 10;
+/// A full sector is a 4×4 block of subsectors: 32 columns × 40 rows (1280
+/// hexes), with the 16 subsectors lettered A–P left-to-right, top-to-bottom.
+pub const SECTOR_COLS: u8 = 32;
+pub const SECTOR_ROWS: u8 = 40;
 const COMMUNICATION_ROUTE_THRESHOLD: i32 = 8;
 const TRADE_PROMOTES_COMMUNICATION_THRESHOLD: u8 = 8;
 const JUMP_2_COMMUNICATION_DM: i32 = -2;
@@ -159,6 +163,20 @@ pub struct Subsector {
     pub polity_cells: Vec<PolityCell>,
     pub hexes: Vec<SubsectorHex>,
     pub jump_routes: Vec<JumpRoute>,
+    /// The lettered 8×10 sub-blocks tiling this grid. A single subsector has
+    /// one entry ('A'); a full sector has 16 ('A'–'P').
+    pub subsectors: Vec<SubsectorMeta>,
+}
+
+/// One lettered 8×10 subsector block within a grid, with its inclusive
+/// sector-relative bounds. Used to label the map and frame the drill-down view.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SubsectorMeta {
+    pub letter: char,
+    pub col_min: u8,
+    pub col_max: u8,
+    pub row_min: u8,
+    pub row_max: u8,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,13 +276,19 @@ fn push_occupied_hex(hexes: &mut Vec<SubsectorHex>, seed: u32, density: f32, col
     hexes.push(build_hex(coord, system_seed, &system, &mut rng));
 }
 
-fn finalize_subsector(seed: u32, density: f32, hexes: Vec<SubsectorHex>) -> Subsector {
+fn finalize_subsector(
+    seed: u32,
+    density: f32,
+    cols: u8,
+    rows: u8,
+    hexes: Vec<SubsectorHex>,
+) -> Subsector {
     let mut hexes = hexes;
-    let mut allegiances = generate_allegiances(seed);
-    let mut polity_cells = compute_polity_cells(&allegiances);
+    let mut allegiances = generate_allegiances(seed, cols, rows);
+    let mut polity_cells = compute_polity_cells(&allegiances, cols, rows);
     assign_hex_allegiances(&mut hexes, &polity_cells);
     snap_allegiance_capitals(&hexes, &mut allegiances);
-    polity_cells = compute_polity_cells(&allegiances);
+    polity_cells = compute_polity_cells(&allegiances, cols, rows);
     assign_hex_allegiances(&mut hexes, &polity_cells);
     let allegiance = dominant_allegiance(&hexes, &allegiances);
     let jump_routes = compute_jump_routes(&hexes);
@@ -272,20 +296,23 @@ fn finalize_subsector(seed: u32, density: f32, hexes: Vec<SubsectorHex>) -> Subs
     Subsector {
         seed,
         density,
-        columns: SUBSECTOR_COLS,
-        rows: SUBSECTOR_ROWS,
+        columns: cols,
+        rows,
         allegiance,
         allegiances,
         polity_cells,
         hexes,
         jump_routes,
+        subsectors: subsector_meta(cols, rows),
     }
 }
 
-/// Incremental subsector builder so the host can yield between hexes.
+/// Incremental grid builder so the host can yield between hexes.
 pub struct SubsectorBuilder {
     seed: u32,
     density: f32,
+    cols: u8,
+    rows: u8,
     col: u8,
     row: u8,
     hexes: Vec<SubsectorHex>,
@@ -293,10 +320,22 @@ pub struct SubsectorBuilder {
 }
 
 impl SubsectorBuilder {
+    /// Builder for a single 8×10 subsector.
     pub fn new(seed: u32, density: f32) -> Self {
+        Self::with_dims(seed, density, SUBSECTOR_COLS, SUBSECTOR_ROWS)
+    }
+
+    /// Builder for a full 32×40 sector.
+    pub fn new_sector(seed: u32, density: f32) -> Self {
+        Self::with_dims(seed, density, SECTOR_COLS, SECTOR_ROWS)
+    }
+
+    fn with_dims(seed: u32, density: f32, cols: u8, rows: u8) -> Self {
         Self {
             seed,
             density: density.clamp(0.0, 1.0),
+            cols,
+            rows,
             col: 1,
             row: 1,
             hexes: Vec::new(),
@@ -311,17 +350,17 @@ impl SubsectorBuilder {
             return true;
         }
         let mut budget = max_cells;
-        while budget > 0 && self.row <= SUBSECTOR_ROWS {
+        while budget > 0 && self.row <= self.rows {
             push_occupied_hex(&mut self.hexes, self.seed, self.density, self.col, self.row);
             budget -= 1;
-            if self.col >= SUBSECTOR_COLS {
+            if self.col >= self.cols {
                 self.col = 1;
                 self.row += 1;
             } else {
                 self.col += 1;
             }
         }
-        if self.row > SUBSECTOR_ROWS {
+        if self.row > self.rows {
             self.grid_done = true;
             return true;
         }
@@ -329,26 +368,62 @@ impl SubsectorBuilder {
     }
 
     pub fn finish(self) -> Subsector {
-        finalize_subsector(self.seed, self.density, self.hexes)
+        finalize_subsector(self.seed, self.density, self.cols, self.rows, self.hexes)
     }
 }
 
 /// Generate a subsector at the requested seed and density. Density is the
 /// presence probability per hex; 0.5 matches the classic 1d6 ≥ 4 rule.
 pub fn generate(seed: u32, density: f32) -> Subsector {
+    generate_grid(seed, density, SUBSECTOR_COLS, SUBSECTOR_ROWS)
+}
+
+/// Generate a full 32×40 sector (16 subsectors A–P) at the requested seed and
+/// density. Identical machinery to `generate`, just a larger grid with more
+/// polities (see `generate_allegiances`).
+pub fn generate_sector(seed: u32, density: f32) -> Subsector {
+    generate_grid(seed, density, SECTOR_COLS, SECTOR_ROWS)
+}
+
+fn generate_grid(seed: u32, density: f32, cols: u8, rows: u8) -> Subsector {
     let density = density.clamp(0.0, 1.0);
     let mut hexes = Vec::new();
-
-    for col in 1..=SUBSECTOR_COLS {
-        for row in 1..=SUBSECTOR_ROWS {
+    for col in 1..=cols {
+        for row in 1..=rows {
             push_occupied_hex(&mut hexes, seed, density, col, row);
         }
     }
-
-    finalize_subsector(seed, density, hexes)
+    finalize_subsector(seed, density, cols, rows, hexes)
 }
 
-fn generate_allegiances(seed: u32) -> Vec<Allegiance> {
+/// The lettered 8×10 sub-blocks tiling a `cols`×`rows` grid, in A–P order
+/// (left-to-right, top-to-bottom). A grid smaller than a full subsector still
+/// yields a single 'A' block covering it.
+fn subsector_meta(cols: u8, rows: u8) -> Vec<SubsectorMeta> {
+    let mut blocks = Vec::new();
+    let mut letter = b'A';
+    let mut row_min = 1u8;
+    while row_min <= rows {
+        let row_max = (row_min + SUBSECTOR_ROWS - 1).min(rows);
+        let mut col_min = 1u8;
+        while col_min <= cols {
+            let col_max = (col_min + SUBSECTOR_COLS - 1).min(cols);
+            blocks.push(SubsectorMeta {
+                letter: letter as char,
+                col_min,
+                col_max,
+                row_min,
+                row_max,
+            });
+            letter += 1;
+            col_min += SUBSECTOR_COLS;
+        }
+        row_min += SUBSECTOR_ROWS;
+    }
+    blocks
+}
+
+fn generate_allegiances(seed: u32, cols: u8, rows: u8) -> Vec<Allegiance> {
     let names = [
         ("ImDi", "Imperial Diocese"),
         ("NaVa", "Navis Verge"),
@@ -357,49 +432,66 @@ fn generate_allegiances(seed: u32) -> Vec<Allegiance> {
         ("UnCo", "Union Compact"),
         ("ScZo", "Scout Zone"),
     ];
-    let a = (hash_hex_seed(seed ^ 0xA11E_0001, 1, 1) as usize) % names.len();
-    let mut b = (hash_hex_seed(seed ^ 0xA11E_0002, 2, 1) as usize) % names.len();
-    if b == a {
-        b = (b + 1) % names.len();
+    // Scale the polity count to the grid area: one classic subsector (80 hexes)
+    // gets two rival polities; a full 32×40 sector a handful of larger blocs.
+    let area = cols as u32 * rows as u32;
+    let n = (area / 320).clamp(2, names.len() as u32) as usize;
+    let band = (cols as u32 / n as u32).max(1);
+
+    let mut allegiances = Vec::with_capacity(n + 1);
+    let mut used: Vec<usize> = Vec::new();
+    for i in 0..n {
+        let mut name_idx =
+            (hash_hex_seed(seed ^ 0xA11E_0001, (i as u8) + 1, 1) as usize) % names.len();
+        while used.contains(&name_idx) {
+            name_idx = (name_idx + 1) % names.len();
+        }
+        used.push(name_idx);
+        // Seat each capital inside its own left-to-right column band so the
+        // polities form large contiguous blocs with neutral frontiers between.
+        let band_lo = i as u32 * band + 1;
+        let col = (band_lo + hash_hex_seed(seed ^ 0xCA91_7A10, (i as u8) + 1, 2) % band)
+            .clamp(1, cols as u32) as u8;
+        let row = (1 + hash_hex_seed(seed ^ 0xCA91_7A20, (i as u8) + 1, 3) % rows as u32)
+            .clamp(1, rows as u32) as u8;
+        allegiances.push(Allegiance {
+            code: names[name_idx].0.to_string(),
+            name: names[name_idx].1.to_string(),
+            capital: HexCoord::new(col, row),
+            color_index: i as u8,
+        });
     }
-    vec![
-        Allegiance {
-            code: names[a].0.to_string(),
-            name: names[a].1.to_string(),
-            capital: HexCoord::new(2 + (seed as u8 % 2), 3 + ((seed >> 8) as u8 % 5)),
-            color_index: 0,
-        },
-        Allegiance {
-            code: names[b].0.to_string(),
-            name: names[b].1.to_string(),
-            capital: HexCoord::new(6 + ((seed >> 16) as u8 % 2), 3 + ((seed >> 24) as u8 % 5)),
-            color_index: 1,
-        },
-        Allegiance {
-            code: "Na".to_string(),
-            name: "Neutral Border".to_string(),
-            capital: HexCoord::new(4, 5),
-            color_index: 2,
-        },
-    ]
+    allegiances.push(Allegiance {
+        code: "Na".to_string(),
+        name: "Neutral Border".to_string(),
+        capital: HexCoord::new((cols / 2).max(1), (rows / 2).max(1)),
+        color_index: n as u8,
+    });
+    allegiances
 }
 
-fn compute_polity_cells(allegiances: &[Allegiance]) -> Vec<PolityCell> {
-    let [left, right, neutral, ..] = allegiances else {
+fn compute_polity_cells(allegiances: &[Allegiance], cols: u8, rows: u8) -> Vec<PolityCell> {
+    if allegiances.len() < 2 {
         return vec![];
-    };
+    }
+    // The final entry is the neutral frontier; the rest are rival polities.
+    // Each cell joins its nearest polity capital, unless it sits within one hex
+    // of the boundary between its two nearest — that band reads as neutral.
+    let (polities, neutral_slice) = allegiances.split_at(allegiances.len() - 1);
+    let neutral = neutral_slice[0].code.clone();
     let mut cells = Vec::new();
-    for col in 1..=SUBSECTOR_COLS {
-        for row in 1..=SUBSECTOR_ROWS {
+    for col in 1..=cols {
+        for row in 1..=rows {
             let coord = HexCoord::new(col, row);
-            let left_distance = hex_distance(coord, left.capital);
-            let right_distance = hex_distance(coord, right.capital);
-            let allegiance = if (left_distance - right_distance).abs() <= 1 {
-                neutral.code.clone()
-            } else if left_distance < right_distance {
-                left.code.clone()
-            } else {
-                right.code.clone()
+            let mut ranked: Vec<(i32, &str)> = polities
+                .iter()
+                .map(|a| (hex_distance(coord, a.capital), a.code.as_str()))
+                .collect();
+            ranked.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
+            let allegiance = match ranked.as_slice() {
+                [first, second, ..] if (first.0 - second.0).abs() <= 1 => neutral.clone(),
+                [first, ..] => first.1.to_string(),
+                [] => neutral.clone(),
             };
             let capital = allegiances.iter().any(|a| a.capital == coord);
             cells.push(PolityCell {
@@ -416,7 +508,7 @@ fn compute_polity_cells(allegiances: &[Allegiance]) -> Vec<PolityCell> {
         allegiance_by_coord.insert((cell.coord.col, cell.coord.row), cell.allegiance.clone());
     }
     for cell in &mut cells {
-        cell.frontier = neighbor_coords(cell.coord).iter().any(|coord| {
+        cell.frontier = neighbor_coords(cell.coord, cols, rows).iter().any(|coord| {
             allegiance_by_coord
                 .get(&(coord.col, coord.row))
                 .is_some_and(|allegiance| allegiance != &cell.allegiance)
@@ -435,19 +527,19 @@ fn assign_hex_allegiances(hexes: &mut [SubsectorHex], polity_cells: &[PolityCell
     }
 }
 
-fn neighbor_coords(coord: HexCoord) -> Vec<HexCoord> {
+fn neighbor_coords(coord: HexCoord, cols: u8, rows: u8) -> Vec<HexCoord> {
     let (q, r) = axial_from_offset(coord);
     const DIRECTIONS: [(i32, i32); 6] = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)];
     DIRECTIONS
         .iter()
-        .filter_map(|(dq, dr)| offset_from_axial(q + dq, r + dr))
+        .filter_map(|(dq, dr)| offset_from_axial(q + dq, r + dr, cols, rows))
         .collect()
 }
 
-fn offset_from_axial(q: i32, r: i32) -> Option<HexCoord> {
+fn offset_from_axial(q: i32, r: i32, cols: u8, rows: u8) -> Option<HexCoord> {
     let col = q;
     let row = r + (q - (q & 1)) / 2;
-    if (1..=SUBSECTOR_COLS as i32).contains(&col) && (1..=SUBSECTOR_ROWS as i32).contains(&row) {
+    if (1..=cols as i32).contains(&col) && (1..=rows as i32).contains(&row) {
         Some(HexCoord::new(col as u8, row as u8))
     } else {
         None
@@ -1260,6 +1352,47 @@ mod tests {
         assert_eq!(sub.hexes.len(), total);
         assert_eq!(total, 80);
         assert!(sub.hex_at(HexCoord::new(8, 10)).is_some());
+        // A single subsector is one lettered 'A' block covering the whole grid.
+        assert_eq!(sub.subsectors.len(), 1);
+        assert_eq!(sub.subsectors[0].letter, 'A');
+    }
+
+    #[test]
+    fn generate_sector_is_a_four_by_four_block_of_subsectors() {
+        let sec = generate_sector(7, 1.0);
+        assert_eq!(sec.columns, SECTOR_COLS);
+        assert_eq!(sec.rows, SECTOR_ROWS);
+        assert_eq!(
+            sec.hexes.len(),
+            (SECTOR_COLS as usize) * (SECTOR_ROWS as usize)
+        );
+        assert_eq!(sec.hexes.len(), 1280);
+        assert_eq!(sec.polity_cells.len(), 1280);
+
+        // 16 lettered subsectors A..=P, left-to-right then top-to-bottom.
+        assert_eq!(sec.subsectors.len(), 16);
+        let letters: String = sec.subsectors.iter().map(|s| s.letter).collect();
+        assert_eq!(letters, "ABCDEFGHIJKLMNOP");
+        let a = &sec.subsectors[0];
+        assert_eq!((a.col_min, a.col_max, a.row_min, a.row_max), (1, 8, 1, 10));
+        let p = &sec.subsectors[15];
+        assert_eq!(
+            (p.col_min, p.col_max, p.row_min, p.row_max),
+            (25, 32, 31, 40)
+        );
+    }
+
+    #[test]
+    fn sector_has_more_polities_than_a_subsector() {
+        let sub = generate(7, 1.0);
+        let sec = generate_sector(7, 1.0);
+        // Two rival polities + neutral in a subsector; several across a sector.
+        assert_eq!(sub.allegiances.len(), 3);
+        assert!(sec.allegiances.len() > sub.allegiances.len());
+        let codes: Vec<&str> = sec.allegiances.iter().map(|a| a.code.as_str()).collect();
+        for hex in &sec.hexes {
+            assert!(codes.contains(&hex.allegiance.as_str()));
+        }
     }
 
     #[test]

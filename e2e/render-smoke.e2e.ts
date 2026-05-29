@@ -42,7 +42,7 @@ for (const viewport of [
   { name: 'desktop', size: { width: 1280, height: 820 } },
   { name: 'mobile', size: { width: 390, height: 844 } },
 ] as const) {
-  test(`subsector map renders an 8x10 hex grid and opens a system on ${viewport.name}`, async ({ page }) => {
+  test(`sector map renders a 32x40 grid with subsector blocks and opens a system on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport.size)
     await openApp(page)
 
@@ -51,8 +51,10 @@ for (const viewport of [
     // Wait for the 8x10 grid to populate, then drive selection + overrides off
     // any occupied hex.
     await expect(page.locator('.hex-occupied').first()).toBeVisible({ timeout: 30_000 })
-    // A single standard subsector is 8 columns wide, so it has no internal seam.
-    await expect(page.locator('.subsector-seam')).toHaveCount(0)
+    // A full sector tiles a 4×4 block of lettered subsectors: 3 vertical + 3
+    // horizontal dividers, plus 16 A–P labels.
+    await expect(page.locator('.subsector-seam')).toHaveCount(6)
+    await expect(page.locator('.subsector-letter')).toHaveCount(16)
     await expect(page.locator('.polity-borders')).toHaveCount(1)
     await expect.poll(() => page.locator('.polity-border-line').count()).toBeGreaterThan(0)
     await expect.poll(() => page.locator('.polity-capital').count()).toBeGreaterThan(0)
@@ -65,7 +67,7 @@ for (const viewport of [
         .sort()
       return coords[0] ?? null
     })
-    expect(targetCoord).toMatch(/^0[1-8](0[1-9]|10)$/)
+    expect(targetCoord).toMatch(/^\d{4}$/)
 
     // Dispatch the click directly: the picked hex can sit outside the pan/zoom
     // viewport (e.g. a corner hex), which would block a real pointer click.

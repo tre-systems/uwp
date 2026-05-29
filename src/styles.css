@@ -1730,6 +1730,14 @@ label.color input[type="color"]::-webkit-color-swatch {
   stroke-width: 1;
   stroke-dasharray: 8 8;
 }
+.subsector-letter {
+  fill: rgba(155, 202, 255, 0.30);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  dominant-baseline: hanging;
+  pointer-events: none;
+}
 .hex-cell.hex-occupied { cursor: pointer; }
 .hex-cell.hex-occupied:hover .hex-shape { stroke: rgba(255, 255, 255, 0.55); }
 .hex-cell.hex-occupied:focus-visible .hex-shape {

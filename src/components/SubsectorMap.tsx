@@ -45,6 +45,10 @@ const PAD_Y = HEX_H * 0.85
 
 const DEFAULT_COLS = 8
 const DEFAULT_ROWS = 10
+// A lettered subsector block is the standard 8×10; a full sector tiles 4×4 of
+// them, so a multi-subsector grid draws dividers on these boundaries.
+const SUB_BLOCK_COLS = 8
+const SUB_BLOCK_ROWS = 10
 
 interface XY { x: number; y: number }
 
@@ -99,9 +103,22 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   const rows = subsector?.rows ?? DEFAULT_ROWS
   const svgWidth = mapWidth(columns)
   const svgHeight = mapHeight(rows)
-  const seamX = columns > 8
-    ? (hexCenter(8, 1).x + hexCenter(9, 1).x) * 0.5
-    : null
+  // Dividers + letter labels for the lettered 8×10 subsector blocks that tile a
+  // multi-subsector grid (a full sector). A single subsector draws none.
+  const subBlocks = subsector?.subsectors ?? []
+  const showBlocks = subBlocks.length > 1
+  const colDividers = showBlocks
+    ? Array.from({ length: Math.floor((columns - 1) / SUB_BLOCK_COLS) }, (_, i) => {
+        const c = (i + 1) * SUB_BLOCK_COLS
+        return (hexCenter(c, 1).x + hexCenter(c + 1, 1).x) * 0.5
+      })
+    : []
+  const rowDividers = showBlocks
+    ? Array.from({ length: Math.floor((rows - 1) / SUB_BLOCK_ROWS) }, (_, i) => {
+        const r = (i + 1) * SUB_BLOCK_ROWS
+        return (hexCenter(1, r).y + hexCenter(1, r + 1).y) * 0.5
+      })
+    : []
   const gestures = useMapGestures(containerRef, svgWidth, svgHeight)
 
   if (!subsector) {
@@ -177,15 +194,27 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
             </g>
           ))}
         </g>
-        {seamX != null && (
-          <line
-            x1={seamX}
-            y1={HEX_R * 0.35}
-            x2={seamX}
-            y2={svgHeight - HEX_R * 0.35}
-            class="subsector-seam"
-            aria-hidden="true"
-          />
+        {(colDividers.length > 0 || rowDividers.length > 0) && (
+          <g class="subsector-dividers" aria-hidden="true">
+            {colDividers.map((x, i) => (
+              <line key={`v${i}`} x1={x} y1={HEX_R * 0.35} x2={x} y2={svgHeight - HEX_R * 0.35} class="subsector-seam" />
+            ))}
+            {rowDividers.map((y, i) => (
+              <line key={`h${i}`} x1={HEX_R * 0.35} y1={y} x2={svgWidth - HEX_R * 0.35} y2={y} class="subsector-seam" />
+            ))}
+          </g>
+        )}
+        {showBlocks && (
+          <g class="subsector-letters" aria-hidden="true">
+            {subBlocks.map((s) => {
+              const p = hexCenter(s.col_min, s.row_min)
+              return (
+                <text key={s.letter} x={p.x - HEX_R * 0.55} y={p.y - HEX_H * 0.4} class="subsector-letter">
+                  {s.letter}
+                </text>
+              )
+            })}
+          </g>
         )}
         {Array.from({ length: columns }, (_, i) => i + 1).flatMap((col) =>
           Array.from({ length: rows }, (_, j) => j + 1).map((row) => {

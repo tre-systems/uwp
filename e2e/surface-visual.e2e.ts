@@ -23,15 +23,15 @@ test.describe('surface convergence regression', () => {
     await expect(page.locator('.planet-canvas')).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('.subsector-map')).toBeVisible({ timeout: 30_000 })
 
-    // 16x10 grid with ~50% occupancy → roughly 60-100 occupied hexes
-    // for a stable seed. The exact count is part of the generator's
-    // contract; if it drifts, this test fails and the dev confirms
-    // the change is intentional before re-pinning the bounds.
+    // A full 32×40 sector (1280 hexes) at ~50% density lands near ~640
+    // occupied for a stable seed. The exact count is part of the generator's
+    // contract; if it drifts, this test fails and the dev confirms the change
+    // is intentional before re-pinning the bounds.
     await expect.poll(
       () => page.locator('.hex-occupied').count(),
-      { timeout: 10_000 },
-    ).toBeGreaterThan(40)
-    await expect.poll(() => page.locator('.hex-occupied').count()).toBeLessThan(140)
+      { timeout: 15_000 },
+    ).toBeGreaterThan(450)
+    await expect.poll(() => page.locator('.hex-occupied').count()).toBeLessThan(900)
     await expect.poll(() => page.locator('.polity-capital').count()).toBeGreaterThan(0)
     await expect.poll(() => page.locator('.jump-route').count()).toBeGreaterThan(0)
   })

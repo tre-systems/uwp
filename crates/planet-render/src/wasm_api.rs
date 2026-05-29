@@ -216,6 +216,13 @@ pub fn generate_subsector(seed: u32, density: f32) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&sub).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Generate a full 32×40 sector (16 subsectors A–P) in one call.
+#[wasm_bindgen(js_name = generateSector)]
+pub fn generate_sector(seed: u32, density: f32) -> Result<JsValue, JsValue> {
+    let sec = subsector::generate_sector(seed, density);
+    serde_wasm_bindgen::to_value(&sec).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 #[wasm_bindgen]
 pub struct SubsectorBuilder {
     inner: subsector::SubsectorBuilder,
@@ -225,6 +232,15 @@ pub struct SubsectorBuilder {
 pub fn create_subsector_builder(seed: u32, density: f32) -> SubsectorBuilder {
     SubsectorBuilder {
         inner: subsector::SubsectorBuilder::new(seed, density),
+    }
+}
+
+/// Incremental builder for a full 32×40 sector (shares step/finish with the
+/// subsector builder).
+#[wasm_bindgen(js_name = createSectorBuilder)]
+pub fn create_sector_builder(seed: u32, density: f32) -> SubsectorBuilder {
+    SubsectorBuilder {
+        inner: subsector::SubsectorBuilder::new_sector(seed, density),
     }
 }
 
