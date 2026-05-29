@@ -1746,12 +1746,6 @@ label.color input[type="color"]::-webkit-color-swatch {
   cursor: grab;
 }
 .subsector-map svg:active { cursor: grabbing; }
-.subsector-empty {
-  color: var(--text-dim);
-  font-size: var(--type-body);
-  text-align: center;
-}
-
 /* Subsector hex map - styled after classic 2d6 sector charts. The
    background sits on the .subsector-overlay (true black); the hex
    shapes contribute only their thin grey outline. Selection draws an

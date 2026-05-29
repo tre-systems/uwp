@@ -22,6 +22,7 @@ import {
 import { useRef, useState } from 'preact/hooks'
 import { hexName, subsectorHexNames } from '../domain/names'
 import { useMapGestures } from './useMapGestures'
+import { LoadingOverlay } from './LoadingOverlay'
 
 // Subsector map styled after classic 2d6 sector charts: pure black field,
 // thin grey flat-top
@@ -124,9 +125,7 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   if (!subsector) {
     return (
       <div class="map-gesture-viewport" ref={containerRef}>
-        <div class="subsector-map subsector-empty">
-          <p>Generating subsector…</p>
-        </div>
+        <LoadingOverlay label="Generating sector…" />
       </div>
     )
   }
