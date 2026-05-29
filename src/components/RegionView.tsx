@@ -68,8 +68,8 @@ export function RegionView() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     canvas.width = FRAME_WIDTH * dpr
     canvas.height = FRAME_HEIGHT * dpr
-    canvas.style.width = `${FRAME_WIDTH}px`
-    canvas.style.height = `${FRAME_HEIGHT}px`
+    canvas.style.width = ''
+    canvas.style.height = ''
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     const selectedCellId = surfaceHex.cell_id ?? null
@@ -155,18 +155,29 @@ export function RegionView() {
         }
         try {
           if (cancelled) return
-          ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT)
-          ctx.save()
-          pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
-          ctx.clip()
-          const result = await renderRegionAsync(
-            ctx,
-            regionInput,
-            'final',
-            controller.signal,
-          )
-          ctx.restore()
+          const finalCanvas = document.createElement('canvas')
+          finalCanvas.width = canvas.width
+          finalCanvas.height = canvas.height
+          const finalCtx = finalCanvas.getContext('2d')
+          if (!finalCtx) return
+          finalCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          finalCtx.save()
+          let result: Awaited<ReturnType<typeof renderRegionAsync>>
+          try {
+            pathFlatTopHex(finalCtx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
+            finalCtx.clip()
+            result = await renderRegionAsync(
+              finalCtx,
+              regionInput,
+              'final',
+              controller.signal,
+            )
+          } finally {
+            finalCtx.restore()
+          }
           if (!cancelled) {
+            ctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT)
+            ctx.drawImage(finalCanvas, 0, 0, FRAME_WIDTH, FRAME_HEIGHT)
             ctx.save()
             pathFlatTopHex(ctx, FRAME_WIDTH / 2, FRAME_HEIGHT / 2, FRAME_HEIGHT / 2 - 12)
             ctx.lineWidth = 3
@@ -235,7 +246,7 @@ export function RegionView() {
             ✕
           </button>
         </header>
-        <div class="region-canvas-wrap" style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT }}>
+        <div class="region-canvas-wrap">
           <canvas ref={canvasRef} class="region-canvas" />
           {refining && (
             <div class="region-refining" aria-hidden="true">refining…</div>
@@ -244,7 +255,7 @@ export function RegionView() {
             <div
               key={i}
               class={`region-label region-label-${l.kind} region-label-tier-${l.tier}`}
-              style={{ left: `${l.x}px`, top: `${l.y}px` }}
+              style={{ left: `${(l.x / FRAME_WIDTH) * 100}%`, top: `${(l.y / FRAME_HEIGHT) * 100}%` }}
             >
               {l.text}
             </div>

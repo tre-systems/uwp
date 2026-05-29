@@ -195,7 +195,7 @@ export function renderRegion(
         const ice = input.paletteBase
           ? toSrgb(biomeColorLinear(isWater ? 13 : 11, input.paletteBase))
           : [220, 232, 242] as [number, number, number]
-        const k = isWater ? freeze * 0.92 : freeze * 0.82
+        const k = isWater ? freeze * 0.74 : freeze * 0.68
         r = r * (1 - k) + ice[0] * k
         g = g * (1 - k) + ice[1] * k
         b = b * (1 - k) + ice[2] * k
@@ -210,19 +210,23 @@ export function renderRegion(
         b = b * (1 - t * 0.4) + 160 * t * 0.4
       }
 
-      // Apply hillshade only to land - water keeps its own gradient.
-      if (!isWater) {
+      if (isWater) {
+        const waterShade = 0.90 + lamb * 0.12
+        r *= waterShade
+        g *= waterShade
+        b *= waterShade
+      } else {
         r *= shade
         g *= shade
         b *= shade
       }
 
       // High-frequency colour jitter on the final pass: one octave of
-      // value noise tints each pixel by +-6%, which breaks up the
-      // smooth interpolation that otherwise reads as plastic.
-      if (profile.fineDetail && !isWater) {
+      // value noise tints each pixel, which breaks up the smooth
+      // interpolation that otherwise reads as plastic or blank ocean.
+      if (profile.fineDetail) {
         const j = valueNoise(px * 0.7, py * 0.7, detailSeed) // [-1, 1]
-        const k = 1 + j * 0.06
+        const k = 1 + j * (isWater ? 0.025 : 0.06)
         r *= k; g *= k; b *= k
       }
 
@@ -350,7 +354,7 @@ export async function renderRegionAsync(
           const ice = input.paletteBase
             ? toSrgb(biomeColorLinear(isWater ? 13 : 11, input.paletteBase))
             : [220, 232, 242] as [number, number, number]
-          const k = isWater ? freeze * 0.92 : freeze * 0.82
+          const k = isWater ? freeze * 0.74 : freeze * 0.68
           r = r * (1 - k) + ice[0] * k
           g = g * (1 - k) + ice[1] * k
           b = b * (1 - k) + ice[2] * k
@@ -362,14 +366,19 @@ export async function renderRegionAsync(
           g = g * (1 - t * 0.4) + 200 * t * 0.4
           b = b * (1 - t * 0.4) + 160 * t * 0.4
         }
-        if (!isWater) {
+        if (isWater) {
+          const waterShade = 0.90 + lamb * 0.12
+          r *= waterShade
+          g *= waterShade
+          b *= waterShade
+        } else {
           r *= shade
           g *= shade
           b *= shade
         }
-        if (profile.fineDetail && !isWater) {
+        if (profile.fineDetail) {
           const j = valueNoise(px * 0.7, py * 0.7, detailSeed)
-          const k = 1 + j * 0.06
+          const k = 1 + j * (isWater ? 0.025 : 0.06)
           r *= k
           g *= k
           b *= k
@@ -1038,6 +1047,31 @@ function drawBiomeFlourish(
       ctx.beginPath()
       ctx.moveTo(x0 - tx * 8, y0 - ty * 8)
       ctx.quadraticCurveTo(x0 + sl.dx * 30, y0 + sl.dy * 30, x0 + tx * 8, y0 + ty * 8)
+      ctx.stroke()
+    }
+  } else if (terrain === 'Ocean') {
+    ctx.strokeStyle = 'rgba(210, 235, 255, 0.16)'
+    ctx.lineWidth = 0.7
+    const contours = 72
+    for (let i = 0; i < contours; i++) {
+      const u = rng()
+      const v = rng()
+      if (sampleHeight(map, u, v) >= seaLevel) continue
+      const sl = sampleSlope(map, u, v)
+      const len = Math.hypot(sl.dx, sl.dy) + 1e-4
+      const tx = -sl.dy / len
+      const ty = sl.dx / len
+      const x0 = u * width
+      const y0 = v * height
+      const half = 8 + rng() * 18
+      ctx.beginPath()
+      ctx.moveTo(x0 - tx * half, y0 - ty * half)
+      ctx.quadraticCurveTo(
+        x0 + sl.dx * width * 0.18,
+        y0 + sl.dy * height * 0.18,
+        x0 + tx * half,
+        y0 + ty * half,
+      )
       ctx.stroke()
     }
   } else if (terrain === 'Ice') {
