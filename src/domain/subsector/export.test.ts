@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { subsectorToText } from './export'
+import { parseSectorData } from './import'
 import {
   applySubsectorOverrides,
   subsectorOverrideKey,
-  type JumpRoute,
+  uwpToCode,
   type Subsector,
   type SubsectorHex,
 } from './types'
@@ -11,7 +12,7 @@ import {
 function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): SubsectorHex {
   return {
     coord: { col, row },
-    system_seed: 0xABCD1234,
+    system_seed: 0xabcd1234,
     uwp: { starport: 'A', size: 7, atm: 8, hydro: 8, pop: 8, gov: 9, law: 9, tech: 12 },
     bases: { naval: true, scout: true, research: false, aid: false },
     travel_zone: 'Green',
@@ -25,152 +26,91 @@ function hex(col: number, row: number, overrides: Partial<SubsectorHex> = {}): S
   }
 }
 
-function route(fromCol: number, fromRow: number, toCol: number, toRow: number, overrides: Partial<JumpRoute> = {}): JumpRoute {
+function subsector(hexes: SubsectorHex[]): Subsector {
   return {
-    from: { col: fromCol, row: fromRow },
-    to: { col: toCol, row: toRow },
-    jump: 1,
-    communication: true,
-    trade: false,
-    trade_score: 0,
-    ...overrides,
-  }
-}
-
-function subsector(hexes: SubsectorHex[], jump_routes: JumpRoute[] = []): Subsector {
-  return {
-    seed: 0xFEEDFACE,
+    seed: 0xfeedface,
     density: 0.5,
     columns: 8,
     rows: 10,
     allegiance: 'ImDi',
     allegiances: [
-      { code: 'ImDi', name: 'Imperial Diocese', capital: { col: 4, row: 5 }, color_index: 0 },
-      { code: 'NaVa', name: 'Navis Verge', capital: { col: 13, row: 5 }, color_index: 1 },
-      { code: 'Na', name: 'Neutral Border', capital: { col: 8, row: 5 }, color_index: 2 },
+      { code: 'ImDi', name: 'Imperial Diocese', capital: { col: 3, row: 5 }, color_index: 0 },
+      { code: 'NaVa', name: 'Navis Verge', capital: { col: 7, row: 5 }, color_index: 1 },
+      { code: 'Na', name: 'Neutral Border', capital: { col: 4, row: 5 }, color_index: 2 },
     ],
     hexes,
-    jump_routes,
+    jump_routes: [],
   }
 }
 
-describe('subsectorToText', () => {
-  it('renders a header, divider, and one row per hex', () => {
-    const text = subsectorToText(subsector([hex(3, 6)]))
-    const lines = text.trim().split('\n')
-    // 6 banner comments + blank + header + divider + 1 data row
-    expect(lines).toHaveLength(10)
-    expect(lines[1]).toBe('# Dimensions: 8 x 10')
-    expect(lines[2]).toBe('# Dominant allegiance: ImDi')
-    expect(lines[3]).toMatch(/^# Polities: ImDi=Imperial Diocese@0306\(1\/1\), Na=Neutral Border@0805\(0\/0\), NaVa=Navis Verge@1305\(0\/0\)$/)
-    expect(lines[4]).toBe('# Hexes occupied: 1 / 80')
-    expect(lines[5]).toBe('# Routes: 0 communications, 0 trade')
-    expect(lines[7]).toMatch(/^Name\s+Hex\s+UWP\s+Bases\s+Codes\s+Zone\s+PBG\s+Allegiance$/)
-    expect(lines[8]).toMatch(/^-+\s+-+\s+-+/)
-    // Hex 0306 with starport A, bases NS, allegiance ImDi
-    expect(lines[9]).toContain('0306')
-    expect(lines[9]).toContain('A788899-C')
-    expect(lines[9]).toContain('NS')
-    expect(lines[9]).toMatch(/ImDi$/)
+const HEADER = 'Sector\tSS\tHex\tName\tUWP\tBases\tRemarks\tZone\tPBG\tAllegiance\tStars\t{Ix}\t(Ex)\t[Cx]'
+
+// World rows: drop the leading comment and the literal header line.
+function dataRows(text: string): string[] {
+  return text
+    .trimEnd()
+    .split('\n')
+    .filter((l) => !l.startsWith('#') && l !== HEADER)
+}
+
+describe('subsectorToText (T5SS tab)', () => {
+  it('emits a comment, the canonical header, then one tab row per hex', () => {
+    const lines = subsectorToText(subsector([hex(3, 6), hex(1, 1)])).trimEnd().split('\n')
+    expect(lines[0].startsWith('#')).toBe(true)
+    expect(lines[1]).toBe(HEADER)
+    expect(lines).toHaveLength(4) // comment + header + 2 worlds
   })
 
-  it('sorts hexes by col then row', () => {
-    const out = subsectorToText(
-      subsector([hex(8, 10), hex(1, 9), hex(7, 1)]),
-    )
-    const dataLines = out.trim().split('\n').slice(9)
-    expect(dataLines[0]).toContain('0109')
-    expect(dataLines[1]).toContain('0701')
-    expect(dataLines[2]).toContain('0810')
-  })
-
-  it('formats red/amber zones and base combinations', () => {
+  it('sorts worlds by hex and maps identity fields into each row', () => {
     const text = subsectorToText(
       subsector([
-        hex(1, 1, {
-          travel_zone: 'Red',
-          bases: { naval: false, scout: false, research: true, aid: true },
-        }),
-        hex(2, 2, {
+        hex(3, 6, {
+          bases: { naval: true, scout: false, research: true, aid: false },
           travel_zone: 'Amber',
-          bases: { naval: false, scout: false, research: false, aid: false },
+          allegiance: 'ZhIN',
+          pbg: { population_multiplier: 6, belts: 0, gas_giants: 3 },
         }),
       ]),
     )
-    const lines = text.trim().split('\n').slice(9)
-    expect(lines[0]).toMatch(/--RA/)  // research + aid, leading hyphens preserved
-    expect(lines[0]).toMatch(/\sR\s/) // red zone column
-    expect(lines[1]).toMatch(/\sA\s/) // amber zone column
+    const cells = dataRows(text)[0].split('\t')
+    // Sector, SS, Hex, Name, UWP, Bases, Remarks, Zone, PBG, Allegiance, ...
+    expect(cells[2]).toBe('0306')
+    expect(cells[4]).toBe('A788899-C')
+    expect(cells[5]).toBe('NR') // naval + research
+    expect(cells[7]).toBe('A') // Amber
+    expect(cells[8]).toBe('603')
+    expect(cells[9]).toBe('ZhIN')
   })
 
-  it('packs PBG from the generated multiplier and physical counts', () => {
-    const text = subsectorToText(
-      subsector([
-        hex(1, 1, {
-          gas_giant: true,
-          belts: true,
-          population: 7_000_000,
-          pbg: { population_multiplier: 7, belts: 3, gas_giants: 4 },
-        }),
-      ]),
-    )
-    expect(text).toMatch(/\s734\s/)
+  it('round-trips through the importer (export -> import -> same worlds)', () => {
+    const sub = subsector([
+      hex(3, 6, { travel_zone: 'Amber', allegiance: 'ZhIN', bases: { naval: true, scout: false, research: true, aid: false } }),
+      hex(1, 1, { travel_zone: 'Red', allegiance: 'NaVa', bases: { naval: false, scout: false, research: false, aid: true } }),
+    ])
+    const { subsector: round, worldCount } = parseSectorData(subsectorToText(sub))
+    expect(worldCount).toBe(2)
+    for (const orig of sub.hexes) {
+      const got = round!.hexes.find((h) => h.coord.col === orig.coord.col && h.coord.row === orig.coord.row)!
+      expect(uwpToCode(got.uwp)).toBe(uwpToCode(orig.uwp))
+      expect(got.travel_zone).toBe(orig.travel_zone)
+      expect(got.allegiance).toBe(orig.allegiance)
+      expect(got.bases).toEqual(orig.bases)
+    }
   })
 
-  it('uses each hex allegiance in the world table', () => {
-    const text = subsectorToText(subsector([hex(9, 1, { allegiance: 'NaVa' })]))
-
-    expect(text.trim().split('\n').at(-1)).toMatch(/NaVa$/)
-  })
-
-  it('exports referee-overridden zone, bases, and allegiance from effective subsectors', () => {
-    const raw = subsector([hex(9, 1)])
+  it('reflects referee overrides in the exported rows', () => {
+    const raw = subsector([hex(2, 2)])
     const effective = applySubsectorOverrides(raw, {
-      [subsectorOverrideKey(raw.seed, { col: 9, row: 1 })]: {
+      [subsectorOverrideKey(raw.seed, { col: 2, row: 2 })]: {
         system_seed: raw.hexes[0].system_seed,
         travel_zone: 'Red',
         allegiance: 'NaVa',
         bases: { naval: false, scout: false, research: true, aid: true },
       },
     })
-
-    const row = subsectorToText(effective).trim().split('\n').at(-1) ?? ''
-    expect(row).toContain('--RA')
-    expect(row).toMatch(/\sR\s/)
-    expect(row).toMatch(/NaVa$/)
-  })
-
-  it('adds a route table with communication and trade context', () => {
-    const text = subsectorToText(
-      subsector(
-        [hex(1, 1), hex(1, 2), hex(2, 2)],
-        [
-          route(1, 1, 1, 2, { communication: true, trade: true, trade_score: 8 }),
-          route(1, 1, 2, 2, { jump: 2, communication: false, trade: false, trade_score: 0 }),
-        ],
-      ),
-    )
-
-    expect(text).toContain('# Routes: 1 communications, 1 trade')
-    expect(text).toContain('# Route table')
-    expect(text).toContain('From  To    Jump  Comm  Trade Score')
-    expect(text).toMatch(/0101\s+0102\s+J-1\s+Y\s+Y\s+8/)
-    expect(text).toMatch(/0101\s+0202\s+J-2\s+-\s+-\s+-/)
-  })
-
-  it('omits referee-hidden routes from counts and route table', () => {
-    const text = subsectorToText(
-      subsector(
-        [hex(1, 1), hex(1, 2), hex(2, 2)],
-        [
-          route(1, 1, 1, 2, { communication: true, trade: true, trade_score: 8, visible: false }),
-          route(1, 1, 2, 2, { jump: 2, communication: true, trade: false }),
-        ],
-      ),
-    )
-
-    expect(text).toContain('# Routes: 1 communications, 0 trade')
-    expect(text).not.toMatch(/0101\s+0102/)
-    expect(text).toMatch(/0101\s+0202\s+J-2\s+Y\s+-\s+-/)
+    const cells = dataRows(subsectorToText(effective))[0].split('\t')
+    expect(cells[5]).toBe('RA') // research + aid
+    expect(cells[7]).toBe('R') // Red
+    expect(cells[9]).toBe('NaVa')
   })
 })

@@ -1,167 +1,68 @@
 import { deriveTradeCodes } from '../cepheus'
-import { systemName } from '../names'
+import { resolveHexName, systemName } from '../names'
 import {
   hexLabel,
   pbgCode,
-  politySummaries,
-  subsectorHexCount,
+  subsectorAt,
   uwpToCode,
-  visibleRoutes,
   type Subsector,
   type SubsectorHex,
 } from './types'
 
-// Tab-aligned plain text export, modelled on sector-map "Second
-// Survey" sec/tab format. Columns are space-padded so the file reads
-// well in a terminal *and* round-trips through tools that expect
-// fixed-width fields.
-//
-// Sample line (header + row):
-//
-//   Name             Hex   UWP        Bases Codes              Zone PBG  Allegiance
-//   Aramis           0306  A788899-C  N-S-  Ri Ag              -    503  ImDe
-//
-// PBG packs Population multiplier / Belt count / Gas-giant count. Rust
-// derives this from the generated population estimate and physical
-// system counts, then serializes it with the subsector hex.
+// Canonical T5 Second Survey (T5SS) tab-delimited export. The column set is the
+// practical superset the community uses; the {Ix}/(Ex)/[Cx] headers are present
+// (blank) so the file is recognised as T5SS by standard sector-map tools and
+// by our own parseSectorData importer. Export and import are inverses on
+// world-identity
+// fields, so export -> import -> export is idempotent on the data rows.
 
-const COLS = [
-  { label: 'Name', width: 18 },
-  { label: 'Hex', width: 6 },
-  { label: 'UWP', width: 11 },
-  { label: 'Bases', width: 6 },
-  { label: 'Codes', width: 22 },
-  { label: 'Zone', width: 5 },
-  { label: 'PBG', width: 5 },
-  { label: 'Allegiance', width: 11 },
+const COLUMNS = [
+  'Sector', 'SS', 'Hex', 'Name', 'UWP', 'Bases', 'Remarks', 'Zone', 'PBG',
+  'Allegiance', 'Stars', '{Ix}', '(Ex)', '[Cx]',
 ] as const
 
+// Inverse of the importer's base mapping: emit only N/S/R/A so a round-trip
+// restores the same four flags.
 function basesField(h: SubsectorHex): string {
-  // Single-letter legacy 2d6 convention: Naval (N), Scout (S),
-  // Research (R), Aid (A). Hyphen fills empty slots so the column
-  // stays a stable width.
-  const slots = [
-    h.bases.naval ? 'N' : '-',
-    h.bases.scout ? 'S' : '-',
-    h.bases.research ? 'R' : '-',
-    h.bases.aid ? 'A' : '-',
-  ]
-  return slots.join('').replace(/-+$/, '') || '-'
+  return (
+    (h.bases.naval ? 'N' : '') +
+    (h.bases.scout ? 'S' : '') +
+    (h.bases.research ? 'R' : '') +
+    (h.bases.aid ? 'A' : '')
+  )
 }
 
 function zoneField(h: SubsectorHex): string {
-  switch (h.travel_zone) {
-    case 'Amber': return 'A'
-    case 'Red': return 'R'
-    default: return '-'
-  }
+  return h.travel_zone === 'Amber' ? 'A' : h.travel_zone === 'Red' ? 'R' : ''
 }
 
-function pbgField(h: SubsectorHex): string {
-  return pbgCode(h.pbg)
-}
-
-function nameOrFallback(h: SubsectorHex): string {
-  if (h.name) return h.name
-  return systemName(h.system_seed)
-}
-
-function padRight(s: string, w: number): string {
-  if (s.length >= w) return s.slice(0, Math.max(1, w - 1)) + ' '
-  return s + ' '.repeat(w - s.length)
-}
-
-function headerLine(): string {
-  return COLS.map((c) => padRight(c.label, c.width)).join('').trimEnd()
-}
-
-function dividerLine(): string {
-  return COLS.map((c) => padRight('-'.repeat(Math.max(1, c.width - 1)), c.width)).join('').trimEnd()
-}
-
-function hexLine(h: SubsectorHex, allegiance: string): string {
-  const tradeCodes = deriveTradeCodes(h.uwp).join(' ')
-  const fields: readonly string[] = [
-    nameOrFallback(h),
-    hexLabel(h.coord),
-    uwpToCode(h.uwp),
-    basesField(h),
-    tradeCodes || '-',
-    zoneField(h),
-    pbgField(h),
-    allegiance.slice(0, 4),
-  ]
-  return fields.map((f, i) => padRight(f, COLS[i].width)).join('').trimEnd()
-}
-
-function routeLine(route: Subsector['jump_routes'][number]): string {
-  const comm = route.communication ? 'Y' : '-'
-  const trade = route.trade ? 'Y' : '-'
-  const score = route.trade ? String(route.trade_score) : '-'
+function hexRow(sub: Subsector, sectorName: string, hex: SubsectorHex): string {
   return [
-    padRight(hexLabel(route.from), 6),
-    padRight(hexLabel(route.to), 6),
-    padRight(`J-${route.jump}`, 6),
-    padRight(comm, 6),
-    padRight(trade, 6),
-    score,
-  ].join('').trimEnd()
+    sectorName,
+    subsectorAt(sub, hex.coord)?.letter ?? 'A',
+    hexLabel(hex.coord),
+    resolveHexName(sub, hex.coord),
+    uwpToCode(hex.uwp),
+    basesField(hex),
+    deriveTradeCodes(hex.uwp).join(' '),
+    zoneField(hex),
+    pbgCode(hex.pbg),
+    hex.allegiance,
+    '', // Stars — not modelled
+    '', '', '', // {Ix} (Ex) [Cx] — not modelled
+  ].join('\t')
 }
 
-function routeDividerLine(): string {
-  return [
-    padRight('-----', 6),
-    padRight('-----', 6),
-    padRight('-----', 6),
-    padRight('-----', 6),
-    padRight('-----', 6),
-    '-----',
-  ].join('').trimEnd()
-}
-
+/** Serialize a subsector or sector to canonical T5SS tab-delimited text. */
 export function subsectorToText(sub: Subsector): string {
-  const lines: string[] = []
-  const exportedRoutes = visibleRoutes(sub)
-  const communicationRoutes = exportedRoutes.filter((route) => route.communication)
-  const tradeRoutes = exportedRoutes.filter((route) => route.trade)
-  const politySummary = politySummaries(sub)
-    .map(({ allegiance, count, territory, capitalHex }) =>
-      `${allegiance.code}=${allegiance.name}@${hexLabel(capitalHex?.coord ?? allegiance.capital)}(${count}/${territory})`,
-    )
-    .join(', ')
-  lines.push(`# Subsector region ${systemName(sub.seed)}  (seed ${sub.seed})`)
-  lines.push(`# Dimensions: ${sub.columns} x ${sub.rows}`)
-  lines.push(`# Dominant allegiance: ${sub.allegiance}`)
-  lines.push(`# Polities: ${politySummary || '-'}`)
-  lines.push(`# Hexes occupied: ${sub.hexes.length} / ${subsectorHexCount(sub)}`)
-  lines.push(`# Routes: ${communicationRoutes.length} communications, ${tradeRoutes.length} trade`)
-  lines.push('')
-  lines.push(headerLine())
-  lines.push(dividerLine())
-  // Render rows in hex-address order so the file reads like a
-  // catalogue rather than the generator's traversal order.
-  const sorted = [...sub.hexes].sort((a, b) => {
-    if (a.coord.col !== b.coord.col) return a.coord.col - b.coord.col
-    return a.coord.row - b.coord.row
-  })
-  for (const hex of sorted) {
-    lines.push(hexLine(hex, hex.allegiance || sub.allegiance))
-  }
-  if (exportedRoutes.length > 0) {
-    lines.push('')
-    lines.push('# Route table')
-    lines.push('From  To    Jump  Comm  Trade Score')
-    lines.push(routeDividerLine())
-    const sortedRoutes = [...exportedRoutes].sort((a, b) => {
-      const from = hexLabel(a.from).localeCompare(hexLabel(b.from))
-      if (from !== 0) return from
-      const to = hexLabel(a.to).localeCompare(hexLabel(b.to))
-      if (to !== 0) return to
-      return a.jump - b.jump
-    })
-    for (const route of sortedRoutes) {
-      lines.push(routeLine(route))
-    }
-  }
+  const sectorName = systemName(sub.seed)
+  const sorted = [...sub.hexes].sort((a, b) =>
+    a.coord.col !== b.coord.col ? a.coord.col - b.coord.col : a.coord.row - b.coord.row,
+  )
+  const lines: string[] = [
+    `# ${sectorName} — ${sub.columns}x${sub.rows}, ${sub.hexes.length} worlds`,
+    COLUMNS.join('\t'),
+    ...sorted.map((hex) => hexRow(sub, sectorName, hex)),
+  ]
   return lines.join('\n') + '\n'
 }
