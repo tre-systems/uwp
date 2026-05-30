@@ -1,8 +1,8 @@
 /// <reference lib="webworker" />
 import init, {
+  createSectorBuilder,
   createSubsectorBuilder,
   finishSubsectorBuilder,
-  generateSector,
   generateSurfaceMapFromPlanet,
   generateSurfacePrebakeFull,
   stepSubsectorBuilder,
@@ -81,10 +81,20 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         case 'subsector':
           result = await runSubsector(msg.seed, msg.density, msg.cellsPerStep)
           break
-        case 'sector':
-          // 1280 hexes in one shot — fine off the UI thread.
-          result = generateSector(msg.seed >>> 0, msg.density) as Subsector
+        case 'sector': {
+          // Step the 32×40 grid (off the UI thread) so we can post progress
+          // pings while all 1280 hexes build.
+          const builder = createSectorBuilder(msg.seed >>> 0, msg.density)
+          const total = 32 * 40
+          let done = 0
+          const step = 64
+          while (!stepSubsectorBuilder(builder, step)) {
+            done = Math.min(total, done + step)
+            self.postMessage({ id: msg.id, progress: done / total })
+          }
+          result = finishSubsectorBuilder(builder) as Subsector
           break
+        }
         case 'surfacePrebakeFull':
           result = generateSurfacePrebakeFull(
             msg.seed >>> 0,

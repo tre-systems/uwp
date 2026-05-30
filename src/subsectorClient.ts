@@ -7,6 +7,7 @@ import {
 } from '../pkg/planet_render'
 import {
   currentSubsector,
+  generationProgress,
   selectedHex,
   setSelectedHex,
   setSubsector,
@@ -54,7 +55,9 @@ async function refreshOnMainThread(generation: number): Promise<void> {
 
   if (wasmComputeAvailable()) {
     try {
-      const sub = await generateSectorInWorker(seed, density)
+      const sub = await generateSectorInWorker(seed, density, (p) => {
+        if (generation === refreshGeneration) generationProgress.value = p
+      })
       if (generation !== refreshGeneration) return
       applySubsector(sub, selected)
       return
@@ -68,7 +71,11 @@ async function refreshOnMainThread(generation: number): Promise<void> {
   // hex subsector keeps the total step count modest).
   const builder = createSectorBuilder(seed >>> 0, density)
   const cellsPerStep = 64
+  const total = 32 * 40
+  let done = 0
   while (!stepSubsectorBuilder(builder, cellsPerStep)) {
+    done = Math.min(total, done + cellsPerStep)
+    generationProgress.value = done / total
     await yieldToPaint()
     if (generation !== refreshGeneration) return
   }
@@ -79,6 +86,7 @@ async function refreshOnMainThread(generation: number): Promise<void> {
 
 async function refresh(): Promise<void> {
   const generation = ++refreshGeneration
+  generationProgress.value = 0
   await withChartWork('Generating region map…', async () => {
     await refreshOnMainThread(generation)
   })

@@ -5,6 +5,7 @@ import type { Planet } from './domain/system'
 type Pending<T> = {
   resolve: (value: T) => void
   reject: (reason: unknown) => void
+  onProgress?: (fraction: number) => void
 }
 
 let worker: Worker | null = null
@@ -20,10 +21,16 @@ function getWorker(): Worker | null {
   if (workerFailed || !supportsWorkers()) return null
   if (!worker) {
     worker = new Worker(new URL('./wasmComputeWorker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (event: MessageEvent<{ id: number; ok: boolean; result?: unknown; error?: string }>) => {
+    worker.onmessage = (event: MessageEvent<{ id: number; ok?: boolean; result?: unknown; error?: string; progress?: number }>) => {
       const msg = event.data
       const job = pending.get(msg.id)
       if (!job) return
+      // Progress pings arrive before the final reply; they update the caller
+      // without resolving the job.
+      if (typeof msg.progress === 'number') {
+        job.onProgress?.(msg.progress)
+        return
+      }
       pending.delete(msg.id)
       if (msg.ok) job.resolve(msg.result)
       else job.reject(new Error(msg.error ?? 'wasm worker failed'))
@@ -39,14 +46,14 @@ function getWorker(): Worker | null {
   return worker
 }
 
-function runJob<T>(build: (id: number) => unknown): Promise<T> {
+function runJob<T>(build: (id: number) => unknown, onProgress?: (fraction: number) => void): Promise<T> {
   const w = getWorker()
   if (!w) {
     return Promise.reject(new Error('wasm compute worker unavailable'))
   }
   const id = nextJobId++
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
+    pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress })
     w.postMessage(build(id))
   })
 }
@@ -69,13 +76,17 @@ export function generateSubsectorInWorker(
   }))
 }
 
-export function generateSectorInWorker(seed: number, density: number): Promise<Subsector> {
+export function generateSectorInWorker(
+  seed: number,
+  density: number,
+  onProgress?: (fraction: number) => void,
+): Promise<Subsector> {
   return runJob<Subsector>((id) => ({
     id,
     kind: 'sector',
     seed: seed >>> 0,
     density,
-  }))
+  }), onProgress)
 }
 
 export function generateSurfacePrebakeFullInWorker(

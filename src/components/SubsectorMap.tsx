@@ -1,4 +1,5 @@
 import {
+  generationProgress,
   selectedHex,
   selectHex,
   selectTerritoryHex,
@@ -123,9 +124,11 @@ export function SubsectorMap({ subsector }: SubsectorMapProps) {
   const gestures = useMapGestures(containerRef, svgWidth, svgHeight)
 
   if (!subsector) {
+    const pct = Math.round(generationProgress.value * 100)
+    const label = pct > 0 && pct < 100 ? `Generating sector… ${pct}%` : 'Generating sector…'
     return (
       <div class="map-gesture-viewport" ref={containerRef}>
-        <LoadingOverlay label="Generating sector…" />
+        <LoadingOverlay label={label} />
       </div>
     )
   }

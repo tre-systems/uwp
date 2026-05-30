@@ -106,6 +106,8 @@ const generatedSubsector = signal<Subsector | null>(null)
 export const currentSubsector = signal<Subsector | null>(null)
 /** Whether the current grid was procedurally generated or imported from text. */
 export const subsectorSource = signal<'generated' | 'imported'>('generated')
+/** Sector-generation progress (0–1) while a grid builds, for the spinner. */
+export const generationProgress = signal<number>(0)
 export const selectedHex = signal<HexCoord | null>(null)
 export const showJumpRoutes = signal<boolean>(true)
 export const subsectorOverrides = signal<SubsectorOverrides>({})
