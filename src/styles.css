@@ -401,6 +401,19 @@ html, body, #app {
   resize: vertical;
 }
 .sys-import-status { font-size: 11px; color: var(--text-dim); }
+.sys-import-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.sys-import-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
 .sys-source-tag { color: var(--color-accent, #7db4ff); font-weight: 500; }
 
 .time-scrubber {

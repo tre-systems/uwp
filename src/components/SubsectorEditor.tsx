@@ -31,6 +31,7 @@ import {
   routesForHex,
   routeDisplayKind,
   parseSectorData,
+  SAMPLE_SECTOR_TEXT,
   subsectorHexCount,
   subsectorToText,
   uwpToCode,
@@ -268,11 +269,20 @@ function SubsectorImportRow({ disabled }: { disabled: boolean }) {
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         rows={6}
         spellcheck={false}
-        placeholder={'Hex\tName\tUWP\tBases\tRemarks\tZone\tPBG\tAllegiance\n0101\tRegina\tA788899-A\t…'}
+        placeholder={'Hex\tName\tUWP\tBases\tRemarks\tZone\tPBG\tAllegiance\n0103\tAenir\tB564789-9\tN\t…'}
       />
+      <p class="sys-import-hint">
+        Auto-detects T5SS tab-delimited and classic <code>.sec</code>. Hex
+        coordinates are sector-relative (<code>XXYY</code>); the grid snaps to an
+        8×10 subsector or a full 32×40 sector. Unparsed lines are skipped and
+        reported.
+      </p>
       <div class="sys-actions">
         <button type="button" onClick={runImport} disabled={disabled || text.trim().length === 0}>
           Import
+        </button>
+        <button type="button" onClick={() => { setText(SAMPLE_SECTOR_TEXT); setResult(null) }} disabled={disabled}>
+          Load sample
         </button>
         <button type="button" onClick={() => { setOpen(false); setResult(null) }}>
           Cancel

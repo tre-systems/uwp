@@ -36,6 +36,10 @@ export function App() {
   // its Preact subtree survives - making tab swaps essentially instant.
   const subsectorHidden = mode === 'subsector' ? '' : ' overlay-hidden'
   const surfaceHidden = mode === 'surface' ? '' : ' overlay-hidden'
+  // While the subsector view is building its grid it shows its own
+  // "Generating sector…" spinner; don't also stack the global chart-work
+  // overlay on top (e.g. a deep-linked system loading at the same time).
+  const subsectorGenerating = mode === 'subsector' && !subsector
 
   return (
     <div class="app">
@@ -63,7 +67,7 @@ export function App() {
         </div>
         <ViewTransition />
         {status === 'loading' && <LoadingOverlay />}
-        {status !== 'loading' && chartWork && <LoadingOverlay label={chartWork} />}
+        {status !== 'loading' && chartWork && !subsectorGenerating && <LoadingOverlay label={chartWork} />}
         {status === 'unsupported' && <ErrorOverlay kind="unsupported" />}
         {status === 'error' && <ErrorOverlay kind="error" detail={error} />}
         <HoverTooltip />
