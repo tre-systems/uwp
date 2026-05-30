@@ -307,6 +307,30 @@ export function setSystemSnapshot(system: SolarSystem | null) {
   ) {
     focusMainWorldDetail()
   }
+  // A previously-viewed star / belt / gas giant leaves a non-terrain
+  // body_visual_mode in the shared params. If the system then changes via a
+  // path that doesn't run a hex select (a shared system link, a reroll, the
+  // seed field), the new main world would inherit that mode and render as, e.g.,
+  // a star. Re-derive the main world's params from the generated system so it
+  // always reads as the world it is. Hex-override flows reset the mode to 0
+  // before the snapshot arrives, so this only fires on the leak.
+  if (
+    system &&
+    detailTarget.value == null &&
+    !urlStatePendingDetailBody &&
+    params.value.body_visual_mode !== 0 &&
+    system.main_world >= 0
+  ) {
+    // Restore the main world the same way a fresh load does — from the UWP, so a
+    // hydrographic-7 world reads as an ocean and not the star's dry palette —
+    // rather than from raw climate.
+    const main = system.planets[system.main_world]
+    updateParams({
+      ...paramsPatchFromUwpDigits(uwp.value),
+      seed: main?.seed ?? params.value.seed,
+      surface_temp_k: main?.climate.mean_surface_temp_k ?? 0,
+    })
+  }
   if (system) {
     applyDeferredViewModeIfReady()
   }

@@ -158,6 +158,49 @@ describe('appState renderer command boundary', () => {
     viewMode.value = initialView
   })
 
+  it('resets a stale star visual mode when the system changes without a hex select', () => {
+    const initialParams = { ...params.value }
+    const systemA = {
+      ...fakeSystem(),
+      seed: 111,
+      main_world: 0,
+      planets: [fakePlanet({ seed: 100, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 288 })],
+    }
+    const systemB = {
+      ...fakeSystem(),
+      seed: 222,
+      main_world: 0,
+      planets: [fakePlanet({ seed: 300, body_type: 'Terrestrial', radius_earth: 1, mean_surface_temp_k: 290 })],
+    }
+    registerRendererControls({
+      rerollPlanet: () => undefined,
+      getSystem: () => systemA,
+      setParams: (nextParams) => setParamsSnapshot(nextParams),
+      pickSystemPlanet: () => null,
+      pickSystemBody: () => null,
+      getSurfaceMap: () => null,
+      getSurfacePrebake: () => null,
+      pointAtSurface: () => undefined,
+    })
+    setSystemSnapshot(systemA)
+
+    // Viewing the star leaves body_visual_mode = 2 in the shared params.
+    focusSystemTarget({ kind: 'star', index: 0 })
+    expect(params.value.body_visual_mode).toBe(2)
+
+    // The system changes via a path that doesn't run a hex select (URL link /
+    // reroll), which resets detailTarget but not the stale params.
+    detailTarget.value = null
+    setSystemSnapshot(systemB)
+
+    // The new main world must read as a terrestrial world, not the stale star.
+    expect(params.value.body_visual_mode).toBe(0)
+
+    registerRendererControls(null)
+    setSystemSnapshot(null)
+    setParamsSnapshot(initialParams)
+  })
+
   it('rejects surface view for gas giants and other non-solid bodies', () => {
     const initialView = viewMode.value
     const system = {
