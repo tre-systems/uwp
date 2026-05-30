@@ -6,6 +6,7 @@ import {
   nextRenderProfileForFrameTime,
   renderProfileByName,
   shouldThrottleRenderProfile,
+  upgradeForCapableGpu,
 } from './renderProfile'
 
 describe('detectRenderProfile', () => {
@@ -115,6 +116,43 @@ describe('canvasPixelSize', () => {
       width: 2560,
       height: 1440,
     })
+  })
+})
+
+describe('ULTRA tier (capable hardware)', () => {
+  it('upgrades an auto HIGH session to ULTRA only when the GPU is capable', () => {
+    const high = renderProfileByName('high')
+    expect(upgradeForCapableGpu(high, true).name).toBe('ultra')
+    expect(upgradeForCapableGpu(high, false).name).toBe('high')
+  })
+
+  it('never upgrades weaker tiers — touch / small / few-core stay put', () => {
+    expect(upgradeForCapableGpu(renderProfileByName('balanced'), true).name).toBe('balanced')
+    expect(upgradeForCapableGpu(renderProfileByName('low'), true).name).toBe('low')
+    expect(upgradeForCapableGpu(renderProfileByName('minimum'), true).name).toBe('minimum')
+  })
+
+  it('supersamples above a DPR-1 display (HIGH would render 1x; ULTRA renders 1.75x)', () => {
+    const ultra = renderProfileByName('ultra')
+    expect(canvasPixelSize(662, 614, ultra, 1)).toEqual({ width: 1158, height: 1074 })
+    // The same window on HIGH stays at the display's 1x.
+    expect(canvasPixelSize(662, 614, renderProfileByName('high'), 1)).toEqual({ width: 662, height: 614 })
+  })
+
+  it('caps ULTRA supersampling at its pixel budget on large windows', () => {
+    const size = canvasPixelSize(3840, 2160, renderProfileByName('ultra'), 1)
+    const pixels = size.width * size.height
+    expect(pixels).toBeLessThanOrEqual(9_000_000)
+    expect(pixels).toBeGreaterThan(8_000_000)
+  })
+
+  it('downshifts ULTRA back to HIGH under sustained slow frames', () => {
+    let state = createFrameTimeDownshiftState(renderProfileByName('ultra'))
+    let result = nextRenderProfileForFrameTime(state, 80, { warmupFrames: 0, consecutiveSlowFrames: 2 })
+    state = result.state
+    result = nextRenderProfileForFrameTime(state, 80, { warmupFrames: 0, consecutiveSlowFrames: 2 })
+    expect(result.changed).toBe(true)
+    expect(result.state.profile.name).toBe('high')
   })
 })
 

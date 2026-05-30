@@ -768,7 +768,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4(stellar_surface(dir, base_world_normal, base_view_dir, u.misc.y), 1.0);
     }
     if (body_kind > 0.5 && body_kind < 1.5) {
-        let gas = gas_giant_surface(dir, u.misc.y, u.misc.w, body_kind);
+        let gas = gas_giant_surface(dir, u.misc.y, min(u.misc.w, 1.0), body_kind);
         let ambient = u.atmosphere_color.rgb * 0.11 + vec3<f32>(0.030);
         let limb_haze = pow(1.0 - max(dot(base_world_normal, base_view_dir), 0.0), 2.4);
         var lit_gas = gas * (ambient + base_n_dot_l * 1.14);
@@ -785,7 +785,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     let sea_h = u.planet_params.z;
     let mountain_amp = u.planet_params.y;
-    let quality = u.misc.w;
+    // misc.w can exceed 1.0 on the ULTRA tier (it drives the atmosphere shader's
+    // extra raymarch). This shader's thresholds and mix() blends assume [0,1], so
+    // clamp — ULTRA's planet gains come from supersampling, not from extrapolating
+    // these terms past their tuned endpoints.
+    let quality = min(u.misc.w, 1.0);
     let view_dist = length(u.camera_pos.xyz) / max(u.resolution.w, 0.001);
     let close_zoom = smoothstep(2.8, 1.35, view_dist);
     let raw_h = terrain_field(dir);

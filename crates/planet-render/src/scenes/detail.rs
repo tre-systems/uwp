@@ -438,7 +438,10 @@ pub fn uniforms_for(
             params.atmosphere_density,
             time,
             params.cloud_coverage,
-            params.render_quality.clamp(0.0, 1.0),
+            // Allow > 1.0 so the ULTRA tier can drive the shaders' extra-detail
+            // branches (e.g. the atmosphere's 18/6 raymarch). HIGH and below
+            // still clamp to 1.0.
+            params.render_quality.clamp(0.0, 1.5),
         ],
         resolution: [
             width as f32,

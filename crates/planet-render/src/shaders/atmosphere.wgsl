@@ -19,8 +19,10 @@
 
 const PI: f32 = 3.141592653589793;
 const ATMO_REL_THICKNESS: f32 = 0.075;
-const VIEW_STEPS: i32 = 12;
-const LIGHT_STEPS: i32 = 4;
+// Loop bounds = the ULTRA sample counts; every tier below ULTRA breaks early
+// (see view_steps / light_steps below), so raising these adds no cost there.
+const VIEW_STEPS: i32 = 18;
+const LIGHT_STEPS: i32 = 6;
 const SCALE_R: f32 = 0.024;
 const SCALE_M: f32 = 0.0035;
 const G_MIE: f32 = 0.76;
@@ -163,8 +165,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // band and deeper-blue zenith. Coefficients per Hillaire 2020.
     let beta_o = vec3<f32>(0.650, 1.881, 0.085) * atmo_density * 0.6;
 
-    let view_steps = select(select(6, 8, quality > 0.50), VIEW_STEPS, quality > 0.85);
-    let light_steps = select(select(2, 3, quality > 0.50), LIGHT_STEPS, quality > 0.85);
+    // 6/8 → 12/4 (HIGH) → 18/6 (ULTRA, quality > 1.0): a finer twilight gradient
+    // and softer terminator on capable hardware.
+    let view_steps = select(select(select(6, 8, quality > 0.50), 12, quality > 0.85), VIEW_STEPS, quality > 1.0);
+    let light_steps = select(select(select(2, 3, quality > 0.50), 4, quality > 0.85), LIGHT_STEPS, quality > 1.0);
     let dt = (t_end - t_start) / f32(view_steps);
     var od_view = vec3<f32>(0.0);
     var in_scatter_r = vec3<f32>(0.0);

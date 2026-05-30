@@ -27,9 +27,11 @@ import {
   nextRenderProfileForFrameTime,
   renderProfileByName,
   shouldThrottleRenderProfile,
+  upgradeForCapableGpu,
   type FrameTimeDownshiftState,
   type RenderProfile,
 } from '../renderProfile'
+import { probeGpu } from '../gpuProbe'
 import { popChartWork, pushChartWork, yieldToPaint } from '../appState/chartWork'
 import type { Params } from '../params'
 import type { SolarSystem, SystemBodyTarget } from '../domain/system'
@@ -92,6 +94,7 @@ export class RendererClient {
   private surfaceMapTimer: ReturnType<typeof setTimeout> | null = null
   private lastCommittedParams: Params | null = null
   private systemLoadGeneration = 0
+  private gpuCapable = false
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.profile = detectRenderProfile()
@@ -130,6 +133,9 @@ export class RendererClient {
       this.publishPerformanceSnapshot(0, 0)
       this.startFrameLoop()
       setRendererStatus('ready')
+      // Probe the GPU off the critical path: if it's a capable desktop part,
+      // upgrade an auto HIGH session to ULTRA (supersampling + extra detail).
+      void this.probeAndMaybeUpgrade()
     } catch (err) {
       console.error(err)
       setRendererStatus('error')
@@ -449,7 +455,10 @@ export class RendererClient {
   }
 
   private applyRenderQualityMode(mode: RenderQualityMode) {
-    const nextProfile = mode === 'auto' ? detectRenderProfile() : renderProfileByName(mode)
+    const nextProfile =
+      mode === 'auto'
+        ? upgradeForCapableGpu(detectRenderProfile(), this.gpuCapable)
+        : renderProfileByName(mode)
     this.profile = nextProfile
     this.downshiftState = createFrameTimeDownshiftState(nextProfile)
     this.fpsSampleStartMs = 0
@@ -458,6 +467,19 @@ export class RendererClient {
     this.planet?.setMeshQuality(nextProfile.meshQuality)
     this.planet?.setParams(this.renderParams())
     this.publishPerformanceSnapshot()
+  }
+
+  private async probeAndMaybeUpgrade() {
+    const report = await probeGpu()
+    if (this.cancelled) return
+    this.gpuCapable = report.capable
+    const tier = report.capable ? 'capable → ULTRA eligible' : 'standard'
+    console.info(`UWP GPU: ${report.vendor ?? 'unknown'} ${report.architecture ?? ''} (${tier})`.trim())
+    if (!report.capable) return
+    if (untracked(() => renderQualityMode.value) !== 'auto') return
+    if (this.profile.name !== 'high') return
+    // Re-apply 'auto': now that the GPU is known capable it resolves to ULTRA.
+    this.applyRenderQualityMode('auto')
   }
 
   private publishPerformanceSnapshot(
