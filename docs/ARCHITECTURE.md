@@ -191,6 +191,13 @@ follow them — they are what keep the Rust / JS / GPU split coherent.
 - **One source of truth for derived values.** Derived data is computed once
   through one function (hex names via `resolveHexName`, trade codes via
   `deriveTradeCodes`), never re-derived differently per call site.
+- **Visual regression by GPU readback.** Per-body-class frozen-frame captures
+  (`e2e/render-visual.e2e.ts`) freeze the renderer at a fixed sim-time
+  (`window.uwp.setFrozen`), read the frame straight back from the GPU
+  (`window.uwp.readPixels`, which a headless page screenshot can't composite),
+  and pixel-compare to committed baselines — so a shader change can't silently
+  regress the look. Run on demand with `npm run test:visual` (kept out of the
+  pre-push gate so routine pushes stay fast).
 
 ### Patterns to adopt (not yet applied)
 
@@ -199,9 +206,6 @@ follow them — they are what keep the Rust / JS / GPU split coherent.
   per-field setters Rust validates — the last state-ownership leak.
 - **Generated Rust↔TS bindings.** DTOs are hand-mirrored, which can drift; codegen
   from the Rust structs would make the mirror automatic.
-- **Golden-image / visual-regression testing.** The renderer has no automated
-  visual snapshot guard, so shader changes can regress silently (`BACKLOG.md`
-  task 8).
 
 ## Key data flows
 

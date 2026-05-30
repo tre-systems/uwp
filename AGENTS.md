@@ -166,6 +166,15 @@ tests, typecheck, audit, native+wasm Rust checks, Rust tests, native+wasm
 clippy with warnings denied, the production build, and the Playwright smoke
 suite against the production preview.
 
+When you change rendering (WGSL shaders, the renderer, or UWP/body→params
+mapping), also run the per-body-class visual-regression suite — it's kept out of
+the pre-push gate to keep pushes fast:
+
+```bash
+npm run test:visual                       # compare against committed baselines
+npm run test:visual -- --update-snapshots # re-baseline after an intentional change (eyeball the diff)
+```
+
 If a check cannot be run, say so explicitly. Warnings in Rust should be treated as design feedback, not background noise.
 
 ## Collaboration Notes

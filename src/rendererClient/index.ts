@@ -2,6 +2,8 @@ import { effect, untracked } from '@preact/signals'
 import { Planet } from '../../pkg/planet_render'
 import {
   currentSystem,
+  focusMainWorldDetail,
+  focusSystemTarget,
   params,
   renderQualityMode,
   registerRendererControls,
@@ -46,6 +48,18 @@ declare global {
       setSeed(seed: number): void
       getSystem(): SolarSystem | null
       rerollPlanet(index: number, seed?: number): void
+      /** Freeze the detail view at a fixed sim-time (ms) for byte-stable
+       *  visual-regression captures; pass null to resume live animation. */
+      setFrozen(timeMs: number | null): void
+      /** Focus a system body in the detail view (null = main world). Used by
+       *  visual-regression tests to address a body class deterministically. */
+      focusBody(target: SystemBodyTarget | null): void
+      /** Read the current GPU frame back as RGBA8 pixels — lets headless visual
+       *  tests capture the canvas a page screenshot can't composite. */
+      readPixels(): Promise<{ width: number; height: number; data: Uint8Array }>
+      /** The current body_visual_mode (0 terrain, 1.x fluid giant, 2 star,
+       *  3 belt) — lets a test confirm focusBody applied the body's mode. */
+      detailMode(): number
     }
   }
 }
@@ -305,8 +319,26 @@ export class RendererClient {
       setSeed: (seed) => {
         setSystemSeed(seed)
       },
-      getSystem: () => this.getSystem(),
+      // Return the currentSystem *signal*, not the renderer's live system —
+      // focusBody/focusSystemTarget read the signal, so polling this lets a test
+      // confirm the signal has caught up before focusing a body.
+      getSystem: () => currentSystem.value,
       rerollPlanet: (index, seed) => this.rerollPlanet(index, seed),
+      setFrozen: (timeMs) => {
+        this.planet?.setFrozen(timeMs != null, timeMs ?? 0)
+      },
+      focusBody: (target) => {
+        if (target) focusSystemTarget(target)
+        else focusMainWorldDetail()
+      },
+      readPixels: () =>
+        this.planet
+          ? (this.planet.readPixels() as Promise<{ width: number; height: number; data: Uint8Array }>)
+          : Promise.reject(new Error('renderer not ready')),
+      // Read the renderer's committed mode, not the params signal — the signal
+      // leads the GPU by the terrain debounce, so a test polling it could freeze
+      // a frame before a focused giant actually reaches the shader.
+      detailMode: () => this.planet?.bodyVisualMode() ?? 0,
     }
     window.uwp = this.debugHandle
   }

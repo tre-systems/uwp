@@ -49,6 +49,29 @@ impl Planet {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
+    /// Freeze rendering at a fixed sim-time (byte-stable frames for visual
+    /// tests), or resume live animation when `frozen` is false.
+    #[wasm_bindgen(js_name = setFrozen)]
+    pub fn set_frozen(&mut self, frozen: bool, time_ms: f64) {
+        self.inner
+            .set_frozen(frozen.then_some((time_ms * 0.001) as f32));
+    }
+
+    /// The renderer's committed body_visual_mode — lets a visual test wait for a
+    /// focused body to actually reach the GPU (past the JS terrain debounce).
+    #[wasm_bindgen(js_name = bodyVisualMode)]
+    pub fn body_visual_mode(&self) -> f32 {
+        self.inner.body_visual_mode()
+    }
+
+    /// Read the current frame back to CPU memory as RGBA8 pixels. Resolves to
+    /// `{ width, height, data }`. Lets headless visual-regression tests capture
+    /// the WebGPU output, which a page screenshot can't composite.
+    #[wasm_bindgen(js_name = readPixels)]
+    pub fn read_pixels(&mut self) -> Result<js_sys::Promise, JsValue> {
+        self.inner.read_pixels()
+    }
+
     #[wasm_bindgen(js_name = setViewMode)]
     pub fn set_view_mode(&mut self, mode: &str) {
         self.inner.set_view_mode(match mode {

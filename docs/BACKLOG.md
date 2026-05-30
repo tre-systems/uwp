@@ -291,10 +291,16 @@ Research anchors for any further visual pass:
 
 Remaining:
 
-- **Lock the rendering quality in with visual-regression screenshots** per body
-  class (main-world terrain, hot rocky, cold super-Earth, gas giant, ice giant,
-  mini-Neptune, star, asteroid). This is the key gap — the QA above is manual, so
-  a future shader change could silently regress it.
+- *(Done)* **Visual-regression guard** per render mode (`e2e/render-visual.e2e.ts`):
+  freezes the renderer at a fixed sim-time and reads each body class back from the
+  GPU — terrain ocean, frozen world, gas giant, ice giant, mini-Neptune, star,
+  asteroid — pixel-comparing to committed baselines so a shader change can't
+  silently regress. Run on demand with `npm run test:visual` (kept out of the
+  pre-push gate so routine pushes stay fast; the e2e suite is not in CI), and
+  regenerate baselines with `npm run test:visual -- --update-snapshots` on an
+  intentional render change. A fast-rotating inferno world was dropped as too
+  sensitive to sub-pixel terminator drift; the six render modes plus a second
+  terrain palette stay covered.
 - *(Done)* profile-aware quality paths: ULTRA / HIGH / BALANCED / LOW / MINIMUM,
   with ULTRA above HIGH and a frame-time downshifter that fails closed.
 - *(Good per QA — optional polish)* further atmosphere multi-scatter, cloud

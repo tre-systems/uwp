@@ -1,4 +1,5 @@
 use bytemuck::Zeroable;
+use wasm_bindgen::JsValue;
 use web_sys::HtmlCanvasElement;
 
 use crate::camera::Camera;
@@ -49,6 +50,11 @@ pub struct Renderer {
     params: PlanetParams,
     rotation_t: f32,
     last_time: f32,
+    /// When `Some(t)`, every frame renders the deterministic frame at sim-time
+    /// `t` — the time uniform is held at `t` and rotation is the angle at `t`,
+    /// ignoring wall-clock deltas. Visual-regression tests set this to capture
+    /// byte-stable frames; `None` is normal live animation.
+    frozen_time: Option<f32>,
 
     view_mode: ViewMode,
     system: SolarSystem,
@@ -189,6 +195,7 @@ impl Renderer {
             params: initial_params,
             rotation_t: 0.0,
             last_time: 0.0,
+            frozen_time: None,
             view_mode: ViewMode::Detail,
             system: initial_system,
             detail_uniforms_cache: detail_scene::DetailUniforms::zeroed(),
@@ -451,14 +458,42 @@ impl Renderer {
         self.detail_uniforms_dirty = true;
     }
 
+    /// Freeze deterministic rendering at sim-time `t`, or resume live animation
+    /// with `None`. While frozen, every frame is byte-identical (used by the
+    /// visual-regression tests); resuming starts the next frame with `dt = 0`.
+    pub fn set_frozen(&mut self, time: Option<f32>) {
+        self.frozen_time = time;
+        if time.is_none() {
+            self.last_time = 0.0;
+        }
+        self.detail_uniforms_dirty = true;
+    }
+
+    /// The renderer's *committed* body_visual_mode (0 terrain, 1.x fluid giant,
+    /// 2 star, 3 belt). Trails the JS params signal by the terrain debounce, so
+    /// visual tests poll this to know the body has actually reached the GPU.
+    pub fn body_visual_mode(&self) -> f32 {
+        self.params.body_visual_mode
+    }
+
     pub fn render(&mut self, time: f32) -> Result<(), String> {
-        let dt = if self.last_time == 0.0 {
-            0.0
+        // Frozen mode pins the whole frame to one sim-time so captures are
+        // byte-stable: the time uniform is held at `t` and rotation is the
+        // deterministic angle at `t`, not whatever the live clock accumulated.
+        let time = if let Some(t) = self.frozen_time {
+            self.last_time = t;
+            self.rotation_t = t * self.params.auto_rotate;
+            t
         } else {
-            (time - self.last_time).clamp(0.0, 0.1)
+            let dt = if self.last_time == 0.0 {
+                0.0
+            } else {
+                (time - self.last_time).clamp(0.0, 0.1)
+            };
+            self.last_time = time;
+            self.rotation_t += dt * self.params.auto_rotate;
+            time
         };
-        self.last_time = time;
-        self.rotation_t += dt * self.params.auto_rotate;
 
         if self.view_mode == ViewMode::Detail {
             self.ensure_detail_mesh();
@@ -551,5 +586,156 @@ impl Renderer {
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
         Ok(())
+    }
+
+    /// Render the current frame into an owned texture and read it back to CPU
+    /// memory, returning a Promise that resolves to `{ width, height, data }`
+    /// where `data` is a tightly-packed RGBA8 `Uint8Array`. Used by the
+    /// visual-regression tests, which run headless where the browser can't
+    /// composite the WebGPU canvas into a page screenshot. Freeze first
+    /// (`set_frozen`) so the captured frame is deterministic.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn read_pixels(&mut self) -> Result<js_sys::Promise, JsValue> {
+        Err(JsValue::from_str("read_pixels is only available on wasm32"))
+    }
+
+    /// See the non-wasm stub above. The real implementation uses `map_async`,
+    /// whose callback would need to be `Send` on native (it captures `Rc`/JS
+    /// values that aren't), so it is wasm-only.
+    #[cfg(target_arch = "wasm32")]
+    pub fn read_pixels(&mut self) -> Result<js_sys::Promise, JsValue> {
+        use std::rc::Rc;
+        let width = self.config.width;
+        let height = self.config.height;
+        if width == 0 || height == 0 {
+            return Err(JsValue::from_str("read_pixels: zero-size surface"));
+        }
+        let unpadded = width * 4;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded = unpadded.div_ceil(align) * align;
+
+        let rb_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("readback_target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let rb_view = rb_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let rb_buffer = Rc::new(self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback_buffer"),
+            size: (padded * height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("readback_encoder"),
+            });
+        match self.view_mode {
+            ViewMode::Detail => {
+                detail_scene::encode_render(
+                    &mut encoder,
+                    &rb_view,
+                    detail_scene::DetailRenderPass {
+                        background_pipeline: &self.background_pipeline,
+                        planet_pipeline: &self.planet_pipeline,
+                        atmosphere_pipeline: &self.atmosphere_pipeline,
+                        vertex_buffer: &self.detail_mesh.vertex_buffer,
+                        index_buffer: &self.detail_mesh.index_buffer,
+                        num_indices: self.detail_mesh.num_indices,
+                        uniforms_bind_group: &self.uniforms_bind_group,
+                        terrain_bind_group: &self.terrain_atlas.bind_group,
+                        atmosphere_bind_group: &self.atmosphere_bind_group,
+                        scene_view: &self.scene_view,
+                        depth_view: &self.depth_view,
+                    },
+                );
+            }
+            ViewMode::System => {
+                let sys_u = system_scene::uniforms_for(&self.system, self.last_time);
+                self.queue
+                    .write_buffer(&self.system_uniform_buffer, 0, bytemuck::bytes_of(&sys_u));
+                system_scene::encode_render(
+                    &mut encoder,
+                    &rb_view,
+                    &self.system_pipeline,
+                    &self.uniforms_bind_group,
+                    &self.system_bind_group,
+                );
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &rb_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &rb_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        let is_bgra = matches!(
+            self.config.format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+        let buffer = rb_buffer.clone();
+        let promise = js_sys::Promise::new(&mut move |resolve, reject| {
+            let cb_buffer = buffer.clone();
+            let resolve = resolve.clone();
+            let reject = reject.clone();
+            buffer.slice(..).map_async(wgpu::MapMode::Read, move |res| {
+                if res.is_err() {
+                    let _ = reject.call1(&JsValue::NULL, &JsValue::from_str("map_async failed"));
+                    return;
+                }
+                let mapped = cb_buffer.slice(..).get_mapped_range();
+                let mut rgba = Vec::with_capacity((unpadded * height) as usize);
+                for row in 0..height as usize {
+                    let start = row * padded as usize;
+                    let line = &mapped[start..start + unpadded as usize];
+                    if is_bgra {
+                        for px in line.chunks_exact(4) {
+                            rgba.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+                        }
+                    } else {
+                        rgba.extend_from_slice(line);
+                    }
+                }
+                drop(mapped);
+                cb_buffer.unmap();
+                let arr = js_sys::Uint8Array::from(rgba.as_slice());
+                let obj = js_sys::Object::new();
+                let _ =
+                    js_sys::Reflect::set(&obj, &"width".into(), &JsValue::from_f64(width as f64));
+                let _ =
+                    js_sys::Reflect::set(&obj, &"height".into(), &JsValue::from_f64(height as f64));
+                let _ = js_sys::Reflect::set(&obj, &"data".into(), &arr);
+                let _ = resolve.call1(&JsValue::NULL, &obj);
+            });
+        });
+        Ok(promise)
     }
 }
