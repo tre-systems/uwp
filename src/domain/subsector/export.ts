@@ -1,5 +1,5 @@
 import { deriveTradeCodes } from '../cepheus'
-import { resolveHexName, systemName } from '../names'
+import { resolveHexName, sectorDisplayName } from '../names'
 import {
   hexLabel,
   pbgCode,
@@ -55,7 +55,7 @@ function hexRow(sub: Subsector, sectorName: string, hex: SubsectorHex): string {
 
 /** Serialize a subsector or sector to canonical T5SS tab-delimited text. */
 export function subsectorToText(sub: Subsector): string {
-  const sectorName = systemName(sub.seed)
+  const sectorName = sectorDisplayName(sub)
   const sorted = [...sub.hexes].sort((a, b) =>
     a.coord.col !== b.coord.col ? a.coord.col - b.coord.col : a.coord.row - b.coord.row,
   )

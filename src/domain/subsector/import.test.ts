@@ -123,6 +123,8 @@ describe('SAMPLE_SECTOR_TEXT', () => {
     expect(sub.columns).toBe(8)
     expect(sub.rows).toBe(10)
     expect(sub.subsectors).toHaveLength(1)
+    // The Sector column flows through to the display name.
+    expect(sub.name).toBe('Kestrel')
 
     const ennis = sub.hexes.find((h) => h.coord.col === 5 && h.coord.row === 2)!
     expect(ennis.name).toBe('Ennis')

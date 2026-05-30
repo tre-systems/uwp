@@ -119,6 +119,9 @@ export interface SubsectorMeta {
 
 export interface Subsector {
   seed: number
+  /** Display name when known (e.g. the imported `Sector` column). Generated
+   *  grids leave this unset and fall back to a seed-derived name. */
+  name?: string
   density: number
   columns: number
   rows: number

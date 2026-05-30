@@ -134,9 +134,13 @@ function detectFormat(lines: string[]): 'tab' | 'sec' {
   return 'sec'
 }
 
-function parseTab(lines: string[], errors: ImportError[]): ParsedWorld[] {
+function parseTab(
+  lines: string[],
+  errors: ImportError[],
+): { worlds: ParsedWorld[]; sectorName: string | null } {
   const worlds: ParsedWorld[] = []
   let cols: Record<string, number> | null = null
+  let sectorName: string | null = null
   lines.forEach((line, i) => {
     if (isCommentOrBlank(line)) return
     const cells = line.split('\t')
@@ -149,6 +153,10 @@ function parseTab(lines: string[], errors: ImportError[]): ParsedWorld[] {
       return
     }
     const at = (name: string) => (cols![name] != null ? (cells[cols![name]] ?? '').trim() : '')
+    if (sectorName == null) {
+      const s = at('sector')
+      if (s) sectorName = s
+    }
     const built = buildWorld({
       hex: at('hex'),
       name: at('name'),
@@ -161,12 +169,15 @@ function parseTab(lines: string[], errors: ImportError[]): ParsedWorld[] {
     if (typeof built === 'string') errors.push({ line: i + 1, text: line, reason: built })
     else worlds.push(built)
   })
-  return worlds
+  return { worlds, sectorName }
 }
 
 // Classic `.sec` columns (1-based, inclusive): Name 1-14, Hex 15-18, UWP 20-28,
 // Bases 31, Codes 33-47, Zone 49, PBG 52-54, Allegiance 56-57, Stellar 59+.
-function parseSec(lines: string[], errors: ImportError[]): ParsedWorld[] {
+function parseSec(
+  lines: string[],
+  errors: ImportError[],
+): { worlds: ParsedWorld[]; sectorName: string | null } {
   const worlds: ParsedWorld[] = []
   const slice = (line: string, start: number, end: number) => line.slice(start - 1, end)
   const uwpRe = new RegExp(`^${UWP_BODY}$`)
@@ -191,7 +202,7 @@ function parseSec(lines: string[], errors: ImportError[]): ParsedWorld[] {
     if (typeof built === 'string') errors.push({ line: i + 1, text: line, reason: built })
     else worlds.push(built)
   })
-  return worlds
+  return { worlds, sectorName: null }
 }
 
 /** The lettered 8×10 sub-blocks tiling a cols×rows grid (mirrors Rust). */
@@ -276,7 +287,7 @@ export function parseSectorData(text: string): ImportResult {
   const lines = clean.split(/\r?\n/)
   const format = detectFormat(lines)
   const errors: ImportError[] = []
-  const worlds = format === 'tab' ? parseTab(lines, errors) : parseSec(lines, errors)
+  const { worlds, sectorName } = format === 'tab' ? parseTab(lines, errors) : parseSec(lines, errors)
 
   if (worlds.length === 0) {
     return { subsector: null, errors, worldCount: 0, format }
@@ -299,6 +310,7 @@ export function parseSectorData(text: string): ImportResult {
 
   const subsector: Subsector = {
     seed,
+    name: sectorName ?? undefined,
     density: hexes.length / (columns * rows),
     columns,
     rows,

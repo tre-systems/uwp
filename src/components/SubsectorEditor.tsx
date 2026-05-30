@@ -42,7 +42,7 @@ import {
   type TravelZone,
 } from '../domain/subsector'
 import { deriveTradeCodes, tradeCodeName } from '../domain/cepheus'
-import { resolveHexName, systemName } from '../domain/names'
+import { resolveHexName, sectorDisplayName } from '../domain/names'
 
 interface SubsectorEditorProps {
   disabled: boolean
@@ -71,7 +71,7 @@ export function SubsectorEditor({ disabled }: SubsectorEditorProps) {
     <>
       <section>
         <h2>
-          {sub ? `${systemName(seed)} Sector` : 'Subsector'}
+          {sub ? `${sectorDisplayName(sub)} Sector` : 'Subsector'}
           {subsectorSource.value === 'imported' && <span class="sys-source-tag"> · Imported</span>}
         </h2>
         <dl class="sys-meta">
@@ -209,7 +209,8 @@ function SubsectorExportRow({ subsector, disabled }: { subsector: Subsector; dis
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `subsector-${systemName(subsector.seed).toLowerCase()}-${subsector.seed}.tab`
+    const slug = sectorDisplayName(subsector).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    a.download = `subsector-${slug || 'sector'}-${subsector.seed}.tab`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

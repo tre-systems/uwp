@@ -54,6 +54,13 @@ export function systemName(seed: number): string {
   return name + suffix
 }
 
+/** Bare display name for a sector/subsector: an imported name when present,
+ *  otherwise a deterministic seed-derived name. Callers add a " Sector"
+ *  suffix for headings; exports use it verbatim as the Sector column. */
+export function sectorDisplayName(sub: Pick<Subsector, 'seed' | 'name'>): string {
+  return sub.name?.trim() || systemName(sub.seed)
+}
+
 export function hexName(subsectorSeed: number, col: number, row: number): string {
   // Combine seeds the same way the Rust subsector generator does so names
   // line up with the per-hex sub-seed.

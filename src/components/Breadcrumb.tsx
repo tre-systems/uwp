@@ -7,11 +7,10 @@ import {
   selectedHex,
   selectedSurfacePlanetIndex,
   setViewMode,
-  subsectorSeed,
   viewMode,
 } from '../appState'
 import { hexLabel, subsectorAt } from '../domain/subsector'
-import { resolveHexName, systemName } from '../domain/names'
+import { resolveHexName, sectorDisplayName, systemName } from '../domain/names'
 import { formatBodyViewLabel, formatSurfaceCrumbLabel } from '../navigation/bodyView'
 
 // Persistent top-of-canvas indicator showing where the user is in the
@@ -22,7 +21,6 @@ export function Breadcrumb() {
   const mode = viewMode.value
   const sub = currentSubsector.value
   const sel = selectedHex.value
-  const seed = subsectorSeed.value
   const sys = currentSystem.value
   const target = resolvedDetailTarget(sys)
   const canShowSurface = selectedSurfacePlanetIndex(sys, target) != null
@@ -48,9 +46,9 @@ export function Breadcrumb() {
     return () => window.removeEventListener('keydown', onKey)
   }, [mode])
 
-  // Treat the subsector seed like any other system seed for naming so the
-  // top crumb reads as a place ("Thrame Sector") rather than a hex code.
-  const subsectorLabel = sub ? `${systemName(seed)} Sector` : 'Subsector'
+  // Prefer an imported sector name; otherwise a seed-derived one, so the top
+  // crumb reads as a place ("Thrame Sector") rather than a hex code.
+  const subsectorLabel = sub ? `${sectorDisplayName(sub)} Sector` : 'Subsector'
   // When the grid is a full sector, surface which lettered 8×10 subsector the
   // selected hex sits in, for orientation.
   const inSector = (sub?.subsectors?.length ?? 0) > 1
