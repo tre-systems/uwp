@@ -43,13 +43,20 @@ for (const viewport of [
   { name: 'mobile', size: { width: 390, height: 844 } },
 ] as const) {
   test(`sector map renders a 32x40 grid with subsector blocks and opens a system on ${viewport.name}`, async ({ page }) => {
+    // A full 32×40 sector is 1,280 systems generated in the worker — heavy, and
+    // slower still when the machine is busy (e.g. the rest of the verify gate).
+    // Give this test 3× the default budget so generation latency never trips it.
+    test.slow()
     await page.setViewportSize(viewport.size)
     await openApp(page)
 
     await page.getByRole('tab', { name: /browse the subsector hex grid/i }).click({ force: true })
-    await expect(page.locator('.subsector-map')).toBeVisible()
-    // Wait for the 8x10 grid to populate, then drive selection + overrides off
-    // any occupied hex.
+    // The map mounts only once the worker finishes the whole sector — until then
+    // a "Generating sector… N%" overlay is shown in its place. Wait on the
+    // rendered map (the real completion signal) with a generation-sized timeout,
+    // not the 10s expect default. Occupied hexes render with the map, so the
+    // follow-up check resolves as soon as it is visible.
+    await expect(page.locator('.subsector-map')).toBeVisible({ timeout: 90_000 })
     await expect(page.locator('.hex-occupied').first()).toBeVisible({ timeout: 30_000 })
     // A full sector tiles a 4×4 block of lettered subsectors: 3 vertical + 3
     // horizontal dividers, plus 16 A–P labels.
