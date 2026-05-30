@@ -196,6 +196,9 @@ invariants justify per-field validation (tracked in `AGENTS.md`).
 
 ## Rendering pipeline & adaptive quality
 
+> Every photoreal technique and its paper reference lives in
+> [RENDERING.md](RENDERING.md).
+
 Detail view renders to an **offscreen `Rgba16Float` scene target** (HDR): a
 background pass, then the planet mesh (a cubesphere whose resolution follows
 `meshQuality`), then `atmosphere.wgsl` composites scattering + bloom and tonemaps

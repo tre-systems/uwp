@@ -223,8 +223,8 @@ caches the latest seed/water pair, the JS preview path caches the normalized
 heightmap and sea threshold, and hidden Surface views do not regenerate maps on
 every slider movement.
 
-- Follow the alignment target in `docs/SURFACE_ALIGNMENT.md`: one Rust-owned
-  surface atlas should drive the globe, world map, inspector, region view, and
+- Follow the surface-coherence target in `docs/RENDERING.md`: one Rust-owned
+  surface atlas drives the globe, world map, inspector, region view, and
   exports.
 - Upload the Rust surface pre-bake as a GPU texture or cube-map.
 - Replace the planet shader's independent continent/noise stack with texture
@@ -255,7 +255,11 @@ use fluid submodes; stars use an emissive photosphere shader; asteroid belts ope
 a representative cratered planetoid. Terrain-atlas worlds use the Rust surface
 pre-bake; non-terrain bodies skip the atlas rebuild. Very cold rocky / super-Earth
 bodies render as low-atmosphere icy / cratered worlds, not blue ocean worlds.
-Reference comparison + gaps: `docs/VISUAL_REFERENCE_REVIEW.md`.
+Reference imagery the body-class shaders are tuned against:
+`docs/RENDERING.md` › Reference imagery. Specific optional gaps: a physically
+based atmosphere LUT, advected gas-giant flow (storms shearing into jets),
+denser asteroid silhouette geometry, and palette calibration against sampled
+NASA/JPL reference histograms.
 
 Latest pass, shipped:
 
@@ -379,8 +383,8 @@ Done when:
 Keep the project easy for agents and humans to extend.
 
 Status: in progress. `docs/` now holds focused docs — `BACKLOG.md`,
-`ARCHITECTURE.md` (layer/boundary map + diagram), `CEPHEUS_CHAPTER_12.md`,
-`sector-data-format.md`, `SURFACE_ALIGNMENT.md`, `VISUAL_REFERENCE_REVIEW.md` —
+`ARCHITECTURE.md` (layer/boundary map + diagram), `RENDERING.md`,
+`CEPHEUS_CHAPTER_12.md`, `sector-data-format.md` —
 and `AGENTS.md` links to them. Remaining: slim the overlapping
 architecture/refactor-history prose out of `AGENTS.md` now that
 `ARCHITECTURE.md` is the canonical home.

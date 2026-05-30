@@ -55,7 +55,7 @@ licence. See [docs/LICENSING.md](docs/LICENSING.md).
 ```
 
 For the full pipeline detail and every photoreal technique with citations,
-see [RENDERING.md](RENDERING.md).
+see [docs/RENDERING.md](docs/RENDERING.md).
 
 ## Running locally
 
