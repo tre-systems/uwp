@@ -635,11 +635,17 @@ fn stellar_surface(dir: vec3<f32>, world_normal: vec3<f32>, view_dir: vec3<f32>,
     let limb_tint = mix(vec3<f32>(0.90, 0.96, 1.12), vec3<f32>(1.12, 0.72, 0.45), warmth);
     let tinted = mix(color, color * limb_tint, edge * 0.55);
 
-    return tinted * limb * (1.48 + hotness * 0.56)
-         + u.sand_color.rgb * faculae * 0.92
+    // Radiant emission: a centre-weighted hot core lifts the disc out of a matte
+    // ball into a luminous, glowing body, and the extra HDR headroom drives the
+    // post-pass bloom into a real corona. Only stars reach this function, so the
+    // brightness lift can't affect planets / gas giants / asteroids.
+    let core = 1.0 + pow(mu, 2.2) * (0.46 + warmth * 0.26);
+    return tinted * limb * (1.78 + hotness * 0.66) * core
+         + tinted * pow(mu, 3.5) * (0.34 + hotness * 0.30)
+         + u.sand_color.rgb * faculae * 1.05
          + chromosphere * active_arc * 1.95
          + chromosphere * prominence * 3.10
-         + u.snow_color.rgb * pow(edge, 5.0) * (0.10 + hotness * 0.14);
+         + u.snow_color.rgb * pow(edge, 5.0) * (0.16 + hotness * 0.16);
 }
 
 fn asteroid_surface(dir: vec3<f32>) -> vec3<f32> {
