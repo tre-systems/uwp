@@ -86,6 +86,10 @@ When adding controls:
 
 ## Architecture Direction
 
+> The canonical system-design + module map lives in
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The sections below capture
+> direction, state-ownership intent, and refactor history.
+
 The project should stay split into clear layers:
 
 - **Domain model:** Cepheus UWP parsing, trade/game classifications, physical system generation, main-world selection.

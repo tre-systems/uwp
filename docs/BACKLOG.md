@@ -42,6 +42,8 @@ online Cepheus Engine play.
 
 ### 1. Land The Current Review Fixes
 
+Status: complete (foundational quality fixes long landed; kept for history).
+
 Commit the current quality fixes before starting larger work:
 
 - system-picking coordinate scaling under capped render profiles,
@@ -183,10 +185,10 @@ Done when:
   appropriate,
 - text export includes the same map facts the UI shows.
 
-### 6. Strengthen survey rules Style System Detail
+### 6. Strengthen Survey-Style System Detail
 
-Use Survey-Style System Detail as inspiration for deeper system surveys while keeping modern
-science as the source of truth.
+Use classic survey-style system detail as inspiration for deeper system surveys
+while keeping modern science as the source of truth.
 
 - Expand star and companion generation outputs: spectral class, luminosity,
   age, habitable zone, snow line, stability notes, and survey-style descriptors.
@@ -246,18 +248,32 @@ Done when:
 
 Improve the main-world render once the pre-bake is authoritative.
 
-Status: in progress. Body-detail v1 is now in place: system-view picking and
-system-table actions can focus any generated body in the detail renderer.
-Planets map from their physical body type and climate into renderer params;
-gas giants / ice giants / mini-Neptunes use dedicated fluid submodes, stars use
-an emissive photosphere shader, and asteroid belts open a representative
-cratered planetoid shader. Terrain-atlas worlds still use the Rust surface
-pre-bake, while non-terrain bodies skip the expensive terrain atlas rebuild.
-Very cold rocky / super-Earth bodies are intentionally rendered as
-low-atmosphere icy or cratered worlds rather than blue ocean worlds. The current
-reference comparison and next visual gaps live in `docs/VISUAL_REFERENCE_REVIEW.md`.
+Status: in progress, and the most recent quality pass landed here. Body-detail
+v1 routes any focused body into the detail renderer: planets map from physical
+body type + climate into renderer params; gas giants / ice giants / mini-Neptunes
+use fluid submodes; stars use an emissive photosphere shader; asteroid belts open
+a representative cratered planetoid. Terrain-atlas worlds use the Rust surface
+pre-bake; non-terrain bodies skip the atlas rebuild. Very cold rocky / super-Earth
+bodies render as low-atmosphere icy / cratered worlds, not blue ocean worlds.
+Reference comparison + gaps: `docs/VISUAL_REFERENCE_REVIEW.md`.
 
-Research anchors for the next visual pass:
+Latest pass, shipped:
+
+- **ULTRA quality tier above HIGH** for capable desktop GPUs (discrete or Apple
+  Silicon, detected via a WebGPU adapter-limits probe). It supersamples ~1.75×
+  device pixels (shader-aware anti-aliasing, capped by a pixel budget so large
+  windows don't overrun the GPU) and drives the atmosphere's finer 18/6 raymarch;
+  the frame-time downshifter drops it back to HIGH if a device can't hold it, so
+  it fails closed to current behaviour.
+- **Radiant stars** — a centre-weighted hot core lifts the photosphere out of a
+  matte disc and drives the post-pass bloom into a corona.
+- **Visual-state fix** — a planet no longer inherits a previously-viewed
+  star / belt's params (which had rendered an ocean world as a star-ball).
+- **Manual QA sweep** — every body class reads cleanly with no artifacts:
+  ocean / desert / vacuum worlds, gas giants, ice giants / mini-Neptunes, stars
+  (incl. binary), asteroid belts, and night-side city lights.
+
+Research anchors for any further visual pass:
 
 - Bruneton/Neyret-style precomputed atmospheric scattering remains the right
   reference for physically grounded air and haze:
@@ -269,24 +285,23 @@ Research anchors for the next visual pass:
   rocky worlds, Mars-like deserts, icy bodies, gas giants, and solar views:
   https://eyes.nasa.gov/
 
-- Refine atmosphere, clouds, ocean glint, terrain normals, city lights, ice,
-  night side, and star lighting.
-- Tune the new body-detail modes against reference imagery: solar granulation
-  and limb darkening, Jovian belts and oval storms, Uranus/Neptune-style ice
-  giant colour, Mars/Moon-style cratered surfaces, and high-albedo icy worlds.
-- Add profile-aware quality paths so High looks excellent and Low remains usable
-  on iPhone-class devices.
-- Add visual regression screenshots for representative worlds.
-- Add visual regression screenshots for the new target classes: main-world
-  terrain, hot rocky, cold rocky/super-Earth, gas giant, ice giant,
-  mini-Neptune, star, and asteroid.
+Remaining:
+
+- **Lock the rendering quality in with visual-regression screenshots** per body
+  class (main-world terrain, hot rocky, cold super-Earth, gas giant, ice giant,
+  mini-Neptune, star, asteroid). This is the key gap — the QA above is manual, so
+  a future shader change could silently regress it.
+- *(Done)* profile-aware quality paths: ULTRA / HIGH / BALANCED / LOW / MINIMUM,
+  with ULTRA above HIGH and a frame-time downshifter that fails closed.
+- *(Good per QA — optional polish)* further atmosphere multi-scatter, cloud
+  shaping, ocean glint, and terrain-normal refinement against reference imagery.
 
 Done when:
 
-- High mode is visibly premium,
-- Balanced targets browser refresh cadence on common laptops and phones,
-- Low remains interactive and legible,
-- city lights and night-side detail are verified in smoke or visual tests.
+- ULTRA / High render visibly premium on capable hardware; Balanced / Low /
+  Minimum stay interactive and legible on phones,
+- every body class is covered by a visual-regression screenshot, so rendering
+  changes can't silently regress.
 
 ### 9. Upgrade Planetary Surface Maps
 
@@ -342,8 +357,13 @@ Done when:
 
 Prepare the app to become the core for playing Cepheus Engine games online.
 
+Status: in progress. Stable share URLs are live — the Share action copies a deep
+link whose hash encodes sector / subsector / system / world / surface state plus
+referee overrides, and the app restores it on load. Remaining: a campaign
+document model, player-safe exports, and the sync boundary.
+
 - Add stable share URLs for sectors, subsectors, selected systems, worlds, and
-  surface hexes.
+  surface hexes. *(shipped)*
 - Define a campaign document model for referee overrides and saved discoveries.
 - Add player-safe exports that hide referee-only notes.
 - Design the sync boundary for future collaborative sessions.
@@ -358,8 +378,16 @@ Done when:
 
 Keep the project easy for agents and humans to extend.
 
+Status: in progress. `docs/` now holds focused docs — `BACKLOG.md`,
+`ARCHITECTURE.md` (layer/boundary map + diagram), `CEPHEUS_CHAPTER_12.md`,
+`sector-data-format.md`, `SURFACE_ALIGNMENT.md`, `VISUAL_REFERENCE_REVIEW.md` —
+and `AGENTS.md` links to them. Remaining: slim the overlapping
+architecture/refactor-history prose out of `AGENTS.md` now that
+`ARCHITECTURE.md` is the canonical home.
+
 - Split large roadmap material out of `AGENTS.md` into focused docs under
-  `docs/`.
+  `docs/`. *(BACKLOG + ARCHITECTURE extracted; refactor-history prose still in
+  AGENTS.md.)*
 - Keep `AGENTS.md` as concise operating guidance and link to this backlog.
 - Add architecture diagrams for domain, app state, renderer client, Rust
   renderer, and WASM boundaries.
@@ -373,17 +401,23 @@ Done when:
 
 ## Current Best Next Chunk
 
-With standard sector dimensions, data import/export, map performance, generation
-progress, and a copyable share link all shipped, the best next chunks are:
+With standard sector dimensions, data import/export, map performance, a copyable
+share link, and a hardware-scaled rendering + star-polish pass all shipped — the
+renderer is now QA-verified photorealistic across every body class — the best
+next chunks are:
 
-1. **Campaign persistence / player-safe exports (task 11).** Share links are
-   live; the next step is a saved campaign/override document model and
-   player-safe exports that hide referee-only notes.
-2. **Rendering photorealism (task 8).** The next visible quality jump for the
-   System / Main World / Surface views (atmosphere, clouds, night side), with
-   visual-regression screenshots to lock it in.
+1. **Lock in the rendering quality (task 8).** Add per-body-class
+   visual-regression screenshots so the just-shipped polish (ULTRA tier, radiant
+   stars, every body class) can't silently regress — turn the manual QA sweep
+   into an automated guard. Contained, high-leverage, and it protects the work
+   just banked.
+2. **Campaign persistence / player-safe exports (task 11).** The biggest
+   strategic step toward online play: share links are live, so the next move is a
+   saved campaign / override document model and player-safe exports that hide
+   referee-only notes.
 3. **Surface-map export (task 9).** A Surface-mode export path so the planetary
    hex map is a shareable play artifact, not just an inspector.
 
-This keeps the product goal — a referee tool for online Cepheus play — visible
-while building on the now-stable sector and interop layers.
+This keeps the product goal — a referee tool for online Cepheus play — visible:
+consolidate the rendering investment (1), then advance toward shared,
+campaign-ready play (2–3).
