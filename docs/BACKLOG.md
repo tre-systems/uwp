@@ -137,8 +137,12 @@ Map performance + navigation for the larger grid:
 - A–P quick-jump bar + collapsible legend; an animated spinner covers
   first-load generation while the worker builds the grid off the main thread.
 
-Remaining polish: progressive (subsector-first) generation so first paint is
-near-instant on mobile, and share/copy-link UX for a generated sector.
+Map UX shipped on top of this: a "Load sample" button + format hint for import,
+a determinate "Generating sector… NN%" spinner, and imported-sector names
+carried into the title/header/export. (A copyable share link already exists via
+the Share action.) Deferred: true subsector-first progressive generation — it
+would pop polity colours/routes when the full grid swaps in, and the map-pass
+generation is already lean, so the progress spinner covers the wait instead.
 
 ### 5. Complete Chapter 12 Map Semantics
 
@@ -369,18 +373,17 @@ Done when:
 
 ## Current Best Next Chunk
 
-With standard sector dimensions, data import/export, and map performance now
-shipped, the best next chunks are:
+With standard sector dimensions, data import/export, map performance, generation
+progress, and a copyable share link all shipped, the best next chunks are:
 
-1. **Online-play foundations (task 11).** Stable share/copy URLs for a generated
-   sector, system, and world so a referee can hand players a link. The hash
-   state (`sub` / `sys` / `view`) already encodes most of this — make it a
-   first-class copyable share affordance and document the override model.
-2. **Map UX polish.** Progressive subsector-first generation (instant first
-   paint, background fill of the rest of the 32×40 grid) and in-app import
-   discoverability (sample + format hint).
-3. **Rendering photorealism (task 8).** The next visible quality jump for the
-   System / Main World / Surface views.
+1. **Campaign persistence / player-safe exports (task 11).** Share links are
+   live; the next step is a saved campaign/override document model and
+   player-safe exports that hide referee-only notes.
+2. **Rendering photorealism (task 8).** The next visible quality jump for the
+   System / Main World / Surface views (atmosphere, clouds, night side), with
+   visual-regression screenshots to lock it in.
+3. **Surface-map export (task 9).** A Surface-mode export path so the planetary
+   hex map is a shareable play artifact, not just an inspector.
 
 This keeps the product goal — a referee tool for online Cepheus play — visible
 while building on the now-stable sector and interop layers.
