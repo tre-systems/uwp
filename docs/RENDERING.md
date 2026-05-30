@@ -264,7 +264,8 @@ sharp at the planet's edge.
 
 `atmosphere.wgsl` integrates a Bruneton & Neyret 2008-style scattering
 model along the view ray with adaptive quality: low profiles use 6 view
-steps / 2 light steps, balanced uses 8 / 3, and high uses 12 / 4.
+steps / 2 light steps, balanced uses 8 / 3, high uses 12 / 4, and ULTRA
+uses 18 / 6.
 
 - **Rayleigh** for the blue scatter. β_R = (3.5, 8.5, 19.5) × atmosphere
   density, tinted by the user atmosphere colour. The wavelength ratio is
@@ -458,6 +459,68 @@ renderer packs it into a `uniform`. Notable knobs:
 | `vegetation_richness`  | turns continents from Mars to lush Earth             |
 | `atm_banding`          | compresses cloud longitude → Jupiter-band stripes    |
 | `planet_radius`        | display radius; camera minimum distance scales       |
+
+## Surface coherence (globe, world map, region)
+
+The globe, the icosahedral world map, and the selected-hex region view all
+describe the same physical surface, sourced from one Rust-owned surface atlas
+(`domain/surface_atlas.rs`, serialized beside a legacy 32×16 `SurfaceMap` DTO):
+
+- `SurfaceCellId` — a stable id (face, cell coordinates, resolution).
+- `SurfaceCell` — centre lat/lon, flat net boundary, elevation, water depth,
+  slope, moisture, temperature, biome, and projected terrain.
+- `SurfaceAtlas` — all visible world-map cells at the current
+  unfolded-icosahedron 12-subdivision resolution.
+
+Each layer consumes the same atlas:
+
+- **Globe** (`planet.wgsl`) samples the uploaded pre-bake height atlas for
+  land / ocean / coastline / biome, with a quantile-derived sea threshold so the
+  waterline tracks the authored hydrographics fraction.
+- **World map** (`SurfaceMap.tsx`) renders cells from the Rust `SurfaceCell`
+  centres + boundaries over an adaptive raster pre-bake backdrop — TypeScript
+  presents the SVG but does not own the cell identities.
+- **Region view** receives the selected `SurfaceCellId`, samples neighbouring
+  atlas cells for base elevation / biome, and uses the atlas sea threshold for
+  local shorelines.
+- **Exports** reuse the same atlas state.
+
+Surface generation is **lazy and cached**: `surface_prebake::generate` caches the
+latest `(seed, water)` bake — shared by the renderer atlas, the Rust surface map,
+and the JS preview — and hidden Surface views do not regenerate on every UI
+mutation. Keep Rust authoritative for the heavy surface data; never run it
+eagerly from every control change.
+
+Known divergences are by design: the globe samples the raw height atlas at shader
+resolution while the map samples coarser icosahedral cells, so coastlines and
+major terrain agree but small shader-only effects (clouds, grain, city lights,
+micro-normals) differ; region-view rivers and flourishes are per-card
+embellishments subordinate to the atlas field.
+
+A spherical surface needs a stable cell id, not just a screen-space SVG position
+— this follows discrete global grid systems: H3
+<https://h3geo.org/docs/core-library/overview/>, ISEA/Snyder equal-area
+<https://proj.org/en/stable/operations/projections/isea.html>, OGC DGGS
+<https://www.ogc.org/standards/dggs/>. Morphology references: NOAA ETOPO
+(topography + bathymetry) and NASA MOLA (Mars); large-scale terrain should
+combine tectonic uplift and fluvial erosion (Cordonnier et al., Genevaux et al.)
+rather than FBM alone.
+
+## Reference imagery
+
+Real-image targets the body-class shaders are tuned against:
+
+- **Gas giants** — NASA Juno true-colour Great Red Spot: alternating light/dark
+  bands, turbulent jet streaks, pale filaments, anticyclonic ovals, a warm storm
+  core.
+- **Ice giants** — Voyager / Webb Uranus & Neptune: Uranus smooth light
+  blue-green; Neptune deeper blue with dark spots and bright methane wisps.
+- **Asteroids** — OSIRIS-REx Bennu: rough rubble-pile silhouette, dense boulders,
+  dark low-albedo material, strong lighting-angle dependence.
+- **Stars** — SDO photosphere: convection granulation, sunspots in active
+  latitude bands, limb darkening, a hot rim rather than a flat disc.
+- **Terrain colour** — NASA Blue Marble (ocean depth, vegetation belts, snow,
+  cloud-haze balance); MOLA for dry cratered worlds.
 
 ## References
 
