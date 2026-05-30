@@ -11,3 +11,4 @@ target
 .wrangler
 playwright-report
 test-results
+output

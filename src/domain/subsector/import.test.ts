@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseSectorData } from './import'
+import { SAMPLE_SECTOR_TEXT } from './sampleData'
 import { uwpToCode } from './types'
 
 // T5SS tab-delimited sample (Spinward Marches A, abridged), tabs explicit.
@@ -109,6 +110,29 @@ describe('parseSectorData — classic .sec', () => {
     expect(uwpToCode(zeycude.uwp)).toBe('C430698-9')
     const reno = subsector!.hexes.find((h) => h.coord.col === 1 && h.coord.row === 2)!
     expect(reno.travel_zone).toBe('Amber')
+  })
+})
+
+describe('SAMPLE_SECTOR_TEXT', () => {
+  it('is a valid paste-ready 7-world subsector (doc + Load sample stay honest)', () => {
+    const { subsector, errors, worldCount, format } = parseSectorData(SAMPLE_SECTOR_TEXT)
+    expect(format).toBe('tab')
+    expect(errors).toEqual([])
+    expect(worldCount).toBe(7)
+    const sub = subsector!
+    expect(sub.columns).toBe(8)
+    expect(sub.rows).toBe(10)
+    expect(sub.subsectors).toHaveLength(1)
+
+    const ennis = sub.hexes.find((h) => h.coord.col === 5 && h.coord.row === 2)!
+    expect(ennis.name).toBe('Ennis')
+    expect(ennis.travel_zone).toBe('Red')
+
+    const gesh = sub.hexes.find((h) => h.coord.col === 7 && h.coord.row === 4)!
+    expect(uwpToCode(gesh.uwp)).toBe('B6747A9-A')
+    expect(gesh.allegiance).toBe('Fd')
+    // Two distinct allegiances → two synthesized polities.
+    expect(sub.allegiances.map((a) => a.code).sort()).toEqual(['Fd', 'Na'])
   })
 })
 

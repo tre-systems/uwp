@@ -28,8 +28,11 @@ shipped end-to-end:
   follow-on (narrow the whole-struct param bridge) waits on Rust-side
   invariants.
 - Design & UX Backlog → all 20 items shipped (see commit refs below).
-- Subsector Roadmap → phases 1-7 shipped; phase 8 is the doc's own
-  "Optional: WebGPU port", conditional on perf / consistency need.
+- Subsector Roadmap → phases 1-7 shipped, plus a later milestone:
+  standard 8×10 subsector / 32×40 sector dimensions, paste-text data
+  import + canonical T5SS export, and map LOD/culling perf (see
+  `docs/BACKLOG.md` task 4). Phase 8 is the doc's own "Optional: WebGPU
+  port", conditional on perf / consistency need.
 - World Surface Map Roadmap → phases 1-7 shipped; phase 8 is the
   matching optional WGSL port.
 - Rust Compute Roadmap → 6 items shipped, 4 partial (v1 ships, the
@@ -351,11 +354,14 @@ When implementing any of these, the same boundary rules apply: the Rust crate ow
 
 A subsector is the Cepheus Engine sector-map unit: an 8-column × 10-row hex grid of star systems, with bases, trade codes, gas-giant presence, asteroid belts, travel zones, and inter-system jump routes attached to each occupied hex. Reference: <https://www.orffenspace.com/cepheus-srd/book3/worlds.html>.
 
-The product map currently presents two adjacent subsectors as one local
-16-column × 10-row campaign strip (`0101` through `1610`) so referees can see
-routes and neighbours across the classic subsector border. Keep the serialized
-`columns` / `rows` fields authoritative; UI, export, and tests should not
-reintroduce an implicit 8×10 assumption.
+The product map uses standard Cepheus dimensions: 8-column × 10-row lettered
+subsectors (A–P) tiling a full 32-column × 40-row sector. Rust generates the
+whole sector once (`generate_sector`); the "subsector view" is a viewport
+framing of that one grid, so cross-subsector routes and polity borders need no
+seam special-casing. Keep the serialized `columns` / `rows` and per-subsector
+metadata authoritative; UI, export, and tests read those instead of assuming a
+fixed hex count. Referees can also import their own sector/subsector data and
+export canonical T5SS — see `docs/sector-data-format.md`.
 
 This is the next major product feature. The goal is that a user can land on a generated subsector, browse the hex grid, click any occupied hex to drill into that system's overview (existing System view), and from there into its main world (existing Detail view). UWP codes, trade codes, bases, and travel zones surface as Cepheus-compatible game data at every level.
 
@@ -413,7 +419,7 @@ src/appState/
 
 Phases 1-7 are shipped. Tackle 8 only once the SVG version's UX is stable.
 
-1. **Rust subsector data model + generator.** *Shipped → `8d48f26`, expanded → current.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `PolityCell`, and `Subsector`; `generate(seed, density)` walks a 16×10 two-subsector strip hashing per-hex sub-seeds and runs `system::generate` per occupied hex. A full `polity_cells` territory layer covers empty hexes too, so borders are campaign-map facts rather than artifacts of occupied-world adjacency.
+1. **Rust subsector data model + generator.** *Shipped → `8d48f26`, expanded → current.* `domain::subsector` defines `HexCoord`, `Bases`, `TravelZone`, `Uwp`, `SubsectorHex`, `PolityCell`, `SubsectorMeta`, and `Subsector`; `generate(seed, density)` walks the configured grid (8×10 subsector by default, 32×40 via `generate_sector`) hashing per-hex sub-seeds and runs `system::generate` per occupied hex. A full `polity_cells` territory layer covers empty hexes too, so borders are campaign-map facts rather than artifacts of occupied-world adjacency.
 
 2. **Bases / gas-giant / belt / trade codes per hex.** *Shipped → `8d48f26`.* `build_hex` projects main-world physics into UWP digits, rolls Cepheus base presence keyed on starport class, and derives a travel zone from law/government. Trade codes are derived TS-side from the UWP wire format.
 

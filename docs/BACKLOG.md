@@ -8,10 +8,10 @@ online Cepheus Engine play.
 - Implement Chapter 12, "Worlds", from the Cepheus Engine SRD as the game-facing
   rules layer: UWP, subsector star mapping, trade codes, bases, travel zones,
   allegiance, PBG, communication routes, and trade routes.
-- Present an attractive, functional subsector map inspired by classic sector map, but
-  tuned for this app. The near-term target is a two-subsector-wide map
-  (16 columns by 10 rows) so referees can see local context and cross-border
-  routes without jumping between screens.
+- Present an attractive, functional sector map inspired by classic 2d6 sector
+  maps, but tuned for this app: a full 32×40 sector of 16 lettered subsectors
+  (A–P), with a subsector view that frames one A–P block so referees can see
+  local context and cross-border routes without jumping between screens.
 - Keep generated solar systems coherent with modern astronomy and planetary
   science, while nodding to classic survey-generation rules through familiar
   concepts such as star classes, orbital placement, gas giants, belts, worlds,
@@ -108,30 +108,37 @@ Done when:
   worlds,
 - PBG is generated from the physical system rather than invented separately.
 
-### 4. Upgrade The Map To A Two-Subsector Strip
+### 4. Standard Subsector / Sector Dimensions + Data Interop
 
-Extend the current 8×10 subsector view into a 16×10 two-subsector-wide map.
+Status: shipped. The map now uses standard Cepheus dimensions end to end —
+8×10 lettered subsectors (A–P) tiling a full 32×40 sector. Rust generates the
+whole 32×40 grid once (`generate_sector`), serializes per-subsector metadata,
+and the SVG map / export / editor read the serialized `columns` / `rows`
+instead of assuming 80 or 160 hexes. The "subsector view" is a viewport framing
+of the one sector grid (A–P quick-jump + focus), so cross-subsector routes and
+polity borders work without special-casing a seam. (This supersedes the earlier
+16×10 two-subsector-strip target.)
 
-Status: v1 is implemented. Rust now generates a 16×10 local region, serializes
-the region dimensions, and the SVG map / export / editor read those dimensions
-instead of assuming 80 hexes. Playwright smoke coverage selects a right-hand
-subsector hex at desktop and mobile viewports. Remaining polish for this
-backlog item is any visual refinement discovered on devices.
+Data interop shipped alongside:
 
-- Generate, store, and render two adjacent subsectors as one local play region.
-- Preserve individual subsector identity while allowing routes and borders to
-  cross the seam.
-- Keep the map visually close to classic sector map conventions: legible hexes,
-  world dots, starports, bases, zones, names, routes, and allegiance cues.
-- Make mobile panning/zooming and desktop hover/click comfortable at the larger
-  map size.
+- **Import** pasted sector data — auto-detects T5SS tab-delimited and classic
+  `.sec` column formats, tolerant per-line parsing with error reporting, builds
+  an 8×10 or 32×40 grid from the hex spread, synthesizes allegiances and
+  per-world system seeds.
+- **Export** canonical T5SS tab-delimited, round-trip tested
+  (`text → import → export` and `subsector → export → import → deep-equal`).
+- A real extended-hex (ehex) UWP parser (0–9, A–H, J–N, P–Z) backs both paths.
+  Format reference: `docs/sector-data-format.md`.
 
-Done when:
+Map performance + navigation for the larger grid:
 
-- the map shows 16 columns by 10 rows with stable deterministic generation,
-- cross-subsector jump routes work,
-- selected hex navigation still loads the correct system,
-- Playwright smoke covers map navigation at desktop and mobile widths.
+- LOD + viewport culling: text/glyphs gate behind zoom, only-visible hexes
+  render, so a 1280-hex sector overview stays light (~7k SVG nodes vs ~11k).
+- A–P quick-jump bar + collapsible legend; an animated spinner covers
+  first-load generation while the worker builds the grid off the main thread.
+
+Remaining polish: progressive (subsector-first) generation so first paint is
+near-instant on mobile, and share/copy-link UX for a generated sector.
 
 ### 5. Complete Chapter 12 Map Semantics
 
@@ -318,7 +325,7 @@ Prioritize Rust work that would be awkward, slow, or fragile in TypeScript.
   candidates.
 - Route economics: trade-route strength from population, tech, distance,
   starport quality, and resource compatibility.
-- Deterministic campaign-scale generation: two-subsector, quadrant, and sector
+- Deterministic campaign-scale generation: subsector, quadrant, and sector
   seeds without loading every full system eagerly.
 
 Done when:
@@ -331,7 +338,7 @@ Done when:
 
 Prepare the app to become the core for playing Cepheus Engine games online.
 
-- Add stable share URLs for two-subsector regions, selected systems, worlds, and
+- Add stable share URLs for sectors, subsectors, selected systems, worlds, and
   surface hexes.
 - Define a campaign document model for referee overrides and saved discoveries.
 - Add player-safe exports that hide referee-only notes.
@@ -362,12 +369,18 @@ Done when:
 
 ## Current Best Next Chunk
 
-After the polity-territory pass, the best next implementation chunk is:
+With standard sector dimensions, data import/export, and map performance now
+shipped, the best next chunks are:
 
-1. Complete Chapter 12 map semantics by reviewing route-density examples and
-   tuning communication/trade route thresholds.
-2. Or, if staying in projection work, move authored-world population toward an
-   actual-population source of truth rather than only UWP-shaped digits.
+1. **Online-play foundations (task 11).** Stable share/copy URLs for a generated
+   sector, system, and world so a referee can hand players a link. The hash
+   state (`sub` / `sys` / `view`) already encodes most of this — make it a
+   first-class copyable share affordance and document the override model.
+2. **Map UX polish.** Progressive subsector-first generation (instant first
+   paint, background fill of the rest of the 32×40 grid) and in-app import
+   discoverability (sample + format hint).
+3. **Rendering photorealism (task 8).** The next visible quality jump for the
+   System / Main World / Surface views.
 
-This keeps the product goal visible while preparing the codebase for the larger
-map and online-play work.
+This keeps the product goal — a referee tool for online Cepheus play — visible
+while building on the now-stable sector and interop layers.
