@@ -20,30 +20,13 @@ splits along one firm line:
   maps** — and treats the Rust side as a typed facade it sends commands to and
   reads snapshots from.
 
-```
-                      ┌────────────────────────────────────────────┐
-   user interaction   │  Preact components  (src/components)        │
-   ───────────────▶   │  signals + actions  (src/appState)          │
-                      └───────┬───────────────────────┬─────────────┘
-                              │ commands              │ SVG (no GPU)
-                              ▼                        ▼
-                  ┌───────────────────────┐   ┌──────────────────────┐
-                  │ renderer client       │   │ Subsector / Surface  │
-                  │ (src/rendererClient)  │   │ hex maps (SVG)       │
-                  │ lifecycle, frame loop,│   └──────────────────────┘
-                  │ render profiles       │
-                  └───────┬───────────────┘
-                          │ wasm-bindgen boundary (typed)
-                          ▼
-        ┌──────────────────────────────────────────────────────────┐
-        │ crates/planet-render  (Rust → WASM)                        │
-        │  domain/  system · climate · surface · subsector          │
-        │  scenes/  detail · system        gpu.rs · renderer.rs      │
-        │  shaders/ planet · atmosphere · system · background (WGSL) │
-        └───────────────────────────┬──────────────────────────────┘
-                                     ▼  wgpu / WebGPU
-                              GPU (canvas)
-```
+![UWP system overview — Preact UI on top, the Rust/WASM compute + render crate
+below, WebGPU at the base, with the off-thread worker and URL/localStorage
+persistence](diagrams/system-overview.png)
+
+> Source: [`diagrams/system-overview.dot`](diagrams/system-overview.dot).
+> Regenerate with `npm run diagrams` (needs Graphviz). See
+> [`diagrams/README.md`](diagrams/README.md) for the diagram convention.
 
 A second Rust/WASM instance runs inside a **Web Worker**
 (`src/wasmComputeWorker.ts`) so full-sector generation (1,280 systems) happens
@@ -160,7 +143,79 @@ is the fullscreen composite pass — scattering, bloom, and the AGX tonemap
 shared `Uniforms` struct and noise/helpers. WGSL chunks compose through
 `shader_with_common`.
 
+## Patterns
+
+The codebase is built from a small set of recurring patterns. New code should
+follow them — they are what keep the Rust / JS / GPU split coherent.
+
+- **Signals as the single source of UI state.** `@preact/signals` holds all
+  state, shared *and* local UI flags. Components read signals and re-render
+  reactively; there is no separate store.
+- **Action / command boundary.** Components call named actions in `appState`
+  (`selectHex`, `setSystemSeed`, `focusSystemTarget`, …). They do not mutate
+  shared state inline or touch the WASM object / `window.uwp`. *(Holds in
+  practice: no `window.uwp` references in `src/components`.)*
+- **Typed facade over WASM.** `rendererClient` is the only code that talks to the
+  WASM `Planet` object — it owns lifecycle, the frame loop, resize, render
+  profiles, snapshots, and commands. The rest of the app sees typed methods.
+- **State ownership — Rust canonical, JS snapshot + command.** Rust holds the live
+  renderer state (`PlanetParams`, `SolarSystem`, camera, GPU resources); JS reads
+  *snapshots* and issues *commands*. The `params` signal is a snapshot, not a
+  mutable source of truth.
+- **DTO mirroring.** TS interfaces mirror the serialized Rust structs field-for-
+  field (serde round-trip); serialized data is never typed `any`. *(Holds: no
+  `any` / `as any` on serialized data in product code.)*
+- **Projection at the boundary.** Internals are continuous physical/social values;
+  they round to discrete UWP codes only at the game-facing boundary
+  (`domain/mainWorld`, `uwpVisualMapping`). UWP is a readable label, not the
+  source of truth.
+- **Deterministic seed derivation.** Pure chains — `subsectorSeed` → per-hex
+  sub-seed (`hash_hex_seed`) → `system_seed` → planet appearance + `surface_seed`.
+  The same seed always paints the same sector, system, and world. This is what
+  makes share links stable, overrides expressible as seed-keyed deltas, and the
+  generation paths testable without a GPU.
+- **Override-as-delta.** Referee edits are stored as deltas keyed by seed +
+  generated endpoint ids, then applied as a TS overlay over freshly generated
+  Rust data — so generated data stays resettable and regeneration-safe.
+- **Off-thread compute.** Heavy generation (a full 32×40 sector = 1,280 systems)
+  runs in a Web Worker (`wasmComputeWorker`), keeping the UI responsive.
+- **Lazy + cached derived data.** Expensive derived data caches its key and only
+  recomputes when the key changes: the surface pre-bake caches `(seed, water)`;
+  the renderer diffs incoming params and re-runs only changed fields; hidden
+  Surface views don't regenerate on every control move.
+- **Adaptive quality — probe → profile → fail-closed.** Detect capability
+  (`gpuProbe`), pick a tier (`renderProfile`), and drop back if frames run slow
+  (the frame-time downshifter). Render-on-demand throttles idle frames.
+- **URL as state.** The location hash encodes the full navigation state and the
+  app restores it on load — every view is a shareable deep link.
+- **One source of truth for derived values.** Derived data is computed once
+  through one function (hex names via `resolveHexName`, trade codes via
+  `deriveTradeCodes`), never re-derived differently per call site.
+
+### Patterns to adopt (not yet applied)
+
+- **Narrow typed setters at the WASM boundary.** A whole `PlanetParams` blob still
+  crosses `set_params`, so JS keeps a writable canonical copy. The target is
+  per-field setters Rust validates — the last state-ownership leak.
+- **Generated Rust↔TS bindings.** DTOs are hand-mirrored, which can drift; codegen
+  from the Rust structs would make the mirror automatic.
+- **Golden-image / visual-regression testing.** The renderer has no automated
+  visual snapshot guard, so shader changes can regress silently (`BACKLOG.md`
+  task 8).
+
 ## Key data flows
+
+Every flow below rests on one deterministic seed chain — same seed in, same
+sector/system/world out:
+
+```mermaid
+flowchart LR
+  S["subsectorSeed"] -->|"hash_hex_seed (per hex)"| H["hex sub-seed"]
+  H --> SY["system_seed"]
+  SY --> P["planet appearance"]
+  SY --> SU["surface_seed"]
+  SU --> PB["surface pre-bake atlas"]
+```
 
 **Sector generation.** A `subsectorSeed` change → `subsectorClient.ts` asks the
 **worker** to `generate_sector(seed, density)` → Rust walks the 32×40 grid,
@@ -194,6 +249,16 @@ crosses the boundary as a blob, which is the last place JS keeps a writable
 canonical copy — the planned move is narrow typed setters once enough Rust-side
 invariants justify per-field validation (tracked in `AGENTS.md`).
 
+```mermaid
+flowchart LR
+  C["Component"] -->|"named action"| A["appState signal<br/>(snapshot)"]
+  A -->|"command"| RC["renderer client"]
+  RC -->|"set_params · set_view_mode"| W["wasm_api"]
+  W --> R["Rust canonical state"]
+  R -.->|"serialized snapshot"| A
+  A -.->|"reactive re-render"| C
+```
+
 ## Rendering pipeline & adaptive quality
 
 > Every photoreal technique and its paper reference lives in
@@ -217,14 +282,6 @@ Quality is picked per device by `renderProfile.ts`:
 `gpuProbe.ts` reads the WebGPU adapter's limits and, on capable hardware,
 `upgradeForCapableGpu` lifts a desktop HIGH session to ULTRA. The **frame-time
 downshifter** drops the tier if frames run slow, so every upgrade fails closed.
-
-## Determinism
-
-Everything is seed-driven and reproducible: `subsectorSeed` → per-hex sub-seeds
-(`hash_hex_seed`) → `system_seed` → planet appearance + `surface_seed`. The same
-seed always paints the same sector, system, and world. This is what makes share
-links stable, referee overrides expressible as deltas keyed by seed, and the
-generation paths unit-testable without a GPU.
 
 ## Deployment
 

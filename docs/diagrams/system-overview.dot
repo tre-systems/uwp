@@ -1,0 +1,151 @@
+digraph SystemOverview {
+  graph [
+    rankdir=TB,
+    bgcolor="#ffffff",
+    pad="0.55",
+    nodesep="0.55",
+    ranksep="0.9",
+    splines=polyline,
+    outputorder=edgesfirst,
+    compound=true,
+    newrank=true,
+    forcelabels=true,
+    fontname="Avenir",
+    label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+        <TR><TD><FONT POINT-SIZE="34"><B>UWP — System Overview</B></FONT></TD></TR>
+        <TR><TD><FONT POINT-SIZE="15" COLOR="#5b6b77">Client-only PWA: Preact UI + Rust/WASM compute + WebGPU rendering. No backend.</FONT></TD></TR>
+      </TABLE>
+    >,
+    labelloc=t,
+    labeljust=c
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    margin="0.21,0.13",
+    width=3.1,
+    height=0.72,
+    fontname="Avenir",
+    fontsize=17,
+    penwidth=2.4,
+    fontcolor="#14213d",
+    color="#2264c7",
+    fillcolor="#eaf3ff:#ffffff",
+    gradientangle=270
+  ];
+
+  edge [
+    color="#263a59",
+    fontname="Avenir",
+    fontsize=12,
+    fontcolor="#3d4a5c",
+    penwidth=2.0,
+    arrowsize=0.78
+  ];
+
+  // ---- Browser / UI (blue) ----
+  subgraph cluster_ui {
+    graph [
+      label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="17" COLOR="#1f5fbf"><B>BROWSER · PREACT SPA</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="12" COLOR="#496f9f">Signals are the single source of UI state; components call named actions.</FONT></TD></TR>
+        </TABLE>
+      >,
+      labelloc=t, labeljust=l, color="#b9d8ff", fillcolor="#f5faff",
+      style="rounded,filled", penwidth=1.8, margin=22
+    ];
+
+    UI_C [label=<<B>Components</B><BR/><FONT POINT-SIZE="14">Canvas · editors · view toggle</FONT>>];
+    UI_S [label=<<B>App state</B><BR/><FONT POINT-SIZE="14">signals + named actions (appState)</FONT>>];
+    UI_U [label=<<B>urlState</B><BR/><FONT POINT-SIZE="14">location hash ⇄ state (deep links)</FONT>>];
+    UI_M [label=<<B>SVG hex maps</B><BR/><FONT POINT-SIZE="14">Subsector · Surface (no GPU)</FONT>>];
+
+    UI_C -> UI_S [style=invis];
+    UI_S -> UI_M [style=invis];
+    UI_S -> UI_U [style=invis, constraint=false];
+  }
+
+  // ---- Bridges to Rust/WASM ----
+  RC [label=<<B>Renderer client</B><BR/><FONT POINT-SIZE="14">typed facade: lifecycle · frame loop ·<BR/>render profiles · snapshots</FONT>>, color="#2f80ed", fillcolor="#edf7ff:#ffffff"];
+  GP [label=<<B>gpuProbe</B><BR/><FONT POINT-SIZE="14">adapter limits → capable (gates ULTRA)</FONT>>, color="#2f80ed", fillcolor="#edf7ff:#ffffff"];
+
+  // ---- Web Worker (amber) ----
+  subgraph cluster_worker {
+    graph [
+      label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="17" COLOR="#a96f00"><B>WEB WORKER</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="12" COLOR="#9a7b3a">Heavy generation off the main thread.</FONT></TD></TR>
+        </TABLE>
+      >,
+      labelloc=t, labeljust=l, color="#f2d98a", fillcolor="#fffaf0",
+      style="rounded,filled", penwidth=1.8, margin=22
+    ];
+    WK [label=<<B>wasmComputeWorker</B><BR/><FONT POINT-SIZE="14">generate_sector (1,280 systems)</FONT>>, color="#d39a00", fillcolor="#fff4d1:#fffaf0"];
+  }
+
+  // ---- Rust / WASM crate (green) ----
+  subgraph cluster_wasm {
+    graph [
+      label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="17" COLOR="#1e6b43"><B>crates/planet-render &nbsp;(Rust → WASM)</B></FONT></TD></TR>
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="12" COLOR="#4e7a61">Rust owns deterministic simulation + all GPU rendering.</FONT></TD></TR>
+        </TABLE>
+      >,
+      labelloc=t, labeljust=l, color="#b8e5c8", fillcolor="#f4fbf6",
+      style="rounded,filled", penwidth=1.8, margin=22
+    ];
+
+    WA [label=<<B>wasm_api</B><BR/><FONT POINT-SIZE="14">the only JS-visible Rust API</FONT>>, color="#22865a", fillcolor="#eaf8ef:#ffffff"];
+    DM [label=<<B>domain</B><BR/><FONT POINT-SIZE="14">system · climate · surface · subsector<BR/>(pure, deterministic, tested)</FONT>>, color="#22865a", fillcolor="#eaf8ef:#ffffff"];
+    SC [label=<<B>scenes</B><BR/><FONT POINT-SIZE="14">detail · system: uniforms · mesh · picking</FONT>>, color="#22865a", fillcolor="#eaf8ef:#ffffff"];
+    RN [label=<<B>renderer + gpu</B><BR/><FONT POINT-SIZE="14">passes · param-diff · device/pipelines</FONT>>, color="#22865a", fillcolor="#eaf8ef:#ffffff"];
+
+    WA -> DM [style=invis];
+    DM -> SC [style=invis];
+    SC -> RN [style=invis];
+  }
+
+  // ---- WGSL shaders (purple) ----
+  subgraph cluster_shaders {
+    graph [
+      label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">
+          <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="17" COLOR="#6d28d9"><B>WGSL SHADERS</B></FONT></TD></TR>
+        </TABLE>
+      >,
+      labelloc=t, labeljust=l, color="#d8b9ff", fillcolor="#faf5ff",
+      style="rounded,filled", penwidth=1.8, margin=20
+    ];
+    SH [label=<<B>planet · atmosphere</B><BR/><FONT POINT-SIZE="14">system · background · common</FONT>>, color="#7c3aed", fillcolor="#f3eaff:#ffffff"];
+  }
+
+  // ---- GPU + persistence (teal) ----
+  GPU [label=<<B>GPU</B><BR/><FONT POINT-SIZE="14">WebGPU canvas</FONT>>, color="#0f766e", fillcolor="#e6fffb:#ffffff"];
+  ST  [label=<<B>URL hash + localStorage</B><BR/><FONT POINT-SIZE="14">shareable state · settings · referee overrides</FONT>>, color="#0f766e", fillcolor="#e6fffb:#ffffff"];
+
+  // ---- Edges ----
+  UI_C -> UI_S [label="call actions"];
+  UI_U -> UI_S [label="restore on load", style=dashed, color="#6b7280", fontcolor="#6b7280"];
+  UI_S -> UI_M [label="draw SVG"];
+  UI_S -> ST  [label="persist", style=dashed, color="#6b7280", fontcolor="#6b7280"];
+  UI_S -> RC  [label="commands + params"];
+  UI_M -> WK  [label="request sector"];
+
+  RC -> GP [label="probe on init", style=dashed, color="#6b7280", fontcolor="#6b7280"];
+  RC -> WA [label="setParams · setViewMode · setSystemSeed"];
+  WK -> DM [label="generate_sector", lhead=cluster_wasm];
+
+  WA -> DM [label="generate / snapshot"];
+  DM -> SC [label="system + surface data"];
+  SC -> RN;
+  RN -> SH [label="compile + bind"];
+  RN -> GPU [label="render passes"];
+
+  DM -> UI_S [label="serialized snapshot", style=dashed, color="#1e6b43", fontcolor="#1e6b43", constraint=false];
+  WK -> UI_M [label="Subsector JSON", style=dashed, color="#1e6b43", fontcolor="#1e6b43", constraint=false];
+}
